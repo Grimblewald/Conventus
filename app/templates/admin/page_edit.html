@@ -1,0 +1,25 @@
+{% extends "admin/_base.html" %}
+{% block title %}{% if p %}Edit{% else %}New{% endif %} page · Admin{% endblock %}
+{% block admin %}
+<div class="section-head">
+  <div><div class="eyebrow">Pages</div><h2>{% if p %}Edit “{{ p.title }}”{% else %}New page{% endif %}</h2></div>
+  <a class="link" href="{{ url_for('admin.pages') }}">← back</a>
+</div>
+<form method="post" class="form form-wide">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="row-2">
+    <div class="field"><label for="title">Title</label>
+      <input class="input" id="title" name="title" required value="{{ (p.title if p else form.title) or '' }}"></div>
+    <div class="field"><label for="slug">Slug (URL path)</label>
+      <input class="input" id="slug" name="slug" value="{{ (p.slug if p else form.slug) or '' }}">
+      <div class="help">Leave blank to auto-generate from the title.</div></div>
+  </div>
+  <div class="field"><label for="body">Body (Markdown)</label>
+    <textarea class="textarea" id="body" name="body" rows="18">{{ (p.body if p else form.body) or '' }}</textarea></div>
+  <label style="display:flex; align-items:center; gap:8px;">
+    <input type="checkbox" name="published" {% if not p or p.published %}checked{% endif %}>
+    Published (visible to the public)
+  </label>
+  <div style="margin-top:14px;"><button class="btn btn-primary" type="submit">Save page</button></div>
+</form>
+{% endblock %}

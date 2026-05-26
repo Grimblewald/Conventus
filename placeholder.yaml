@@ -1,0 +1,198 @@
+# =============================================================================
+# placeholder.yaml — neutral defaults loaded by the first-run setup wizard.
+# =============================================================================
+# This file is *only* read by the wizard at /setup before the admin account
+# exists. Once setup completes, a flag is written to instance/.setup-complete
+# and this file is ignored forever. Editing it after setup has no effect.
+#
+# Every field here can be edited inside the admin panel after launch.
+# =============================================================================
+
+site:
+  name: "Your Society"
+  tagline: "A community of researchers and practitioners."
+  short_name: "Society"
+  browser_tab_title: "Your Society"
+  copyright_line: "© {year} Your Society. All rights reserved."
+  contact_email: "contact@example.org"
+  locale: "en"
+  currency_code: "USD"
+  currency_symbol: "$"
+  timezone: "UTC"
+
+admin:
+  email: "admin@example.org"
+  full_name: "Society Administrator"
+
+# ---------------------------------------------------------------------------
+# Palette — every value an admin can later tweak from Site → Palette.
+# Values are CSS colour strings. Keep them legible against each other.
+# ---------------------------------------------------------------------------
+palette:
+  page_bg: "#f7f5f1"
+  page_text: "#171717"
+  muted_text: "#5b5b5b"
+  link: "#2a4d8f"
+  link_hover: "#1a3669"
+  accent: "#2a4d8f"
+  accent_ink: "#ffffff"
+  header_bg: "#ffffff"
+  header_text: "#171717"
+  footer_bg: "#171717"
+  footer_text: "#dcdcdc"
+  card_bg: "#ffffff"
+  card_border: "#e4e0d6"
+  button_bg: "#171717"
+  button_text: "#ffffff"
+
+# ---------------------------------------------------------------------------
+# Fonts — must be names in app/services/fonts.py FONT_STACKS (web-safe only,
+# no external loads). Curated list shown in the dropdown.
+# ---------------------------------------------------------------------------
+fonts:
+  heading: "modern_serif"      # Georgia / Cambria stack
+  body: "system_sans"          # System UI stack
+  link: "system_sans"
+  ui: "system_sans"
+
+# ---------------------------------------------------------------------------
+# Navigation — admin can add/remove/reorder these later.
+# Each entry is { label, target } where target is one of:
+#   "home", "conferences", "committee", "contact"  (built-in routes)
+#   "page:<slug>"                                  (custom page)
+#   "url:https://..."                              (external)
+# ---------------------------------------------------------------------------
+navigation:
+  - { label: "Home",        target: "home"          }
+  - { label: "Conferences", target: "conferences"   }
+  - { label: "About",       target: "page:about"    }
+  - { label: "Committee",   target: "committee"     }
+  - { label: "Contact",     target: "contact"       }
+
+# ---------------------------------------------------------------------------
+# Footer columns — title + list of links.
+# ---------------------------------------------------------------------------
+footer:
+  columns:
+    - title: "Society"
+      links:
+        - { label: "About",      target: "page:about" }
+        - { label: "Committee",  target: "committee"  }
+    - title: "Conferences"
+      links:
+        - { label: "All events", target: "conferences" }
+    - title: "Policies"
+      links:
+        - { label: "Privacy",         target: "page:privacy"         }
+        - { label: "Code of Conduct", target: "page:code-of-conduct" }
+        - { label: "Terms",           target: "page:terms"           }
+
+# ---------------------------------------------------------------------------
+# Boilerplate pages — created at first-run, then editable from the admin
+# Pages section. Bodies are Markdown.
+# ---------------------------------------------------------------------------
+pages:
+  - slug: "about"
+    title: "About"
+    body: |
+      Welcome to **Your Society**. Replace this text from the admin panel:
+      *Admin → Pages → About*. You can use Markdown — headings, lists, links
+      and images all work. The page slug `about` is linked from the default
+      navigation and footer; you can change either at any time.
+
+  - slug: "privacy"
+    title: "Privacy Policy"
+    body: |
+      We respect your privacy. Edit this page from *Admin → Pages → Privacy*
+      to add your organisation's specific policy. At minimum, mention what
+      data you collect (account email, conference registrations), how long
+      you retain it, and how members can request deletion.
+
+  - slug: "code-of-conduct"
+    title: "Code of Conduct"
+    body: |
+      Replace this with your society's code of conduct. A typical document
+      covers expected behaviour at events, unacceptable behaviour, reporting
+      channels, and the consequences of violations.
+
+  - slug: "terms"
+    title: "Terms of Use"
+    body: |
+      Edit this page from the admin panel to publish the terms governing
+      membership, conference registration, and abstract submission for your
+      organisation.
+
+# ---------------------------------------------------------------------------
+# Sample committee members — purely illustrative; delete or replace at will.
+# Real portraits are uploaded later through Admin → Committee.
+# ---------------------------------------------------------------------------
+committee:
+  - title: "Dr"
+    full_name: "Jane Doe"
+    role: "President"
+    affiliation: "University of Example"
+    position: "Associate Professor"
+    interests: "Membership growth · annual symposium chair"
+    orcid: ""
+    scholar_url: ""
+    website_url: ""
+    display_order: 1
+  - title: "Dr"
+    full_name: "John Smith"
+    role: "Secretary"
+    affiliation: "Institute for Example Studies"
+    position: "Senior Research Fellow"
+    interests: "Communications · minutes · public liaison"
+    orcid: ""
+    scholar_url: ""
+    website_url: ""
+    display_order: 2
+
+# ---------------------------------------------------------------------------
+# Sample announcements — neutral examples that read well as-is if you'd
+# like to "showcase" the site before adding real content.
+# ---------------------------------------------------------------------------
+announcements:
+  - title: "Welcome to your new society website"
+    kind: "News"
+    body: |
+      This is a placeholder announcement. Sign in as the administrator,
+      visit the admin panel, and replace this with your own news. You can
+      add as many announcements as you like, pin the important ones to the
+      top, and tag them as News, Call, Award, or Event.
+    pinned: true
+
+  - title: "Customise the look — Site → Palette & Fonts"
+    kind: "News"
+    body: |
+      Visit *Admin → Site → Palette* to recolour every part of the site
+      (header, footer, links, buttons, accents). *Admin → Site → Fonts*
+      lets you pick from web-safe font stacks for headings, body text,
+      and links.
+
+# ---------------------------------------------------------------------------
+# Sample conference — illustrative, delete or replace from the admin panel.
+# ---------------------------------------------------------------------------
+conferences:
+  - slug: "annual-meeting-2026"
+    title: "Annual Meeting 2026"
+    subtitle: "An example placeholder conference"
+    summary: "Replace this with the real conference summary from Admin → Conferences."
+    body: |
+      This is a placeholder conference. Use the admin panel to add programmes,
+      keynote speakers, venue details, and price tiers.
+    start_date: "2026-09-15"
+    end_date: "2026-09-17"
+    city: "Anytown"
+    venue: "Example Convention Centre"
+    is_featured: true
+    abstract_deadline: "2026-06-01"
+    early_bird_deadline: "2026-07-15"
+    tracks:
+      - "Theme A"
+      - "Theme B"
+      - "Theme C"
+    price_tiers:
+      - { name: "Academic", amount: 600 }
+      - { name: "Student",  amount: 200 }
+      - { name: "Industry", amount: 900 }

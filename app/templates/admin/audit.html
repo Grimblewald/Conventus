@@ -1,0 +1,32 @@
+{% extends "admin/_base.html" %}
+{% block title %}Audit log · Admin{% endblock %}
+{% block admin %}
+<div class="section-head"><div><div class="eyebrow">System</div><h2>Audit log</h2></div></div>
+<form method="get" class="form" style="display:flex; gap:14px; align-items:end; flex-wrap:wrap; margin-bottom:18px;">
+  <div class="field" style="margin:0;"><label for="action">Action contains</label>
+    <input class="input" id="action" name="action" value="{{ action }}"></div>
+  <div class="field" style="margin:0;"><label for="actor">Actor email contains</label>
+    <input class="input" id="actor" name="actor" value="{{ actor }}"></div>
+  <button class="btn btn-primary btn-sm" type="submit">Filter</button>
+</form>
+<table class="table">
+  <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Summary</th></tr></thead>
+  <tbody>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      <td>{{ r.actor_email or '—' }} <small style="color:var(--c-muted-text);">{{ r.actor_role or '' }}</small></td>
+      <td><code>{{ r.action }}</code></td>
+      <td>{{ r.target_kind }}{% if r.target_id %}<small>:{{ r.target_id }}</small>{% endif %}</td>
+      <td>{{ r.summary or '' }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p class="muted" style="margin-top:14px;">
+  Page {{ page }} · {{ rows|length }} of {{ total }} row(s)
+  {% if total > page * per_page %}
+    · <a href="{{ url_for('admin.audit_log', page=page+1, action=action, actor=actor) }}">next →</a>
+  {% endif %}
+</p>
+{% endblock %}

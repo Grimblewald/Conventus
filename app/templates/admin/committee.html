@@ -1,0 +1,36 @@
+{% extends "admin/_base.html" %}
+{% block title %}Committee · Admin{% endblock %}
+{% block admin %}
+<div class="section-head">
+  <div><div class="eyebrow">People</div><h2>Manage committee</h2></div>
+  {% if can('committee.edit_any') %}
+  <a class="btn btn-primary btn-sm" href="{{ url_for('admin.committee_new') }}">+ Add member</a>
+  {% endif %}
+</div>
+
+{% if items %}
+<form method="post" action="{{ url_for('admin.committee_reorder') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <p style="font-size:13px; color: var(--c-muted-text);">Drag the rows to reorder — the order column saves on submit.</p>
+  <table class="table">
+    <thead><tr><th>#</th><th>Member</th><th>Role</th><th>Affiliation</th><th></th></tr></thead>
+    <tbody class="reorder-list">
+      {% for m in items %}
+      <tr>
+        <td><input type="hidden" name="id" value="{{ m.id }}">{{ loop.index }}</td>
+        <td>
+          <a href="{{ url_for('admin.committee_edit', mid=m.id) }}">{{ m.display_name }}</a>
+        </td>
+        <td>{{ m.role }}</td>
+        <td>{{ m.affiliation }}</td>
+        <td>
+          <a class="btn btn-quiet btn-sm" href="{{ url_for('admin.committee_edit', mid=m.id) }}">Edit</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <button class="btn btn-primary btn-sm" type="submit">Save order</button>
+</form>
+{% else %}<p class="muted">No committee members yet.</p>{% endif %}
+{% endblock %}

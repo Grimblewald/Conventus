@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block body_class %}admin{% endblock %}
+{% block content %}
+<section class="block">
+  <div class="container admin-shell">
+    {% include "admin/_nav.html" %}
+    <div class="admin-main">
+      {% block admin %}{% endblock %}
+    </div>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Conferences · {{ site.site_name }}{% endblock %}
+{% block content %}
+<section class="block">
+  <div class="container">
+    <div class="section-head">
+      <div>
+        <div class="eyebrow">Events</div>
+        <h2>Conferences</h2>
+      </div>
+    </div>
+    {% if conferences %}
+      <div class="grid cols-3">
+        {% for c in conferences %}
+          <a class="conf-card" href="{{ url_for('public.conference_detail', slug=c.slug) }}">
+            <div class="art">
+              {% if c.hero_image_filename %}
+                <img src="{{ url_for('public.conference_upload', name=c.hero_image_filename) }}" alt="">
+              {% else %}
+                <div class="ph" data-label="EVENT IMAGE"></div>
+              {% endif %}
+            </div>
+            <div class="body">
+              <div class="date">{{ c.date_range }}</div>
+              <h3>{{ c.title }}</h3>
+              {% if c.city or c.venue %}<div class="loc">{{ c.venue }}{% if c.venue and c.city %} · {% endif %}{{ c.city }}</div>{% endif %}
+              {% if c.summary %}<p class="sum">{{ c.summary }}</p>{% endif %}
+              <div class="foot">
+                <span>{% if c.is_upcoming %}Upcoming{% else %}Past{% endif %}</span>
+                <span>→</span>
+              </div>
+            </div>
+          </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted">No conferences have been published yet.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

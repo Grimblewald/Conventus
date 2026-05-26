@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Committee · {{ site.site_name }}{% endblock %}
+{% block content %}
+<section class="block">
+  <div class="container">
+    <div class="section-head">
+      <div>
+        <div class="eyebrow">People</div>
+        <h2>Committee</h2>
+      </div>
+    </div>
+    {% if items %}
+      <div class="grid cols-3 committee-grid">
+        {% for m in items %}
+          <article class="committee-card">
+            <div class="portrait">
+              {% if m.portrait_filename %}
+                <img src="{{ url_for('public.committee_upload', name=m.portrait_filename) }}"
+                     alt="{{ m.portrait_alt_text or m.display_name }}">
+              {% else %}
+                <div class="ph" data-label="PORTRAIT"></div>
+              {% endif %}
+            </div>
+            <h3>{{ m.display_name }}</h3>
+            {% if m.role %}<div class="role">{{ m.role }}</div>{% endif %}
+            {% if m.position or m.affiliation %}
+              <div class="aff">{{ m.position }}{% if m.position and m.affiliation %} · {% endif %}{{ m.affiliation }}</div>
+            {% endif %}
+            {% if m.interests %}<p>{{ m.interests }}</p>{% endif %}
+            <ul class="links">
+              {% if m.orcid %}<li><a href="https://orcid.org/{{ m.orcid }}" target="_blank" rel="noopener">ORCID</a></li>{% endif %}
+              {% if m.scholar_url %}<li><a href="{{ m.scholar_url }}" target="_blank" rel="noopener">Scholar</a></li>{% endif %}
+              {% if m.website_url %}<li><a href="{{ m.website_url }}" target="_blank" rel="noopener">Website</a></li>{% endif %}
+            </ul>
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted">No committee members have been added yet.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,103 @@
+{% extends "admin/_base.html" %}
+{% block title %}Edit conference · Admin{% endblock %}
+{% block admin %}
+<div class="section-head">
+  <div><div class="eyebrow">Conferences</div><h2>{{ c.title }}</h2></div>
+  <a class="link" href="{{ url_for('admin.conferences') }}">← back</a>
+</div>
+
+<form method="post" class="form form-wide" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="row-2">
+    <div class="field"><label for="title">Title</label><input class="input" id="title" name="title" required value="{{ c.title }}"></div>
+    <div class="field"><label for="slug">Slug</label><input class="input" id="slug" name="slug" required value="{{ c.slug }}"></div>
+  </div>
+  <div class="field"><label for="subtitle">Subtitle</label><input class="input" id="subtitle" name="subtitle" value="{{ c.subtitle }}"></div>
+  <div class="row-2">
+    <div class="field"><label for="start_date">Start</label>
+      <input class="input" id="start_date" name="start_date" type="date" required value="{{ c.start_date.isoformat() }}"></div>
+    <div class="field"><label for="end_date">End</label>
+      <input class="input" id="end_date" name="end_date" type="date" required value="{{ c.end_date.isoformat() }}"></div>
+  </div>
+  <div class="row-2">
+    <div class="field"><label for="city">City</label><input class="input" id="city" name="city" value="{{ c.city }}"></div>
+    <div class="field"><label for="venue">Venue</label><input class="input" id="venue" name="venue" value="{{ c.venue }}"></div>
+  </div>
+  <div class="field"><label for="summary">Summary</label><textarea class="textarea" id="summary" name="summary" rows="3">{{ c.summary }}</textarea></div>
+  <div class="field"><label for="body">Body (Markdown)</label><textarea class="textarea" id="body" name="body" rows="10">{{ c.body }}</textarea></div>
+  <div class="field"><label for="tracks">Tracks (one per line)</label><textarea class="textarea" id="tracks" name="tracks" rows="4">{{ c.tracks }}</textarea></div>
+  <div class="row-2">
+    <div class="field"><label for="abstract_deadline">Abstract deadline</label>
+      <input class="input" id="abstract_deadline" name="abstract_deadline" type="date" value="{{ c.abstract_deadline.isoformat() if c.abstract_deadline else '' }}"></div>
+    <div class="field"><label for="early_bird_deadline">Early-bird deadline</label>
+      <input class="input" id="early_bird_deadline" name="early_bird_deadline" type="date" value="{{ c.early_bird_deadline.isoformat() if c.early_bird_deadline else '' }}"></div>
+  </div>
+
+  <div class="row-2">
+    <div class="field"><label for="hero_image">Hero image</label>
+      <input class="input" id="hero_image" name="hero_image" type="file" accept=".png,.jpg,.jpeg,.webp">
+      {% if c.hero_image_filename %}<label style="display:block; margin-top:6px;"><input type="checkbox" name="remove_hero_image"> Remove current</label>{% endif %}
+    </div>
+    <div class="field"><label for="booklet">Booklet (PDF)</label>
+      <input class="input" id="booklet" name="booklet" type="file" accept=".pdf">
+      {% if c.booklet_filename %}<label style="display:block; margin-top:6px;"><input type="checkbox" name="remove_booklet"> Remove current</label>{% endif %}
+    </div>
+  </div>
+  <div class="field"><label for="hero_caption">Hero caption</label>
+    <input class="input" id="hero_caption" name="hero_caption" value="{{ c.hero_caption }}"></div>
+
+  <div class="row-2">
+    <label><input type="checkbox" name="is_featured" {% if c.is_featured %}checked{% endif %}> Feature on home</label>
+    <label><input type="checkbox" name="is_draft" {% if c.is_draft %}checked{% endif %}> Draft (hide from public)</label>
+  </div>
+  <div style="margin-top:14px;"><button class="btn btn-primary" type="submit">Save</button></div>
+</form>
+
+<h3 style="margin-top:36px;">Registration tiers</h3>
+<form method="post" action="{{ url_for('admin.conference_tiers', cid=c.id) }}" class="form form-wide">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="action" value="save">
+  <table class="table">
+    <thead><tr><th>Order</th><th>Name</th><th>Amount ({{ site.currency_code }})</th><th>Description</th><th></th></tr></thead>
+    <tbody>
+    {% for t in c.price_tiers %}
+      <tr>
+        <td><input class="input" name="order_{{ t.id }}" value="{{ t.display_order }}" style="width:64px;"></td>
+        <td><input class="input" name="name_{{ t.id }}" value="{{ t.name }}"></td>
+        <td><input class="input" name="amount_{{ t.id }}" value="{{ t.amount }}" style="width:120px;"></td>
+        <td><input class="input" name="desc_{{ t.id }}" value="{{ t.description }}"></td>
+        <td>
+          <button class="btn btn-quiet btn-sm" type="submit" name="action" value="delete"
+                  formaction="{{ url_for('admin.conference_tiers', cid=c.id) }}"
+                  onclick="this.form.querySelector('[name=tier_id]').value={{ t.id }}">Delete</button>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <input type="hidden" name="tier_id" value="">
+  <button class="btn btn-primary btn-sm" type="submit">Save tiers</button>
+</form>
+
+<form method="post" action="{{ url_for('admin.conference_tiers', cid=c.id) }}" class="form" style="margin-top:14px; max-width:680px;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="action" value="add">
+  <div class="row-3">
+    <div class="field"><label for="t_name">Name</label><input class="input" id="t_name" name="name" required></div>
+    <div class="field"><label for="t_amount">Amount</label><input class="input" id="t_amount" name="amount" type="number" min="0" required></div>
+    <div class="field"><label for="t_desc">Description</label><input class="input" id="t_desc" name="description"></div>
+  </div>
+  <button class="btn btn-primary btn-sm" type="submit">+ Add tier</button>
+</form>
+
+{% if can('conf.delete') %}
+<hr>
+<form method="post" action="{{ url_for('admin.conference_delete_request', cid=c.id) }}"
+      onsubmit="return confirm('Send a confirmation code to delete this conference?')">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <h3>Danger zone</h3>
+  <p class="muted">Deleting a conference is irreversible. We'll email you a 6-digit confirmation code first.</p>
+  <button class="btn btn-quiet" type="submit">Begin delete →</button>
+</form>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Profile · {{ site.site_name }}{% endblock %}
+{% block content %}
+<section class="block">
+  <div class="container container-narrow">
+    <h1>Your profile</h1>
+    <form method="post" class="form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="field">
+        <label>Email</label>
+        <input class="input" value="{{ current_user.email }}" disabled>
+        <div class="help">You can't change the address — it's the one we use to send sign-in codes.</div>
+      </div>
+      <div class="field">
+        <label for="full_name">Full name</label>
+        <input class="input" id="full_name" name="full_name" value="{{ current_user.full_name or '' }}">
+      </div>
+      <div class="field">
+        <label for="affiliation">Affiliation</label>
+        <input class="input" id="affiliation" name="affiliation" value="{{ current_user.affiliation or '' }}">
+      </div>
+      <button class="btn btn-primary" type="submit">Save</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

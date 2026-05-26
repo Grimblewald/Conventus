@@ -1,0 +1,60 @@
+{% extends "admin/_base.html" %}
+{% block title %}Conferences · Admin{% endblock %}
+{% block admin %}
+<div class="section-head">
+  <div><div class="eyebrow">Events</div><h2>Conferences</h2></div>
+</div>
+
+{% if items %}
+<table class="table">
+  <thead><tr><th>Title</th><th>Dates</th><th>City</th><th>Status</th><th></th></tr></thead>
+  <tbody>
+    {% for c in items %}
+    <tr>
+      <td><a href="{{ url_for('admin.conference_edit', cid=c.id) }}">{{ c.title }}</a>
+        <small style="color: var(--c-muted-text);"><code>/conferences/{{ c.slug }}</code></small></td>
+      <td>{{ c.date_range }}</td>
+      <td>{{ c.city }}</td>
+      <td>
+        {% if c.is_draft %}<span class="status">Draft</span>
+        {% elif c.is_featured %}<span class="status" data-v="accepted">Featured</span>
+        {% else %}<span class="status">Live</span>{% endif %}
+      </td>
+      <td><a class="btn btn-quiet btn-sm" href="{{ url_for('admin.conference_edit', cid=c.id) }}">Edit</a></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="muted">No conferences yet.</p>{% endif %}
+
+{% if can('conf.create') %}
+<h3 style="margin-top:36px;">Create a new conference</h3>
+<form method="post" class="form form-wide">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="row-2">
+    <div class="field"><label for="title">Title</label><input class="input" id="title" name="title" required></div>
+    <div class="field"><label for="slug">Slug</label><input class="input" id="slug" name="slug" required></div>
+  </div>
+  <div class="field"><label for="subtitle">Subtitle</label><input class="input" id="subtitle" name="subtitle"></div>
+  <div class="row-2">
+    <div class="field"><label for="start_date">Start</label><input class="input" id="start_date" name="start_date" type="date" required></div>
+    <div class="field"><label for="end_date">End</label><input class="input" id="end_date" name="end_date" type="date" required></div>
+  </div>
+  <div class="row-2">
+    <div class="field"><label for="city">City</label><input class="input" id="city" name="city"></div>
+    <div class="field"><label for="venue">Venue</label><input class="input" id="venue" name="venue"></div>
+  </div>
+  <div class="field"><label for="summary">Summary</label><textarea class="textarea" id="summary" name="summary" rows="3"></textarea></div>
+  <div class="row-2">
+    <div class="field"><label for="abstract_deadline">Abstract deadline</label><input class="input" id="abstract_deadline" name="abstract_deadline" type="date"></div>
+    <div class="field"><label for="early_bird_deadline">Early-bird deadline</label><input class="input" id="early_bird_deadline" name="early_bird_deadline" type="date"></div>
+  </div>
+  <div class="field"><label for="tracks">Tracks (one per line)</label><textarea class="textarea" id="tracks" name="tracks" rows="4"></textarea></div>
+  <div class="row-2">
+    <label><input type="checkbox" name="is_featured"> Feature on home page</label>
+    <label><input type="checkbox" name="is_draft" checked> Save as draft</label>
+  </div>
+  <button class="btn btn-primary" type="submit">Create</button>
+</form>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,14 @@
+# Reverse-proxies the gunicorn service. Replace example.org with your domain.
+# Caddy will auto-provision TLS via Let's Encrypt.
+
+example.org {
+    encode zstd gzip
+    header {
+        # Talisman sets HSTS/CSP/etc., but Caddy's defaults are a useful belt.
+        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        -Server
+    }
+    reverse_proxy app:5005
+}

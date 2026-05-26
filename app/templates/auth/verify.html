@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Verify · {{ site.site_name }}{% endblock %}
+{% block content %}
+
+<section class="block">
+  <div class="container container-narrow" style="text-align: center;">
+    <div class="eyebrow step" style="justify-content: center;">Step 2 of 2</div>
+    <h1 style="font-size: 2.4rem; margin-top: 6px;">Check your inbox</h1>
+    <p class="lede">
+      We sent a 6-digit code to <strong>{{ email }}</strong>.
+      Enter it below to finish signing in.
+    </p>
+
+    <form method="post" class="form" autocomplete="off"
+          style="margin: 28px auto 0;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="otp-box">
+        {% for i in range(6) %}
+          <input class="otp-digit" inputmode="numeric" pattern="[0-9]*"
+                 maxlength="1" autocomplete="one-time-code"
+                 aria-label="Digit {{ loop.index }}">
+        {% endfor %}
+      </div>
+      <input type="hidden" id="otp-hidden" name="code" required>
+      <button class="btn btn-primary btn-lg" type="submit"
+              style="min-width: 200px;">Verify and sign in</button>
+    </form>
+
+    <div style="margin-top: 36px; font-family: var(--f-ui);
+                font-size: 13.5px; color: var(--c-muted-text);">
+      Didn't receive it?
+      <form method="post" action="{{ url_for('auth.resend') }}"
+            style="display: inline;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-quiet btn-sm" type="submit"
+                style="padding: 0;">Send a new code</button>
+      </form>
+      · <a href="{{ url_for('auth.login') }}">Use a different email</a>
+    </div>
+  </div>
+</section>
+
+{% endblock %}

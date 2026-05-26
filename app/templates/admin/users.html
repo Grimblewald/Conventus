@@ -1,0 +1,69 @@
+{% extends "admin/_base.html" %}
+{% block title %}Members · Admin{% endblock %}
+{% block admin %}
+<div class="section-head"><div><div class="eyebrow">People</div><h2>Members</h2></div></div>
+<div style="margin-bottom:14px; display:flex; gap:8px;">
+  {% for r in ['all', 'admin'] + editable_roles | list %}
+    <a class="btn btn-{% if role_filter == r %}primary{% else %}ghost{% endif %} btn-sm"
+       href="{{ url_for('admin.users', role=r) }}">{{ r|capitalize }}</a>
+  {% endfor %}
+</div>
+
+<form method="post" class="form form-wide">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="filter_role" value="{{ role_filter }}">
+  <table class="table">
+    <thead><tr><th></th><th>Email</th><th>Name</th><th>Role</th><th>Joined</th><th>Last login</th></tr></thead>
+    <tbody>
+      {% for u in items %}
+      <tr>
+        <td>
+          {% if u.role_name != 'admin' %}
+            <input type="checkbox" name="user_ids" value="{{ u.id }}">
+          {% endif %}
+        </td>
+        <td>{{ u.email }}</td>
+        <td>{{ u.full_name or '—' }}</td>
+        <td>
+          {% if u.role_name == 'admin' %}
+            <span class="status" data-v="accepted">admin</span>
+          {% else %}
+          <select class="select" name="role_for_{{ u.id }}" disabled style="width:140px;">
+            {% for r in ['unregistered','member','committee'] %}
+              <option {% if u.role_name == r %}selected{% endif %}>{{ r }}</option>
+            {% endfor %}
+          </select>
+          {% endif %}
+        </td>
+        <td>{{ u.created_at.strftime('%-d %b %Y') }}</td>
+        <td>{{ u.last_login_at.strftime('%-d %b %Y') if u.last_login_at else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div style="display:flex; gap:10px; margin-top:14px;">
+    <button class="btn btn-quiet btn-sm" type="submit" name="action" value="delete"
+            onclick="return confirm('Soft-delete the selected members?')">Soft-delete selected</button>
+  </div>
+</form>
+
+<h3 style="margin-top:36px;">Change a role</h3>
+<form method="post" class="form" style="max-width:560px;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="action" value="set_role">
+  <div class="row-2">
+    <div class="field"><label for="user_id">User</label>
+      <select class="select" id="user_id" name="user_id" required>
+        <option value="">—</option>
+        {% for u in items if u.role_name != 'admin' %}
+          <option value="{{ u.id }}">{{ u.email }}</option>
+        {% endfor %}
+      </select></div>
+    <div class="field"><label for="role">New role</label>
+      <select class="select" id="role" name="role">
+        {% for r in editable_roles %}<option>{{ r }}</option>{% endfor %}
+      </select></div>
+  </div>
+  <button class="btn btn-primary btn-sm" type="submit">Save role</button>
+</form>
+{% endblock %}

@@ -1,0 +1,25 @@
+{% extends "admin/_base.html" %}
+{% block title %}Fonts · Admin{% endblock %}
+{% block admin %}
+<div class="section-head"><div><div class="eyebrow">Site</div><h2>Fonts</h2></div></div>
+<p class="lede">All choices are web-safe system fonts — no external loads, no CSP relaxation.</p>
+<form method="post" class="form form-wide">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="row-2">
+    {% for key, lbl in [('font_heading','Headings'),('font_body','Body'),('font_link','Links'),('font_ui','UI')] %}
+      <div class="field">
+        <label for="{{ key }}">{{ lbl }}</label>
+        <select class="select" id="{{ key }}" name="{{ key }}">
+          {% for v, label in font_choices %}
+            <option value="{{ v }}" {% if s[key] == v %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+        <div class="font-preview" style="font-family: {{ FONT_STACKS[s[key]]['stack'] }};">
+          {{ FONT_STACKS[s[key]]['sample'] }}
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+  <button class="btn btn-primary" type="submit">Save fonts</button>
+</form>
+{% endblock %}

@@ -1,0 +1,49 @@
+{# Shared admin sub-navigation. Permission-gated. #}
+<aside class="admin-side">
+  <h5>Manage</h5>
+  <ul>
+    <li><a href="{{ url_for('admin.index') }}" {% if request.endpoint == 'admin.index' %}class="active"{% endif %}>Overview</a></li>
+    {% if can('conf.create') or can('conf.edit') or can('conf.delete') %}
+      <li><a href="{{ url_for('admin.conferences') }}">Conferences</a></li>
+    {% endif %}
+    {% if can('ann.publish') %}
+      <li><a href="{{ url_for('admin.announcements') }}">Announcements</a></li>
+    {% endif %}
+    {% if can('abs.review') %}
+      <li><a href="{{ url_for('admin.abstracts') }}">Abstracts</a></li>
+    {% endif %}
+    {% if can('committee.edit_self') or can('committee.edit_any') %}
+      <li><a href="{{ url_for('admin.committee_index') }}">Committee</a></li>
+    {% endif %}
+    {% if can('pages.edit') %}
+      <li><a href="{{ url_for('admin.pages') }}">Pages</a></li>
+    {% endif %}
+    {% if can('nav.edit') %}
+      <li><a href="{{ url_for('admin.nav') }}">Navigation</a></li>
+    {% endif %}
+    {% if can('footer.edit') %}
+      <li><a href="{{ url_for('admin.footer') }}">Footer</a></li>
+    {% endif %}
+    {% if can('users.view') or can('users.edit') %}
+      <li><a href="{{ url_for('admin.users') }}">Members</a></li>
+    {% endif %}
+  </ul>
+
+  {% if can('site.palette') or can('site.fonts') or can('site.images') or can('site.identity') %}
+  <h5>Site</h5>
+  <ul>
+    {% if can('site.identity') %}<li><a href="{{ url_for('admin.site_identity') }}">Identity</a></li>{% endif %}
+    {% if can('site.palette') %}<li><a href="{{ url_for('admin.site_palette') }}">Palette</a></li>{% endif %}
+    {% if can('site.fonts') %}<li><a href="{{ url_for('admin.site_fonts') }}">Fonts</a></li>{% endif %}
+    {% if can('site.images') %}<li><a href="{{ url_for('admin.site_images') }}">Images</a></li>{% endif %}
+  </ul>
+  {% endif %}
+
+  {% if current_user.is_admin %}
+  <h5>System</h5>
+  <ul>
+    <li><a href="{{ url_for('admin.permissions') }}">Permissions</a></li>
+    <li><a href="{{ url_for('admin.audit_log') }}">Audit log</a></li>
+  </ul>
+  {% endif %}
+</aside>

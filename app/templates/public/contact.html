@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Contact · {{ site.site_name }}{% endblock %}
+{% block content %}
+<section class="block">
+  <div class="container container-narrow">
+    <div class="section-head">
+      <div>
+        <div class="eyebrow">Get in touch</div>
+        <h2>Contact</h2>
+      </div>
+    </div>
+    {% if recipients %}
+    <form method="post" class="form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {# Honeypot — bots fill this; humans never see it. #}
+      <div style="position:absolute; left:-9999px;" aria-hidden="true">
+        <label>Website <input name="website" tabindex="-1" autocomplete="off"></label>
+      </div>
+
+      <div class="field">
+        <label for="recipient_id">Recipient</label>
+        <select class="select" id="recipient_id" name="recipient_id" required>
+          <option value="">— Select —</option>
+          {% for r in recipients %}
+            <option value="{{ r.id }}">{{ r.full_name or r.email }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="row-2">
+        <div class="field">
+          <label for="name">Your name</label>
+          <input class="input" id="name" name="name" required value="{{ form.name or '' }}">
+        </div>
+        <div class="field">
+          <label for="email">Your email</label>
+          <input class="input" id="email" name="email" type="email" required value="{{ form.email or '' }}">
+        </div>
+      </div>
+      <div class="field">
+        <label for="subject">Subject</label>
+        <input class="input" id="subject" name="subject" value="{{ form.subject or '' }}">
+      </div>
+      <div class="field">
+        <label for="message">Message</label>
+        <textarea class="textarea" id="message" name="message" required>{{ form.message or '' }}</textarea>
+      </div>
+      <button class="btn btn-primary" type="submit">Send</button>
+    </form>
+    {% else %}
+      <p class="muted">No contact recipients are configured yet.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

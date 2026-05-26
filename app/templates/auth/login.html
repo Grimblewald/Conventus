@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Sign in · {{ site.site_name }}{% endblock %}
+{% block content %}
+
+<section class="block">
+  <div class="container container-narrow">
+    <div class="eyebrow step">Step 1 of 2</div>
+    <h1 style="font-size: 2.4rem; margin-top: 6px;">Sign in to {{ site.site_name }}</h1>
+    <p class="lede" style="max-width: 58ch;">
+      Enter your email and we'll send you a 6-digit code to sign in. No
+      password required. If you don't have an account yet, one will be
+      created for you when you verify the code.
+    </p>
+
+    <form method="post" class="form" style="margin-top: 28px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="field">
+        <label for="email">Email address</label>
+        <input class="input" id="email" name="email" type="email" required
+               autofocus value="{{ email or '' }}"
+               placeholder="you@example.org">
+        <div class="help">
+          We'll send a single-use sign-in code. Codes expire after 10 minutes.
+        </div>
+      </div>
+      <button class="btn btn-primary btn-lg" type="submit">
+        Send sign-in code →
+      </button>
+    </form>
+
+    <div style="margin-top: 48px; padding-top: 24px;
+                border-top: 1px solid var(--c-card-border);
+                font-family: var(--f-ui); font-size: 13.5px;
+                color: var(--c-muted-text);">
+      By signing in you agree to the
+      <a href="#">terms of use</a> and the
+      <a href="#">code of conduct</a>.
+    </div>
+  </div>
+</section>
+
+{% endblock %}

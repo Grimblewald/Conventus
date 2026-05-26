@@ -1,0 +1,73 @@
+{% extends "admin/_base.html" %}
+{% block title %}Footer · Admin{% endblock %}
+{% block admin %}
+<div class="section-head"><div><div class="eyebrow">Content</div><h2>Footer</h2></div></div>
+
+<form method="post" class="form form-wide">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="action" value="save">
+  {% for col in columns %}
+    <div class="footer-col-card">
+      <div class="row-2">
+        <div class="field">
+          <label>Column title</label>
+          <input class="input" name="col_title_{{ col.id }}" value="{{ col.title }}">
+        </div>
+        <div class="field">
+          <label>Display order</label>
+          <input class="input" name="col_order_{{ col.id }}" value="{{ col.display_order }}">
+        </div>
+      </div>
+
+      <table class="table">
+        <thead><tr><th>Order</th><th>Label</th><th>Target</th><th>New tab</th></tr></thead>
+        <tbody>
+          {% for ln in col.links %}
+            <tr>
+              <td><input class="input" name="link_order_{{ ln.id }}" value="{{ ln.display_order }}" style="width:64px;"></td>
+              <td><input class="input" name="link_label_{{ ln.id }}" value="{{ ln.label }}"></td>
+              <td>
+                <select class="select" name="link_target_{{ ln.id }}">
+                  {% for v, lbl in target_choices %}
+                    <option value="{{ v }}" {% if ln.target == v %}selected{% endif %}>{{ lbl }}</option>
+                  {% endfor %}
+                  {% if ln.target.startswith('url:') %}
+                    <option value="{{ ln.target }}" selected>External — {{ ln.target[4:] }}</option>
+                  {% endif %}
+                </select>
+              </td>
+              <td><input type="checkbox" name="link_new_tab_{{ ln.id }}" {% if ln.open_in_new_tab %}checked{% endif %}></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endfor %}
+  <button class="btn btn-primary" type="submit">Save footer</button>
+</form>
+
+<div class="grid cols-2" style="margin-top:36px;">
+  <form method="post" class="form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="add_column">
+    <h3>Add a column</h3>
+    <div class="field"><label>Title</label><input class="input" name="title" required></div>
+    <button class="btn btn-primary btn-sm" type="submit">Add column</button>
+  </form>
+  <form method="post" class="form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="add_link">
+    <h3>Add a link</h3>
+    <div class="field"><label>Column</label>
+      <select class="select" name="column_id">
+        {% for c in columns %}<option value="{{ c.id }}">{{ c.title }}</option>{% endfor %}
+      </select></div>
+    <div class="field"><label>Label</label><input class="input" name="label" required></div>
+    <div class="field"><label>Target</label>
+      <select class="select" name="target">
+        {% for v, lbl in target_choices %}<option value="{{ v }}">{{ lbl }}</option>{% endfor %}
+      </select></div>
+    <button class="btn btn-primary btn-sm" type="submit">Add link</button>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · {{ site.site_name }}{% endblock %}
+{% block content %}
+<section class="block">
+  <div class="container">
+    <div class="section-head">
+      <div>
+        <div class="eyebrow">Hello{% if current_user.full_name %}, {{ current_user.full_name }}{% endif %}</div>
+        <h2>Your dashboard</h2>
+      </div>
+      <a class="link" href="{{ url_for('member.profile') }}">Edit profile →</a>
+    </div>
+
+    <h3>Registrations</h3>
+    {% if regs %}
+      <table class="table">
+        <thead><tr><th>Conference</th><th>Tier</th><th>Amount</th><th>Status</th></tr></thead>
+        <tbody>
+          {% for r in regs %}
+          <tr>
+            <td><a href="{{ url_for('public.conference_detail', slug=r.conference.slug) }}">{{ r.conference.title }}</a></td>
+            <td>{{ r.tier_name }}</td>
+            <td>{{ site.currency_symbol }}{{ r.amount }} {{ site.currency_code }}</td>
+            <td><span class="status" data-v="{{ r.status }}">{{ r.status }}</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">You haven't registered for any conferences yet.</p>
+    {% endif %}
+
+    <h3 style="margin-top:36px;">Abstracts</h3>
+    {% if abstracts %}
+      <table class="table">
+        <thead><tr><th>Conference</th><th>Title</th><th>Status</th><th>Submitted</th></tr></thead>
+        <tbody>
+          {% for a in abstracts %}
+          <tr>
+            <td>{{ a.conference.title }}</td>
+            <td>{{ a.title }}</td>
+            <td><span class="status" data-v="{{ a.status }}">{{ a.status }}</span></td>
+            <td>{{ a.created_at.strftime('%-d %b %Y') }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="muted">No abstracts submitted yet.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

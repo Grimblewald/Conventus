@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Register · {{ c.title }}{% endblock %}
+{% block content %}
+<section class="block">
+  <div class="container">
+    <div class="section-head">
+      <div>
+        <div class="eyebrow">{{ c.date_range }}</div>
+        <h2>Register for {{ c.title }}</h2>
+      </div>
+    </div>
+    {% if not tiers %}
+      <p class="muted">No registration tiers have been configured yet.</p>
+    {% else %}
+    <form method="post" class="form form-wide">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="field">
+        <div class="label">Tier</div>
+        <div class="tiers">
+          {% for t in tiers %}
+            <label class="tier">
+              <input type="radio" name="tier" value="{{ t.name }}" {% if existing and existing.tier_name == t.name %}checked{% endif %} required>
+              <div class="tier-inner">
+                <h4>{{ t.name }}</h4>
+                <div class="price">{{ site.currency_symbol }}{{ t.amount }} <small>{{ site.currency_code }}</small></div>
+                {% if t.description %}<p style="font-size:13.5px; color: var(--c-muted-text); margin-top:8px;">{{ t.description }}</p>{% endif %}
+              </div>
+            </label>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="row-2">
+        <div class="field">
+          <label for="dietary">Dietary preferences</label>
+          <input class="input" id="dietary" name="dietary" value="{{ existing.dietary if existing else '' }}">
+        </div>
+        <div class="field">
+          <label for="accessibility">Accessibility needs</label>
+          <input class="input" id="accessibility" name="accessibility" value="{{ existing.accessibility if existing else '' }}">
+        </div>
+      </div>
+      <button class="btn btn-primary" type="submit">{{ 'Update registration' if existing else 'Register' }}</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,110 @@
+{% extends "setup/_layout.html" %}
+{% block setup_body %}
+<div class="setup-eyebrow">First-run setup · 2 of 2</div>
+<h1>Configure your site</h1>
+<p class="lede">
+  These values are pre-filled from <code>placeholder.yaml</code>. Edit anything
+  you'd like; you can change all of it later from the admin panel.
+</p>
+
+<form method="post" class="form" enctype="application/x-www-form-urlencoded" style="margin-top:20px;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <h3 style="margin-top:14px;">Administrator account</h3>
+  <p style="font-size:13.5px; color:#666;">This becomes the first admin. They'll sign in via OTP at <code>/auth/login</code>.</p>
+  <div class="row-2">
+    <div class="field">
+      <label for="admin_email">Admin email</label>
+      <input class="input" id="admin_email" name="admin_email" type="email" required
+             value="{{ data.admin.email if data.admin else '' }}">
+    </div>
+    <div class="field">
+      <label for="admin_full_name">Admin name</label>
+      <input class="input" id="admin_full_name" name="admin_full_name"
+             value="{{ data.admin.full_name if data.admin else '' }}">
+    </div>
+  </div>
+
+  <h3 style="margin-top:28px;">Site identity</h3>
+  <div class="row-2">
+    <div class="field">
+      <label for="site_name">Site name</label>
+      <input class="input" id="site_name" name="site_name" required
+             value="{{ data.site.name if data.site else '' }}">
+    </div>
+    <div class="field">
+      <label for="site_browser_tab_title">Browser tab title</label>
+      <input class="input" id="site_browser_tab_title" name="site_browser_tab_title"
+             value="{{ data.site.browser_tab_title if data.site else '' }}">
+    </div>
+  </div>
+  <div class="field">
+    <label for="site_tagline">Tagline</label>
+    <input class="input" id="site_tagline" name="site_tagline"
+           value="{{ data.site.tagline if data.site else '' }}">
+  </div>
+  <div class="row-3">
+    <div class="field">
+      <label for="site_contact_email">Contact email</label>
+      <input class="input" id="site_contact_email" name="site_contact_email" type="email"
+             value="{{ data.site.contact_email if data.site else '' }}">
+    </div>
+    <div class="field">
+      <label for="site_currency_code">Currency code</label>
+      <input class="input" id="site_currency_code" name="site_currency_code" maxlength="4"
+             value="{{ data.site.currency_code if data.site else 'USD' }}">
+    </div>
+    <div class="field">
+      <label for="site_currency_symbol">Symbol</label>
+      <input class="input" id="site_currency_symbol" name="site_currency_symbol" maxlength="3"
+             value="{{ data.site.currency_symbol if data.site else '$' }}">
+    </div>
+  </div>
+  <div class="field">
+    <label for="site_copyright_line">Copyright line (<code>{year}</code> is replaced live)</label>
+    <input class="input" id="site_copyright_line" name="site_copyright_line"
+           value="{{ data.site.copyright_line if data.site else '' }}">
+  </div>
+
+  <h3 style="margin-top:28px;">Palette</h3>
+  <div class="palette-grid">
+    {% set palette_fields = [
+      ('page_bg','Page background'), ('page_text','Page text'),
+      ('header_bg','Header background'), ('header_text','Header text'),
+      ('link','Link'), ('link_hover','Link hover'),
+      ('accent','Accent'), ('accent_ink','Accent text'),
+      ('footer_bg','Footer background'), ('footer_text','Footer text'),
+      ('button_bg','Button background'), ('button_text','Button text'),
+      ('card_bg','Card background'), ('card_border','Card border'),
+      ('muted_text','Muted text'),
+    ] %}
+    {% for key, label in palette_fields %}
+      <label class="palette-row">
+        <span>{{ label }}</span>
+        <input type="color" name="palette_{{ key }}" value="{{ (data.palette[key] if data.palette and data.palette[key] else '#888888') }}">
+      </label>
+    {% endfor %}
+  </div>
+
+  <h3 style="margin-top:28px;">Fonts</h3>
+  <div class="row-3">
+    {% for key, label in [('heading','Headings'),('body','Body'),('link','Links')] %}
+      <div class="field">
+        <label for="font_{{ key }}">{{ label }}</label>
+        <select class="select" id="font_{{ key }}" name="font_{{ key }}">
+          {% for v, vl in font_choices %}
+            <option value="{{ v }}" {% if (data.fonts and data.fonts[key] == v) %}selected{% endif %}>{{ vl }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    {% endfor %}
+  </div>
+
+  <div style="margin-top: 28px; display:flex; gap:12px; align-items:center;">
+    <button class="btn btn-primary" type="submit">Finish setup →</button>
+    <span style="font-size:13px; color:#666;">
+      Default content (pages, sample announcements, sample conference) will also be loaded.
+    </span>
+  </div>
+</form>
+{% endblock %}

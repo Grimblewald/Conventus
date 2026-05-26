@@ -1,0 +1,58 @@
+{% extends "admin/_base.html" %}
+{% block title %}Palette · Admin{% endblock %}
+{% block admin %}
+<div class="section-head"><div><div class="eyebrow">Site</div><h2>Palette</h2></div></div>
+<p class="lede">Change any colour and the site updates instantly. Save to persist.</p>
+<form method="post" class="form form-wide">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="palette-grid">
+    {% set labels = {
+      'palette_page_bg': 'Page background',
+      'palette_page_text': 'Page text',
+      'palette_muted_text': 'Muted text',
+      'palette_link': 'Link',
+      'palette_link_hover': 'Link hover',
+      'palette_accent': 'Accent',
+      'palette_accent_ink': 'Accent text',
+      'palette_header_bg': 'Header background',
+      'palette_header_text': 'Header text',
+      'palette_footer_bg': 'Footer background',
+      'palette_footer_text': 'Footer text',
+      'palette_card_bg': 'Card background',
+      'palette_card_border': 'Card border',
+      'palette_button_bg': 'Button background',
+      'palette_button_text': 'Button text',
+    } %}
+    {% for k in fields %}
+      <label class="palette-row">
+        <span>{{ labels[k] }}</span>
+        <input type="color" name="{{ k }}" value="{{ s[k] }}"
+               data-key="{{ k }}" class="palette-input">
+        <code>{{ s[k] }}</code>
+      </label>
+    {% endfor %}
+  </div>
+  <button class="btn btn-primary" type="submit" style="margin-top:18px;">Save palette</button>
+</form>
+{% endblock %}
+{% block scripts %}
+<script>
+  // Live-preview palette changes by writing CSS variables on the fly.
+  document.querySelectorAll('.palette-input').forEach(el => {
+    el.addEventListener('input', () => {
+      const k = el.dataset.key.replace('palette_', '');
+      const cssVar = {
+        page_bg: '--c-page-bg', page_text: '--c-page-text', muted_text: '--c-muted-text',
+        link: '--c-link', link_hover: '--c-link-hover',
+        accent: '--c-accent', accent_ink: '--c-accent-ink',
+        header_bg: '--c-header-bg', header_text: '--c-header-text',
+        footer_bg: '--c-footer-bg', footer_text: '--c-footer-text',
+        card_bg: '--c-card-bg', card_border: '--c-card-border',
+        button_bg: '--c-button-bg', button_text: '--c-button-text',
+      }[k];
+      if (cssVar) document.documentElement.style.setProperty(cssVar, el.value);
+      el.parentElement.querySelector('code').textContent = el.value;
+    });
+  });
+</script>
+{% endblock %}

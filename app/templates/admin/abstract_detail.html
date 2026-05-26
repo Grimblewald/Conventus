@@ -1,0 +1,45 @@
+{% extends "admin/_base.html" %}
+{% block title %}{{ a.title }} · Admin{% endblock %}
+{% block admin %}
+<div class="section-head">
+  <div><div class="eyebrow">Abstract</div><h2>{{ a.title }}</h2></div>
+  <a class="link" href="{{ url_for('admin.abstracts') }}">← back</a>
+</div>
+<dl class="hero-meta">
+  <div><dt>Conference</dt><dd>{{ a.conference.title if a.conference else '?' }}</dd></div>
+  <div><dt>Author</dt><dd>{{ a.user.email if a.user else '?' }}</dd></div>
+  <div><dt>Track</dt><dd>{{ a.track or '—' }}</dd></div>
+  <div><dt>Presentation</dt><dd>{{ a.presentation_type }}</dd></div>
+  <div><dt>Keywords</dt><dd>{{ a.keywords or '—' }}</dd></div>
+</dl>
+<h3>Authors</h3>
+<p style="white-space:pre-wrap;">{{ a.authors }}</p>
+<h3>Body</h3>
+<div class="md">{{ a.body | md | safe }}</div>
+{% if a.figure_filename %}
+  <h3>Figure</h3>
+  <p><a class="btn btn-quiet btn-sm" href="{{ url_for('member.abstract_figure', aid=a.id) }}">Download figure</a></p>
+{% endif %}
+{% if a.coi %}<h3>Conflicts of interest</h3><p>{{ a.coi }}</p>{% endif %}
+
+<hr>
+<form method="post" class="form form-wide">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="row-2">
+    <div class="field">
+      <label for="status">Decision</label>
+      <select class="select" id="status" name="status">
+        {% for s in ['submitted', 'accepted', 'rejected', 'revise'] %}
+          <option value="{{ s }}" {% if a.status == s %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="field" style="align-self:end;"><small class="muted">
+      {% if a.decided_at %}Last decided by {{ a.decided_by.email if a.decided_by else '?' }}
+      on {{ a.decided_at.strftime('%-d %b %Y') }}{% endif %}</small></div>
+  </div>
+  <div class="field"><label for="reviewer_notes">Reviewer notes (private)</label>
+    <textarea class="textarea" id="reviewer_notes" name="reviewer_notes" rows="6">{{ a.reviewer_notes }}</textarea></div>
+  <button class="btn btn-primary" type="submit">Save decision</button>
+</form>
+{% endblock %}

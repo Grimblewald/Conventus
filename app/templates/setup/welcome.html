@@ -1,0 +1,23 @@
+{% extends "setup/_layout.html" %}
+{% block setup_body %}
+<div class="setup-eyebrow">First-run setup · 1 of 2</div>
+<h1>Welcome — let's set up your site.</h1>
+<p class="lede">
+  This is a one-time wizard. To prove you have access to the host, paste the
+  setup password that was printed to the server console when the app first started.
+  It's also saved to <code>instance/setup-pw</code> on disk.
+</p>
+<form method="post" class="form" autocomplete="off" style="margin-top:18px;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="field">
+    <label for="password">Setup password</label>
+    <input class="input" id="password" name="password" type="password" required autofocus>
+    <div class="help">Look for a banner like <code>FIRST-RUN SETUP REQUIRED</code> in <code>flask.log</code> or stdout.</div>
+  </div>
+  <button class="btn btn-primary" type="submit">Continue →</button>
+</form>
+<p style="margin-top: 28px; font-size: 13px; color: #888;">
+  After setup completes, this wizard becomes permanently unreachable. The password
+  file is deleted automatically.
+</p>
+{% endblock %}

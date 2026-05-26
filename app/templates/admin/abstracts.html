@@ -1,0 +1,27 @@
+{% extends "admin/_base.html" %}
+{% block title %}Abstracts · Admin{% endblock %}
+{% block admin %}
+<div class="section-head"><div><div class="eyebrow">Submissions</div><h2>Abstracts</h2></div></div>
+<div style="margin-bottom:14px; display:flex; gap:8px;">
+  {% for s in ['submitted', 'accepted', 'rejected', 'revise', 'all'] %}
+    <a class="btn btn-{% if status == s %}primary{% else %}ghost{% endif %} btn-sm"
+       href="{{ url_for('admin.abstracts', status=s) }}">{{ s|capitalize }}</a>
+  {% endfor %}
+</div>
+{% if items %}
+<table class="table">
+  <thead><tr><th>Title</th><th>Conference</th><th>Author</th><th>Status</th><th>Submitted</th></tr></thead>
+  <tbody>
+    {% for a in items %}
+    <tr>
+      <td><a href="{{ url_for('admin.abstract_detail', aid=a.id) }}">{{ a.title }}</a></td>
+      <td>{{ a.conference.title if a.conference else '?' }}</td>
+      <td>{{ a.user.email if a.user else '?' }}</td>
+      <td><span class="status" data-v="{{ a.status }}">{{ a.status }}</span></td>
+      <td>{{ a.created_at.strftime('%-d %b %Y') }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="muted">Nothing here.</p>{% endif %}
+{% endblock %}

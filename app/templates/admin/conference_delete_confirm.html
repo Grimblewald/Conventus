@@ -1,0 +1,17 @@
+{% extends "admin/_base.html" %}
+{% block title %}Confirm delete · Admin{% endblock %}
+{% block admin %}
+<div class="section-head">
+  <div><div class="eyebrow">Confirm</div><h2>Delete “{{ c.title }}”</h2></div>
+  <a class="link" href="{{ url_for('admin.conference_edit', cid=c.id) }}">← cancel</a>
+</div>
+<p class="lede">We emailed a 6-digit code to <strong>{{ current_user.email }}</strong>. Enter it below to permanently soft-delete this conference.</p>
+<form method="post" class="form" autocomplete="off">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="field">
+    <label for="code">Confirmation code</label>
+    <input class="input" id="code" name="code" inputmode="numeric" required>
+  </div>
+  <button class="btn btn-primary" type="submit">Delete conference</button>
+</form>
+{% endblock %}

@@ -1,0 +1,44 @@
+{% extends "admin/_base.html" %}
+{% block title %}Announcements · Admin{% endblock %}
+{% block admin %}
+<div class="section-head"><div><div class="eyebrow">News</div><h2>Announcements</h2></div></div>
+
+<form method="post" class="form form-wide">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <h3>Post a new announcement</h3>
+  <div class="row-2">
+    <div class="field"><label for="title">Title</label><input class="input" id="title" name="title" required></div>
+    <div class="field"><label for="kind">Kind</label>
+      <select class="select" id="kind" name="kind">{% for k in kinds %}<option>{{ k }}</option>{% endfor %}</select></div>
+  </div>
+  <div class="field"><label for="body">Body (Markdown)</label><textarea class="textarea" id="body" name="body" rows="5"></textarea></div>
+  <label style="display:flex; align-items:center; gap:6px;"><input type="checkbox" name="pinned"> Pin to top</label>
+  <div style="margin-top:14px;"><button class="btn btn-primary btn-sm" type="submit">Post</button></div>
+</form>
+
+<h3 style="margin-top:36px;">Current</h3>
+{% if items %}
+<table class="table">
+  <thead><tr><th>Title</th><th>Kind</th><th>Pinned</th><th>Posted</th><th></th></tr></thead>
+  <tbody>
+    {% for a in items %}
+    <tr>
+      <td><a href="{{ url_for('admin.announcement_edit', aid=a.id) }}">{{ a.title }}</a></td>
+      <td>{{ a.kind }}</td>
+      <td>{% if a.pinned %}Yes{% endif %}</td>
+      <td>{{ a.published_at.strftime('%-d %b %Y') }}</td>
+      <td>
+        {% if can('ann.delete') %}
+        <form method="post" action="{{ url_for('admin.announcement_delete', aid=a.id) }}"
+              onsubmit="return confirm('Soft-delete this announcement?')" style="display:inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-quiet btn-sm">Delete</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="muted">No announcements yet.</p>{% endif %}
+{% endblock %}

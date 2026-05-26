@@ -1,0 +1,44 @@
+{% extends "admin/_base.html" %}
+{% block title %}Admin · {{ site.site_name }}{% endblock %}
+{% block admin %}
+<div class="section-head">
+  <div><div class="eyebrow">Overview</div><h2>Admin dashboard</h2></div>
+</div>
+
+<div class="grid cols-4 stats">
+  <div class="stat"><span class="n">{{ stats.members }}</span><span class="l">Members</span></div>
+  <div class="stat"><span class="n">{{ stats.conferences }}</span><span class="l">Conferences</span></div>
+  <div class="stat"><span class="n">{{ stats.abstracts }}</span><span class="l">Abstracts</span></div>
+  <div class="stat"><span class="n">{{ stats.registrations }}</span><span class="l">Registrations</span></div>
+</div>
+
+{% if stats.pending_abstracts %}
+<div style="margin-top:18px;">
+  <a class="link" href="{{ url_for('admin.abstracts') }}">{{ stats.pending_abstracts }} abstract(s) awaiting review →</a>
+</div>
+{% endif %}
+
+<div class="grid cols-2" style="margin-top:36px;">
+  <div>
+    <h3>Recent abstracts</h3>
+    {% if recent_abs %}
+      <ul class="recent">
+        {% for a in recent_abs %}
+          <li><a href="{{ url_for('admin.abstract_detail', aid=a.id) }}">{{ a.title }}</a>
+              <small>· {{ a.status }}</small></li>
+        {% endfor %}
+      </ul>
+    {% else %}<p class="muted">None yet.</p>{% endif %}
+  </div>
+  <div>
+    <h3>Recent registrations</h3>
+    {% if recent_regs %}
+      <ul class="recent">
+        {% for r in recent_regs %}
+          <li>{{ r.user.email if r.user else '?' }} <small>· {{ r.conference.title if r.conference else '?' }} · {{ r.tier_name }}</small></li>
+        {% endfor %}
+      </ul>
+    {% else %}<p class="muted">None yet.</p>{% endif %}
+  </div>
+</div>
+{% endblock %}

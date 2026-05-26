@@ -1,0 +1,37 @@
+{% extends "admin/_base.html" %}
+{% block title %}Identity · Admin{% endblock %}
+{% block admin %}
+<div class="section-head"><div><div class="eyebrow">Site</div><h2>Identity</h2></div></div>
+<form method="post" class="form form-wide">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="row-2">
+    <div class="field"><label for="site_name">Site name</label>
+      <input class="input" id="site_name" name="site_name" value="{{ s.site_name }}"></div>
+    <div class="field"><label for="browser_tab_title">Browser tab title</label>
+      <input class="input" id="browser_tab_title" name="browser_tab_title" value="{{ s.browser_tab_title }}"></div>
+  </div>
+  <div class="row-2">
+    <div class="field"><label for="short_name">Short name</label>
+      <input class="input" id="short_name" name="short_name" value="{{ s.short_name }}"></div>
+    <div class="field"><label for="tagline">Tagline</label>
+      <input class="input" id="tagline" name="tagline" value="{{ s.tagline }}"></div>
+  </div>
+  <div class="row-3">
+    <div class="field"><label for="contact_email">Contact email</label>
+      <input class="input" id="contact_email" name="contact_email" type="email" value="{{ s.contact_email }}"></div>
+    <div class="field"><label for="currency_code">Currency code</label>
+      <input class="input" id="currency_code" name="currency_code" value="{{ s.currency_code }}"></div>
+    <div class="field"><label for="currency_symbol">Currency symbol</label>
+      <input class="input" id="currency_symbol" name="currency_symbol" value="{{ s.currency_symbol }}"></div>
+  </div>
+  <div class="row-2">
+    <div class="field"><label for="locale">Locale</label>
+      <input class="input" id="locale" name="locale" value="{{ s.locale }}"></div>
+    <div class="field"><label for="timezone">Timezone</label>
+      <input class="input" id="timezone" name="timezone" value="{{ s.timezone }}"></div>
+  </div>
+  <div class="field"><label for="copyright_line">Copyright line ({year} is replaced live)</label>
+    <input class="input" id="copyright_line" name="copyright_line" value="{{ s.copyright_line }}"></div>
+  <button class="btn btn-primary" type="submit">Save identity</button>
+</form>
+{% endblock %}

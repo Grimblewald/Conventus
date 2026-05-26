@@ -1,0 +1,47 @@
+[project]
+name = "society-site"
+version = "0.1.0"
+description = "A reusable, blank-canvas Flask website + conference management system for academic societies."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    # Core framework
+    "flask==3.0.3",
+    "flask-login==0.6.3",
+    "flask-sqlalchemy==3.1.1",
+    "flask-migrate==4.0.7",
+    "flask-wtf==1.2.1",
+    "flask-limiter==3.8.0",
+    "flask-talisman==1.1.0",
+    "flask-babel==4.0.0",
+    "werkzeug==3.0.4",
+
+    # Database drivers
+    "psycopg[binary]==3.2.3",
+
+    # Utilities
+    "email-validator==2.2.0",
+    "python-dotenv>=1.0.1",
+    "pyyaml>=6.0.2",
+    "pillow>=10.4.0",
+    "argon2-cffi>=23.1.0",
+    "limits[redis]>=3.13.0",
+
+    # Production WSGI
+    "gunicorn==23.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-flask>=1.3.0",
+    "ruff>=0.6.9",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Submit abstract · {{ c.title }}{% endblock %}
+{% block content %}
+<section class="block">
+  <div class="container">
+    <div class="section-head">
+      <div>
+        <div class="eyebrow">{{ c.date_range }}</div>
+        <h2>Submit an abstract for {{ c.title }}</h2>
+      </div>
+    </div>
+    <form method="post" class="form form-wide" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="field">
+        <label for="title">Title</label>
+        <input class="input" id="title" name="title" required value="{{ form.title or '' }}">
+      </div>
+      <div class="field">
+        <label for="authors">Authors</label>
+        <textarea class="textarea" id="authors" name="authors" required
+                  placeholder="Name, Affiliation; Name, Affiliation">{{ form.authors or '' }}</textarea>
+      </div>
+      <div class="field">
+        <label for="body">Abstract body (300-word limit, soft cap 320)</label>
+        <textarea class="textarea" id="body" name="body" required>{{ form.body or '' }}</textarea>
+      </div>
+      <div class="row-3">
+        <div class="field">
+          <label for="track">Track</label>
+          <select class="select" id="track" name="track">
+            <option value="">—</option>
+            {% for t in tracks %}<option {% if form.track == t %}selected{% endif %}>{{ t }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="presentation_type">Presentation</label>
+          <select class="select" id="presentation_type" name="presentation_type">
+            {% for opt in ['Either','Oral','Poster'] %}
+              <option {% if form.presentation_type == opt %}selected{% endif %}>{{ opt }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="keywords">Keywords</label>
+          <input class="input" id="keywords" name="keywords" value="{{ form.keywords or '' }}">
+        </div>
+      </div>
+      <div class="field">
+        <label for="figure">Figure (optional — PNG, JPG, TIFF or PDF, max 8 MB)</label>
+        <input class="input" id="figure" name="figure" type="file" accept=".png,.jpg,.jpeg,.tif,.tiff,.pdf">
+      </div>
+      <div class="field">
+        <label for="coi">Conflicts of interest</label>
+        <textarea class="textarea" id="coi" name="coi">{{ form.coi or '' }}</textarea>
+      </div>
+      <button class="btn btn-primary" type="submit">Submit abstract</button>
+    </form>
+  </div>
+</section>
+{% endblock %}

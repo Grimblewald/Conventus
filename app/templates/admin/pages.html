@@ -1,0 +1,29 @@
+{% extends "admin/_base.html" %}
+{% block title %}Pages · Admin{% endblock %}
+{% block admin %}
+<div class="section-head">
+  <div><div class="eyebrow">Content</div><h2>Pages</h2></div>
+  <a class="btn btn-primary btn-sm" href="{{ url_for('admin.page_new') }}">+ New page</a>
+</div>
+{% if items %}
+<table class="table">
+  <thead><tr><th>Title</th><th>Slug</th><th>Published</th><th>Updated</th><th></th></tr></thead>
+  <tbody>
+    {% for p in items %}
+    <tr>
+      <td><a href="{{ url_for('admin.page_edit', pid=p.id) }}">{{ p.title }}</a></td>
+      <td><code>/p/{{ p.slug }}</code></td>
+      <td>{% if p.published %}Yes{% else %}Draft{% endif %}</td>
+      <td>{{ p.updated_at.strftime('%-d %b %Y') }}</td>
+      <td>
+        <form method="post" action="{{ url_for('admin.page_delete', pid=p.id) }}" onsubmit="return confirm('Soft-delete this page?')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-quiet btn-sm">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}<p class="muted">No pages yet.</p>{% endif %}
+{% endblock %}

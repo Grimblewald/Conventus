@@ -1,0 +1,256 @@
+{% extends "base.html" %}
+{% block title %}{{ site.site_name }}{% endblock %}
+{% block content %}
+
+{# ────────────────────────────────────────────────────────────────────
+   1 · Intro band — editorial lede. The original used an "About the
+   chapter" eyebrow + two paragraphs of chapter copy; we keep the shape
+   and pull the actual words from the site's own `intro_paragraph`
+   setting so the template stays brand-agnostic.
+─────────────────────────────────────────────────────────────────── #}
+{% if site.intro_paragraph or site.tagline %}
+<section class="block">
+  <div class="container container-narrow">
+    {% if site.tagline %}
+      <div class="eyebrow">{{ site.tagline }}</div>
+    {% endif %}
+    {% if site.intro_paragraph %}
+      <p class="lede">{{ site.intro_paragraph }}</p>
+    {% endif %}
+    {% if site.intro_secondary %}
+      <p>{{ site.intro_secondary }}</p>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+{# ────────────────────────────────────────────────────────────────────
+   2 · Featured event hero — split layout, hero-meta dl, countdown
+   pills, three-weight CTAs (primary / ghost / quiet).
+─────────────────────────────────────────────────────────────────── #}
+{% if featured %}
+<section class="hero" data-layout="split">
+  <div class="container">
+    <div class="hero-inner">
+      <div>
+        <div class="hero-eyebrow">
+          Featured · {{ featured.date_range }}
+        </div>
+        <h1>
+          {{ featured.title }}
+          {% if featured.subtitle %}
+            <br><em style="font-weight: 400;">{{ featured.subtitle }}</em>
+          {% endif %}
+        </h1>
+
+        <dl class="hero-meta">
+          <div><dt>Dates</dt>      <dd>{{ featured.date_range }}</dd></div>
+          {% if featured.city %}
+            <div><dt>Location</dt> <dd>{{ featured.city }}</dd></div>
+          {% endif %}
+          {% if featured.venue %}
+            <div><dt>Venue</dt>    <dd>{{ featured.venue }}</dd></div>
+          {% endif %}
+          <div>
+            <dt>Abstracts due</dt>
+            <dd>
+              {% if featured.abstract_deadline %}
+                {{ featured.abstract_deadline.strftime('%-d %b %Y') }}
+              {% else %}TBA{% endif %}
+            </dd>
+          </div>
+        </dl>
+
+        {% if featured.start_date %}
+        <div class="countdown"
+             data-target="{{ featured.start_date.isoformat() }}T09:00:00">
+          <div class="pill"><span class="n">–</span><span class="l">Days</span></div>
+          <div class="pill"><span class="n">–</span><span class="l">Hours</span></div>
+          <div class="pill"><span class="n">–</span><span class="l">Min</span></div>
+          <div class="pill"><span class="n">–</span><span class="l">Sec</span></div>
+        </div>
+        {% endif %}
+
+        <div class="hero-cta">
+          <a class="btn btn-primary btn-lg"
+             href="{{ url_for('member.register_conf', slug=featured.slug) }}">Register</a>
+          <a class="btn btn-ghost btn-lg"
+             href="{{ url_for('member.submit_abstract', slug=featured.slug) }}">Submit an abstract</a>
+          <a class="btn btn-quiet btn-lg"
+             href="{{ url_for('public.conference_detail', slug=featured.slug) }}">Programme details →</a>
+        </div>
+      </div>
+
+      <div class="hero-visual">
+        {% if featured.hero_image_filename %}
+          <img src="{{ url_for('public.conference_upload', name=featured.hero_image_filename) }}"
+               alt="{{ featured.hero_caption or featured.title }}">
+        {% elif site.hero_image_filename %}
+          <img src="{{ url_for('public.site_upload', name=site.hero_image_filename) }}"
+               alt="">
+        {% else %}
+          <div class="ph" data-label="HERO IMAGE"></div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{# ────────────────────────────────────────────────────────────────────
+   3 · Upcoming events grid — section head with "See all →".
+─────────────────────────────────────────────────────────────────── #}
+{% if upcoming %}
+<section class="block">
+  <div class="container">
+    <div class="section-head">
+      <div>
+        <div class="eyebrow">Upcoming</div>
+        <h2>Conferences &amp; workshops</h2>
+      </div>
+      <a class="link" href="{{ url_for('public.conferences') }}">See all →</a>
+    </div>
+
+    <div class="grid cols-3">
+      {% for c in upcoming[:6] %}
+      <a class="conf-card" href="{{ url_for('public.conference_detail', slug=c.slug) }}">
+        <div class="art">
+          {% if c.hero_image_filename %}
+            <img src="{{ url_for('public.conference_upload', name=c.hero_image_filename) }}"
+                 alt="{{ c.hero_caption or c.title }}">
+          {% else %}
+            {# Two extra placeholder skins for visual rhythm in the grid. #}
+            <div class="ph {% if loop.index == 2 %}ph-warm{% elif loop.index == 3 %}ph-dark{% endif %}"
+                 data-label="{{ c.hero_caption or 'Event image' }}"></div>
+          {% endif %}
+        </div>
+        <div class="body">
+          <div class="date">
+            {{ c.date_range }}{% if c.city %} · {{ c.city }}{% endif %}
+          </div>
+          <h3>{{ c.title }}</h3>
+          {% if c.summary %}<div class="sum">{{ c.summary }}</div>{% endif %}
+          <div class="foot">
+            <span>{{ c.venue }}</span>
+            <span>Details →</span>
+          </div>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{# ────────────────────────────────────────────────────────────────────
+   4 · Announcements — list, three columns: tag · body · date.
+─────────────────────────────────────────────────────────────────── #}
+{% if announcements %}
+<section class="block alt">
+  <div class="container">
+    <div class="section-head">
+      <div>
+        <div class="eyebrow">From the society</div>
+        <h2>Announcements</h2>
+      </div>
+      <a class="link" href="#">Archive →</a>
+    </div>
+
+    <div class="ann-list">
+      {% for a in announcements %}
+      <article class="ann">
+        <span class="tag" data-kind="{{ a.kind }}">{{ a.kind }}</span>
+        <div>
+          <h4>{{ a.title }}</h4>
+          <div class="md">{{ a.body | md | safe }}</div>
+        </div>
+        <time>{{ a.published_at.strftime('%-d %b %Y') }}</time>
+      </article>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{# ────────────────────────────────────────────────────────────────────
+   5 · Closing dark band — membership / join CTA. Colours derive from
+   the site's own page-text / page-bg tokens, so no palette is hard-
+   coded here.
+─────────────────────────────────────────────────────────────────── #}
+{% if not current_user.is_authenticated %}
+<section class="block ink">
+  <div class="container">
+    <div class="grid cols-3" style="align-items: start;">
+      <div>
+        <div class="eyebrow">Become a member</div>
+        <h2 style="font-size: 2.1rem;">
+          Join the community behind {{ site.site_name }}.
+        </h2>
+        {% if site.membership_pitch %}
+          <p style="max-width: 42ch;">{{ site.membership_pitch }}</p>
+        {% else %}
+          <p style="max-width: 42ch;">
+            Members get discounted registration for every event, access to
+            the grants &amp; jobs board, and eligibility for early-career
+            bursaries and prizes.
+          </p>
+        {% endif %}
+        <a class="btn btn-primary"
+           href="{{ url_for('auth.login') }}">Create an account</a>
+      </div>
+
+      <div>
+        <h4 class="eyebrow">What's included</h4>
+        <ul style="list-style: none; padding: 0; line-height: 1.9;">
+          <li>— Member rates at every annual event</li>
+          <li>— Voting rights at the AGM</li>
+          <li>— Access to the job &amp; grant board</li>
+          <li>— Mentoring programme pairings</li>
+          <li>— Joint events with partner societies</li>
+        </ul>
+      </div>
+
+      <div>
+        <h4 class="eyebrow">Fees</h4>
+        <table class="table">
+          <tr><th>Tier</th><th>Annual</th></tr>
+          <tr><td>Academic</td>        <td>{{ site.currency_symbol or '$' }} 120</td></tr>
+          <tr><td>Student / HDR</td>   <td>{{ site.currency_symbol or '$' }} 30</td></tr>
+          <tr><td>Industry</td>        <td>{{ site.currency_symbol or '$' }} 240</td></tr>
+          <tr><td>Emeritus</td>        <td>Complimentary</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Countdown — re-used from original. Pure JS, no deps. Updates every
+  // second; degrades gracefully if no `.countdown[data-target]` is on
+  // the page.
+  (function () {
+    const el = document.querySelector('.countdown[data-target]');
+    if (!el) return;
+    const target = new Date(el.dataset.target).getTime();
+    const pills = el.querySelectorAll('.pill .n');
+    if (pills.length < 4) return;
+    function tick() {
+      const diff = Math.max(0, target - Date.now());
+      const d = Math.floor(diff / 86400000);
+      const h = Math.floor((diff / 3600000) % 24);
+      const m = Math.floor((diff / 60000) % 60);
+      const s = Math.floor((diff / 1000) % 60);
+      pills[0].textContent = d;
+      pills[1].textContent = String(h).padStart(2, '0');
+      pills[2].textContent = String(m).padStart(2, '0');
+      pills[3].textContent = String(s).padStart(2, '0');
+    }
+    tick();
+    setInterval(tick, 1000);
+  })();
+</script>
+{% endblock %}

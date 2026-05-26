@@ -1,0 +1,179 @@
+"""Upload handling: Pillow validation, PDF magic check, safe filenames, crop."""
+from __future__ import annotations
+
+import logging
+import os
+import secrets
+from pathlib import Path
+from typing import Iterable
+
+from PIL import Image, ImageOps, UnidentifiedImageError
+from werkzeug.datastructures import FileStorage
+from werkzeug.utils import secure_filename
+
+
+log = logging.getLogger(__name__)
+
+
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
+PDF_EXTS = {".pdf"}
+FIGURE_EXTS = IMAGE_EXTS | {".tif", ".tiff"} | PDF_EXTS
+
+# Generous upper bound for any decoded image dimension. Blocks decompression
+# bombs while still allowing legit hi-res hero shots.
+MAX_IMAGE_PIXELS = 24_000_000  # 24 megapixels
+Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
+
+
+class UploadError(ValueError):
+    """Friendly error surfaced to the user via flash()."""
+
+
+def _checked_ext(fs: FileStorage, allowed: Iterable[str]) -> str:
+    ext = os.path.splitext(fs.filename or "")[1].lower()
+    if ext not in set(allowed):
+        raise UploadError(
+            f"Unsupported file type {ext or '(no extension)'}. "
+            f"Allowed: {', '.join(sorted(allowed))}."
+        )
+    return ext
+
+
+def _safe_name(prefix: str, original: str | None) -> str:
+    base = secure_filename(original or "file")
+    return f"{prefix}_{secrets.token_hex(6)}_{base}"
+
+
+def save_image(
+    fs: FileStorage,
+    *,
+    upload_folder: str,
+    subdir: str = "",
+    prefix: str = "img",
+    max_bytes: int,
+    square_crop: bool = False,
+    target_size: int | None = None,
+) -> str:
+    """Validate, optionally crop, and save an uploaded image.
+
+    Returns the relative filename within `upload_folder` (including subdir
+    if provided). Raises `UploadError` on any validation failure — never
+    saves a corrupt or oversized file.
+    """
+    if not (fs and fs.filename):
+        raise UploadError("No file was uploaded.")
+    ext = _checked_ext(fs, IMAGE_EXTS)
+
+    raw = fs.stream.read()
+    if len(raw) > max_bytes:
+        raise UploadError(
+            f"File is too large ({len(raw) // 1024} KB). "
+            f"Maximum is {max_bytes // 1024} KB."
+        )
+
+    # Validate with Pillow — this catches truncated files & decompression bombs.
+    from io import BytesIO
+    try:
+        img = Image.open(BytesIO(raw))
+        img.verify()  # cheap structural check
+        # Re-open for actual ops — verify() consumes the file pointer.
+        img = Image.open(BytesIO(raw))
+        img = ImageOps.exif_transpose(img)
+    except (UnidentifiedImageError, OSError) as e:
+        raise UploadError("Could not read that image — is it corrupted?") from e
+
+    if img.width * img.height > MAX_IMAGE_PIXELS:
+        raise UploadError("Image is too large (pixel count exceeds policy).")
+
+    if square_crop:
+        side = min(img.width, img.height)
+        left = (img.width - side) // 2
+        top = (img.height - side) // 2
+        img = img.crop((left, top, left + side, top + side))
+
+    if target_size and img.width > target_size:
+        ratio = target_size / img.width
+        img = img.resize((target_size, int(img.height * ratio)), Image.LANCZOS)
+
+    # Always re-encode (don't trust the input bytes) and normalise to webp/png.
+    out_ext = ".webp" if ext != ".png" else ".png"
+    safe = _safe_name(prefix, (fs.filename or "image") + out_ext)
+    if not safe.endswith(out_ext):
+        safe += out_ext
+
+    target_dir = Path(upload_folder) / subdir if subdir else Path(upload_folder)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    out_path = target_dir / safe
+
+    save_kwargs = {"optimize": True}
+    if out_ext == ".webp":
+        save_kwargs["quality"] = 88
+        save_kwargs["method"] = 6
+    img.save(out_path, format="WEBP" if out_ext == ".webp" else "PNG", **save_kwargs)
+
+    return f"{subdir}/{safe}" if subdir else safe
+
+
+def save_pdf(
+    fs: FileStorage,
+    *,
+    upload_folder: str,
+    subdir: str = "",
+    prefix: str = "doc",
+    max_bytes: int,
+) -> str:
+    """Validate the %PDF- magic prefix and save."""
+    if not (fs and fs.filename):
+        raise UploadError("No file was uploaded.")
+    _checked_ext(fs, PDF_EXTS)
+    raw = fs.stream.read()
+    if len(raw) > max_bytes:
+        raise UploadError(
+            f"File is too large ({len(raw) // 1024} KB). "
+            f"Maximum is {max_bytes // 1024} KB."
+        )
+    if not raw[:5] == b"%PDF-":
+        raise UploadError("File is not a valid PDF (missing %PDF- header).")
+
+    safe = _safe_name(prefix, fs.filename)
+    target_dir = Path(upload_folder) / subdir if subdir else Path(upload_folder)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    (target_dir / safe).write_bytes(raw)
+    return f"{subdir}/{safe}" if subdir else safe
+
+
+def save_figure(
+    fs: FileStorage,
+    *,
+    upload_folder: str,
+    max_bytes: int,
+) -> str:
+    """Abstract figure: accept PNG/JPEG/TIFF/PDF, validated."""
+    if not (fs and fs.filename):
+        raise UploadError("No figure uploaded.")
+    ext = _checked_ext(fs, FIGURE_EXTS)
+    if ext in PDF_EXTS:
+        return save_pdf(fs, upload_folder=upload_folder, subdir="abstracts",
+                        prefix="fig", max_bytes=max_bytes)
+    # Image-typed figure
+    fs.stream.seek(0)
+    return save_image(
+        fs,
+        upload_folder=upload_folder,
+        subdir="abstracts",
+        prefix="fig",
+        max_bytes=max_bytes,
+        target_size=2400,
+    )
+
+
+def remove_upload(upload_folder: str, name: str | None) -> None:
+    """Best-effort delete of a relative upload path. Silently ignores errors."""
+    if not name:
+        return
+    try:
+        path = Path(upload_folder) / name
+        if path.exists():
+            path.unlink()
+    except OSError:
+        log.warning("Could not remove upload %r", name, exc_info=True)

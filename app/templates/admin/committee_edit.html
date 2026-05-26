@@ -1,0 +1,92 @@
+{% extends "admin/_base.html" %}
+{% block title %}{% if m %}Edit{% else %}New{% endif %} committee member · Admin{% endblock %}
+{% block admin %}
+<div class="section-head">
+  <div><div class="eyebrow">Committee</div>
+    <h2>{% if m %}Edit {{ m.display_name }}{% else %}New committee member{% endif %}</h2></div>
+  <a class="link" href="{{ url_for('admin.committee_index') }}">← back</a>
+</div>
+
+<form method="post" class="form form-wide" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="grid cols-2" style="gap:36px;">
+    <div>
+      <div class="portrait-edit">
+        {% if m and m.portrait_filename %}
+          <img src="{{ url_for('public.committee_upload', name=m.portrait_filename) }}" alt="">
+        {% else %}
+          <div class="ph" data-label="PORTRAIT"></div>
+        {% endif %}
+      </div>
+      <div class="field">
+        <label for="portrait">Portrait (square crop, max 4 MB)</label>
+        <input class="input" id="portrait" name="portrait" type="file" accept=".png,.jpg,.jpeg,.webp">
+      </div>
+      <div class="field">
+        <label for="portrait_alt_text">Alt text</label>
+        <input class="input" id="portrait_alt_text" name="portrait_alt_text"
+               value="{{ m.portrait_alt_text if m else '' }}">
+      </div>
+      {% if m and m.portrait_filename %}
+      <label style="display:flex; align-items:center; gap:6px; font-size:13px;">
+        <input type="checkbox" name="remove_portrait"> Remove current portrait
+      </label>
+      {% endif %}
+    </div>
+    <div>
+      <div class="row-2">
+        <div class="field"><label for="title">Title</label>
+          <input class="input" id="title" name="title" value="{{ m.title if m else '' }}" placeholder="Dr / Prof / Mx"></div>
+        <div class="field"><label for="full_name">Full name</label>
+          <input class="input" id="full_name" name="full_name" required
+                 value="{{ m.full_name if m else '' }}"></div>
+      </div>
+      <div class="row-2">
+        <div class="field"><label for="role">Role on committee</label>
+          <input class="input" id="role" name="role" value="{{ m.role if m else '' }}" placeholder="President, Secretary, ..."></div>
+        <div class="field"><label for="display_order">Display order</label>
+          <input class="input" id="display_order" name="display_order"
+                 value="{{ m.display_order if m else 100 }}"></div>
+      </div>
+      <div class="row-2">
+        <div class="field"><label for="position">Position</label>
+          <input class="input" id="position" name="position" value="{{ m.position if m else '' }}"></div>
+        <div class="field"><label for="affiliation">Affiliation</label>
+          <input class="input" id="affiliation" name="affiliation" value="{{ m.affiliation if m else '' }}"></div>
+      </div>
+      <div class="field"><label for="interests">Research interests / keywords</label>
+        <textarea class="textarea" id="interests" name="interests" rows="3">{{ m.interests if m else '' }}</textarea></div>
+      <div class="row-3">
+        <div class="field"><label for="orcid">ORCID</label>
+          <input class="input" id="orcid" name="orcid" placeholder="0000-0000-0000-0000"
+                 value="{{ m.orcid if m else '' }}"></div>
+        <div class="field"><label for="scholar_url">Scholar URL</label>
+          <input class="input" id="scholar_url" name="scholar_url" value="{{ m.scholar_url if m else '' }}"></div>
+        <div class="field"><label for="website_url">Website</label>
+          <input class="input" id="website_url" name="website_url" value="{{ m.website_url if m else '' }}"></div>
+      </div>
+      <div class="field">
+        <label for="user_id">Linked user account (optional)</label>
+        <select class="select" id="user_id" name="user_id">
+          <option value="">— None —</option>
+          {% for u in users %}
+            <option value="{{ u.id }}" {% if m and m.user_id == u.id %}selected{% endif %}>
+              {{ u.full_name or '(no name)' }} · {{ u.email }}
+            </option>
+          {% endfor %}
+        </select>
+        <div class="help">Linking lets that user edit their own profile if you grant them <code>committee.edit_self</code>.</div>
+      </div>
+    </div>
+  </div>
+  <div style="display:flex; justify-content:space-between; margin-top:24px;">
+    <button class="btn btn-primary" type="submit">Save member</button>
+    {% if m and can('committee.edit_any') %}
+      <form method="post" action="{{ url_for('admin.committee_delete', mid=m.id) }}" onsubmit="return confirm('Remove this member?')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-quiet" type="submit">Delete</button>
+      </form>
+    {% endif %}
+  </div>
+</form>
+{% endblock %}

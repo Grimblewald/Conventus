@@ -1,0 +1,33 @@
+{% extends "admin/_base.html" %}
+{% block title %}Images · Admin{% endblock %}
+{% block admin %}
+<div class="section-head"><div><div class="eyebrow">Site</div><h2>Images</h2></div></div>
+<p class="lede">Logo, favicon, hero image, and the image used when the site is shared on social media.</p>
+
+<div class="grid cols-2">
+  {% for key, cfg in slots.items() %}
+  <div class="card">
+    <h3>{{ cfg.label }}</h3>
+    <div class="image-slot">
+      {% set current = s[cfg.ext_field] %}
+      {% if current %}
+        <img src="{{ url_for('public.site_upload', name=current) }}" alt="">
+      {% else %}
+        <div class="ph" data-label="{{ cfg.label.upper() }}"></div>
+      {% endif %}
+    </div>
+    <form method="post" action="{{ url_for('admin.site_images_update', slot=key) }}"
+          enctype="multipart/form-data" class="form" style="margin-top:14px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input class="input" name="image" type="file" accept=".png,.jpg,.jpeg,.webp" required>
+      <div style="display:flex; gap:8px; margin-top:10px;">
+        <button class="btn btn-primary btn-sm" type="submit">Upload</button>
+        {% if current %}
+          <button class="btn btn-quiet btn-sm" type="submit" name="remove" value="1" formnovalidate>Remove</button>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,37 @@
+{% extends "admin/_base.html" %}
+{% block title %}Permissions · Admin{% endblock %}
+{% block admin %}
+<div class="section-head"><div><div class="eyebrow">System</div><h2>Role permissions</h2></div></div>
+<p class="lede">Pick a role, then tick which capabilities it grants. The Administrator role always has every permission and isn't shown here.</p>
+
+<form method="get" class="form" style="max-width:380px;">
+  <div class="field"><label for="role_picker">Role</label>
+    <select class="select" id="role_picker" name="role" onchange="this.form.submit()">
+      {% for name, label in role_choices %}
+        <option value="{{ name }}" {% if role.name == name %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+</form>
+
+<form method="post" class="form form-wide" style="margin-top:18px;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="role" value="{{ role.name }}">
+  {% for group, items in groups.items() %}
+    <fieldset class="perm-group">
+      <legend>{{ group }}</legend>
+      {% for key, label, desc in items %}
+        <label class="perm-row">
+          <input type="checkbox" name="perm" value="{{ key }}" {% if key in granted %}checked{% endif %}>
+          <span>
+            <strong>{{ label }}</strong>
+            <span class="muted">{{ desc }}</span>
+            <code>{{ key }}</code>
+          </span>
+        </label>
+      {% endfor %}
+    </fieldset>
+  {% endfor %}
+  <button class="btn btn-primary" type="submit">Save permissions for {{ role.label }}</button>
+</form>
+{% endblock %}

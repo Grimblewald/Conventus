@@ -1,0 +1,23 @@
+{% extends "admin/_base.html" %}
+{% block title %}Edit announcement · Admin{% endblock %}
+{% block admin %}
+<div class="section-head">
+  <div><div class="eyebrow">News</div><h2>Edit “{{ a.title }}”</h2></div>
+  <a class="link" href="{{ url_for('admin.announcements') }}">← back</a>
+</div>
+<form method="post" class="form form-wide">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="row-2">
+    <div class="field"><label for="title">Title</label><input class="input" id="title" name="title" required value="{{ a.title }}"></div>
+    <div class="field"><label for="kind">Kind</label>
+      <select class="select" id="kind" name="kind">
+        {% for k in kinds %}<option {% if a.kind == k %}selected{% endif %}>{{ k }}</option>{% endfor %}
+      </select></div>
+  </div>
+  <div class="field"><label for="body">Body (Markdown)</label>
+    <textarea class="textarea" id="body" name="body" rows="8">{{ a.body }}</textarea></div>
+  <label style="display:flex; align-items:center; gap:6px;">
+    <input type="checkbox" name="pinned" {% if a.pinned %}checked{% endif %}> Pinned</label>
+  <div style="margin-top:14px;"><button class="btn btn-primary" type="submit">Save</button></div>
+</form>
+{% endblock %}

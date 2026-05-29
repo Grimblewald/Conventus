@@ -34,11 +34,6 @@ def home():
         .filter(Conference.deleted_at.is_(None), Conference.is_featured.is_(True))
         .order_by(Conference.start_date)
         .first()
-    ) or (
-        Conference.query
-        .filter(Conference.deleted_at.is_(None), Conference.is_draft.is_(False))
-        .order_by(Conference.start_date)
-        .first()
     )
     upcoming = (
         Conference.query
@@ -185,6 +180,12 @@ def committee_upload(name):
 def conference_upload(name):
     """Conference assets (hero, booklet) — public."""
     folder = Path(current_app.config["UPLOAD_FOLDER"]) / "conferences"
+    return send_from_directory(folder, name)
+
+
+@public_bp.route("/uploads/sponsors/<path:name>")
+def sponsor_upload(name):
+    folder = Path(current_app.config["UPLOAD_FOLDER"]) / "sponsors"
     return send_from_directory(folder, name)
 
 

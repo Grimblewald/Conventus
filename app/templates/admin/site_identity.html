@@ -30,6 +30,13 @@
     <div class="field"><label for="timezone">Timezone</label>
       <input class="input" id="timezone" name="timezone" value="{{ s.timezone }}"></div>
   </div>
+  <div class="field"><label for="intro_paragraph">Intro paragraph</label>
+    <textarea class="textarea" id="intro_paragraph" name="intro_paragraph" rows="3">{{ s.intro_paragraph }}</textarea>
+    <div class="help">Shows on the home page above the featured conference.</div>
+  </div>
+  <div class="field"><label for="intro_secondary">Secondary intro (optional)</label>
+    <textarea class="textarea" id="intro_secondary" name="intro_secondary" rows="2">{{ s.intro_secondary }}</textarea>
+  </div>
   <div class="field"><label for="copyright_line">Copyright line ({year} is replaced live)</label>
     <input class="input" id="copyright_line" name="copyright_line" value="{{ s.copyright_line }}"></div>
   <button class="btn btn-primary" type="submit">Save identity</button>

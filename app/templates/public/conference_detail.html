@@ -49,24 +49,47 @@
 </section>
 
 <section class="block">
-  <div class="container container-narrow">
-    {% if c.summary %}<p class="lede">{{ c.summary }}</p>{% endif %}
-    <div class="md">{{ c.body | md | safe }}</div>
-    {% if c.tracks_list() %}
-      <h3>Tracks</h3>
-      <ul>{% for t in c.tracks_list() %}<li>{{ t }}</li>{% endfor %}</ul>
-    {% endif %}
-    {% if c.price_tiers %}
-      <h3>Registration tiers</h3>
-      <div class="tiers">
-        {% for t in c.price_tiers %}
-          <div class="tier" style="cursor:default">
-            <h4>{{ t.name }}</h4>
-            <div class="price">{{ site.currency_symbol }}{{ t.amount }} <small>{{ site.currency_code }}</small></div>
-            {% if t.description %}<p style="font-size:14px; color: var(--c-muted-text);">{{ t.description }}</p>{% endif %}
-          </div>
-        {% endfor %}
-      </div>
+  <div class="container {% if c.sponsor_tiers %}conf-body-grid{% else %}container-narrow{% endif %}">
+    <div>
+      {% if c.summary %}<p class="lede">{{ c.summary }}</p>{% endif %}
+      <div class="md">{{ c.body | md | safe }}</div>
+      {% if c.tracks_list() %}
+        <h3>Tracks</h3>
+        <ul>{% for t in c.tracks_list() %}<li>{{ t }}</li>{% endfor %}</ul>
+      {% endif %}
+      {% if c.price_tiers %}
+        <h3>Registration tiers</h3>
+        <div class="tiers">
+          {% for t in c.price_tiers %}
+            <div class="tier" style="cursor:default">
+              <h4>{{ t.name }}</h4>
+              <div class="price">{{ site.currency_symbol }}{{ t.amount }} <small>{{ site.currency_code }}</small></div>
+              {% if t.description %}<p style="font-size:14px; color: var(--c-muted-text);">{{ t.description }}</p>{% endif %}
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    </div>
+
+    {% if c.sponsor_tiers %}
+    <aside class="sponsor-sidebar">
+      {% for t in c.sponsor_tiers %}
+        <h5>{{ t.name }}</h5>
+        <div class="sponsor-grid">
+          {% for s in t.sponsors %}
+            {% if s.url %}<a href="{{ s.url }}" target="_blank" rel="noopener">{% endif %}
+              <div class="sponsor-logo-card">
+                {% if s.logo_filename %}
+                  <img src="{{ url_for('public.sponsor_upload', name=s.logo_filename) }}" alt="{{ s.name }}">
+                {% else %}
+                  <span class="sponsor-name">{{ s.name }}</span>
+                {% endif %}
+              </div>
+            {% if s.url %}</a>{% endif %}
+          {% endfor %}
+        </div>
+      {% endfor %}
+    </aside>
     {% endif %}
   </div>
 </section>

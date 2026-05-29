@@ -142,6 +142,70 @@
   <button class="btn btn-primary btn-sm" type="submit">+ Add tier</button>
 </form>
 
+<h3 style="margin-top:36px;">Sponsors</h3>
+{% if c.sponsor_tiers %}
+<form method="post" action="{{ url_for('admin.conference_sponsors', cid=c.id) }}" class="form form-wide">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="action" value="save_tiers">
+  <table class="table">
+    <thead><tr><th style="width:60px">Order</th><th>Name</th><th>Sponsors</th><th></th></tr></thead>
+    <tbody>
+    {% for t in c.sponsor_tiers %}
+      <tr>
+        <td><input class="input" name="tier_order_{{ t.id }}" value="{{ t.display_order }}" style="width:64px;"></td>
+        <td><input class="input" name="tier_name_{{ t.id }}" value="{{ t.name }}"></td>
+        <td style="font-size:13px;">
+          {% for s in t.sponsors %}
+            <div style="display:flex; align-items:center; gap:8px; padding:4px 0;">
+              {% if s.logo_filename %}
+                <img src="{{ url_for('public.sponsor_upload', name=s.logo_filename) }}" style="height:28px; width:auto; max-width:80px; object-fit:contain;">
+              {% endif %}
+              <span>{{ s.name }}</span>
+              {% if s.url %}<a href="{{ s.url }}" target="_blank" rel="noopener" style="font-size:11px;">↗</a>{% endif %}
+              <button class="btn btn-quiet btn-sm" type="submit" name="action" value="delete_sponsor"
+                      formaction="{{ url_for('admin.conference_sponsors', cid=c.id) }}">
+                <input type="hidden" name="sponsor_id" value="{{ s.id }}">×</button>
+            </div>
+          {% endfor %}
+        </td>
+        <td>
+          <button class="btn btn-quiet btn-sm" type="submit" name="action" value="delete_tier"
+                  formaction="{{ url_for('admin.conference_sponsors', cid=c.id) }}"
+                  data-confirm="Delete this tier and all its sponsors?">
+            <input type="hidden" name="tier_id" value="{{ t.id }}">Delete tier</button>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <button class="btn btn-primary btn-sm" type="submit">Save tiers</button>
+</form>
+{% endif %}
+
+{% for t in c.sponsor_tiers %}
+<form method="post" action="{{ url_for('admin.conference_sponsors', cid=c.id) }}" enctype="multipart/form-data" class="form" style="margin-top:14px; max-width:680px;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="action" value="add_sponsor">
+  <input type="hidden" name="tier_id" value="{{ t.id }}">
+  <div style="font-weight:600; margin-bottom:10px; font-size:14px;">Add sponsor to {{ t.name }}</div>
+  <div class="row-3">
+    <div class="field"><label for="sp_name_{{ t.id }}">Name</label><input class="input" id="sp_name_{{ t.id }}" name="name" required></div>
+    <div class="field"><label for="sp_url_{{ t.id }}">URL</label><input class="input" id="sp_url_{{ t.id }}" name="url" placeholder="https://…"></div>
+    <div class="field"><label for="sp_logo_{{ t.id }}">Logo</label><input class="input" id="sp_logo_{{ t.id }}" name="logo" type="file" accept=".png,.jpg,.jpeg,.webp,.svg"></div>
+  </div>
+  <button class="btn btn-primary btn-sm" type="submit">+ Add sponsor</button>
+</form>
+{% endfor %}
+
+<form method="post" action="{{ url_for('admin.conference_sponsors', cid=c.id) }}" class="form" style="margin-top:18px; max-width:480px;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="action" value="add_tier">
+  <div class="field"><label for="tier_name">New tier name</label>
+    <input class="input" id="tier_name" name="name" required placeholder="Platinum, Gold, Silver…">
+  </div>
+  <button class="btn btn-ghost btn-sm" type="submit">+ Add tier</button>
+</form>
+
 {% if can('conf.delete') %}
 <hr>
 <form method="post" action="{{ url_for('admin.conference_delete_request', cid=c.id) }}"

@@ -70,6 +70,8 @@ def conferences():
                 external_abstract_url=(request.form.get("external_abstract_url") or "").strip() or None,
             )
             db.session.add(c)
+            if c.is_featured:
+                _unfeature_others()
             db.session.commit()
             audit.record("conference.created",
                          target_kind="conference", target_id=c.id,
@@ -121,6 +123,8 @@ def conference_edit(cid):
             c.tracks = request.form.get("tracks", "")
             c.hero_caption = (request.form.get("hero_caption") or "").strip()
             c.is_featured = bool(request.form.get("is_featured"))
+            if c.is_featured:
+                _unfeature_others(c.id)
             c.is_draft = bool(request.form.get("is_draft"))
             c.is_accepting_abstracts = not bool(request.form.get("not_accepting_abstracts"))
             c.is_accepting_registrations = not bool(request.form.get("not_accepting_registrations"))
@@ -345,3 +349,13 @@ def _slug_taken(slug: str, exclude_id: int | None = None) -> bool:
     if exclude_id is not None:
         q = q.filter(Conference.id != exclude_id)
     return db.session.query(q.exists()).scalar()
+
+
+def _unfeature_others(exclude_id: int | None = None) -> None:
+    q = Conference.query.filter(
+        Conference.deleted_at.is_(None),
+        Conference.is_featured.is_(True),
+    )
+    if exclude_id is not None:
+        q = q.filter(Conference.id != exclude_id)
+    q.update({Conference.is_featured: False}, synchronize_session=False)

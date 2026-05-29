@@ -42,6 +42,7 @@ def site_identity():
             "site_name", "tagline", "short_name", "browser_tab_title",
             "copyright_line", "contact_email", "locale", "timezone",
             "currency_code", "currency_symbol",
+            "intro_paragraph", "intro_secondary",
         ):
             val = (request.form.get(fld) or "").strip()
             if val:

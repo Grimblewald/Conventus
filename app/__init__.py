@@ -68,6 +68,7 @@ def _ensure_directories(app: Flask) -> None:
         Path(app.config["UPLOAD_FOLDER"]) / "site",
         Path(app.config["UPLOAD_FOLDER"]) / "abstracts",
         Path(app.config["UPLOAD_FOLDER"]) / "conferences",
+        Path(app.config["UPLOAD_FOLDER"]) / "sponsors",
     ):
         path.mkdir(parents=True, exist_ok=True)
 

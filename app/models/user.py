@@ -75,6 +75,10 @@ BUILT_IN_PERMISSIONS: tuple[tuple[str, str, str, str], ...] = (
     ("site.identity",       "Appearance",    "Edit site identity",
      "Change site name, tagline, browser tab title."),
 
+    # Sponsors
+    ("sponsors.edit",       "Conferences",   "Manage sponsors",
+     "Add, edit, and reorder sponsor tiers and logos per conference."),
+
     # Members
     ("users.view",          "Members",       "View member directory",
      "List all registered users with role and affiliation."),

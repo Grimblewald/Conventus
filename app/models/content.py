@@ -24,6 +24,8 @@ class SiteSettings(db.Model):
     # --- Identity ----------------------------------------------------------
     site_name = db.Column(db.String(120), default="Your Society", nullable=False)
     tagline = db.Column(db.String(240), default="")
+    intro_paragraph = db.Column(db.Text, default="")
+    intro_secondary = db.Column(db.Text, default="")
     short_name = db.Column(db.String(60), default="Society")
     browser_tab_title = db.Column(db.String(120), default="Your Society")
     copyright_line = db.Column(db.String(240), default="© {year} Your Society")

@@ -85,6 +85,22 @@
           <a class="btn btn-quiet btn-lg"
              href="{{ url_for('public.conference_detail', slug=featured.slug) }}">Programme details →</a>
         </div>
+
+        {% if featured.sponsor_tiers %}
+          {% set top_tier = featured.sponsor_tiers[0] %}
+          {% if top_tier.sponsors %}
+          <div class="sponsor-bar">
+            <span class="sponsor-bar-label">{{ top_tier.name }} sponsors</span>
+            {% for s in top_tier.sponsors %}
+              {% if s.url %}<a href="{{ s.url }}" target="_blank" rel="noopener">{% endif %}
+                {% if s.logo_filename %}
+                  <img src="{{ url_for('public.sponsor_upload', name=s.logo_filename) }}" alt="{{ s.name }}">
+                {% endif %}
+              {% if s.url %}</a>{% endif %}
+            {% endfor %}
+          </div>
+          {% endif %}
+        {% endif %}
       </div>
 
       <div class="hero-visual">

@@ -52,6 +52,13 @@ class Conference(db.Model):
         cascade="all, delete-orphan",
         order_by="PriceTier.display_order",
     )
+    sponsor_tiers = db.relationship(
+        "SponsorTier",
+        backref="conference",
+        lazy="joined",
+        cascade="all, delete-orphan",
+        order_by="SponsorTier.display_order",
+    )
 
     @property
     def date_range(self) -> str:
@@ -115,3 +122,8 @@ class PriceTier(db.Model):
     amount = db.Column(db.Integer, default=0, nullable=False)  # minor unit-agnostic
     description = db.Column(db.String(400), default="")
     display_order = db.Column(db.Integer, default=0, nullable=False)
+
+
+# Late import — ensures SponsorTier is defined before SQLAlchemy resolves the
+# string reference in Conference.sponsor_tiers relationship.
+from .sponsor import Sponsor, SponsorTier  # noqa: E402, F401

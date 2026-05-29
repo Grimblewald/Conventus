@@ -19,6 +19,8 @@ site:
   currency_code: "USD"
   currency_symbol: "$"
   timezone: "UTC"
+  intro_paragraph: "We are a community of researchers and practitioners dedicated to advancing knowledge through collaboration, conferences, and publications."
+  intro_secondary: ""
 
 admin:
   email: "admin@example.org"

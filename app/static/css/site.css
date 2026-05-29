@@ -640,6 +640,64 @@ section.block.ink .table td {
   background: color-mix(in oklab, var(--c-accent) 6%, transparent);
 }
 
+/* ---------------- Conference body + sponsors sidebar ---------------- */
+.conf-body-grid {
+  display: grid;
+  grid-template-columns: 1fr 260px;
+  gap: 48px;
+  align-items: start;
+}
+.sponsor-sidebar {
+  position: sticky; top: 100px;
+  background: var(--c-card-bg);
+  border: 1px solid var(--c-card-border);
+  border-radius: var(--rad); padding: 20px;
+}
+.sponsor-sidebar h5 {
+  font-family: var(--f-ui); font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.16em;
+  color: var(--c-muted-text); margin: 0 0 12px; font-weight: 600;
+}
+.sponsor-sidebar h5:not(:first-child) { margin-top: 20px; }
+.sponsor-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.sponsor-logo-card {
+  background: var(--c-page-bg);
+  border: 1px solid var(--c-card-border);
+  border-radius: var(--rad-sm); padding: 10px;
+  display: flex; align-items: center; justify-content: center;
+  aspect-ratio: 2 / 1;
+  transition: border-color .15s;
+}
+.sponsor-logo-card:hover { border-color: var(--c-accent); }
+.sponsor-logo-card img {
+  max-width: 100%; max-height: 100%; object-fit: contain;
+}
+.sponsor-logo-card .sponsor-name {
+  font-family: var(--f-ui); font-size: 12px; font-weight: 600;
+  color: var(--c-muted-text); text-align: center;
+}
+
+/* Sponsor bar — horizontal strip for home / inline use */
+.sponsor-bar {
+  display: flex; flex-wrap: wrap; gap: 16px; align-items: center;
+  margin-top: 18px;
+}
+.sponsor-bar-label {
+  font-family: var(--f-ui); font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.16em;
+  color: var(--c-muted-text); font-weight: 600;
+}
+.sponsor-bar a { display: block; }
+.sponsor-bar img {
+  height: 32px; width: auto; max-width: 110px; object-fit: contain;
+  opacity: .8; transition: opacity .15s;
+}
+.sponsor-bar img:hover { opacity: 1; }
+
 /* ---------------- Responsive ---------------- */
 @media (max-width: 960px) {
   .admin-shell { grid-template-columns: 1fr; }
@@ -650,4 +708,6 @@ section.block.ink .table td {
   .ann { grid-template-columns: 1fr; gap: 6px; }
   .site-footer .cols { grid-template-columns: 1fr 1fr; }
   .row-2, .row-3 { grid-template-columns: 1fr; }
+  .conf-body-grid { grid-template-columns: 1fr; }
+  .sponsor-sidebar { position: static; }
 }

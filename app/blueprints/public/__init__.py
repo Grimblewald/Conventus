@@ -57,6 +57,8 @@ def home():
         .limit(6)
         .all()
     )
+    if featured and featured.auto_reopen():
+        db.session.commit()
     return render_template(
         "public/home.html",
         featured=featured,
@@ -87,8 +89,10 @@ def conference_detail(slug):
          .filter(Conference.deleted_at.is_(None))
          .first_or_404())
     if c.is_draft and not (current_user.is_authenticated
-                           and current_user.has_permission("conf.view_drafts")):
+                            and current_user.has_permission("conf.view_drafts")):
         abort(404)
+    if c.auto_reopen():
+        db.session.commit()
     return render_template("public/conference_detail.html", c=c)
 
 

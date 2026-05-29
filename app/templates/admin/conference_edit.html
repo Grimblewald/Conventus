@@ -32,6 +32,58 @@
     <div class="field"><label for="early_bird_deadline">Early-bird deadline</label>
       <input class="input" id="early_bird_deadline" name="early_bird_deadline" type="date" value="{{ c.early_bird_deadline.isoformat() if c.early_bird_deadline else '' }}"></div>
   </div>
+  <div class="field"><label for="registration_deadline">Registration deadline</label>
+    <input class="input" id="registration_deadline" name="registration_deadline" type="date" value="{{ c.registration_deadline.isoformat() if c.registration_deadline else '' }}" style="max-width:240px;">
+    <div class="help" style="margin-top:2px;">Registrations close automatically after this date.</div>
+  </div>
+
+  <fieldset style="margin-top:18px; border:1px solid var(--c-card-border,#ddd); border-radius:8px; padding:14px 18px;">
+    <legend style="font-weight:600;">Abstract submissions</legend>
+    <label style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+      <input type="checkbox" name="not_accepting_abstracts" id="not_accepting_abstracts"
+             {% if not c.is_accepting_abstracts %}checked{% endif %}>
+      Not accepting abstracts
+    </label>
+    <div class="field" id="abstracts_reopen_row" style="{% if c.is_accepting_abstracts %}display:none;{% endif %} margin-bottom:0;">
+      <label for="abstracts_reopen_date">Auto-reopen on</label>
+      <input class="input" id="abstracts_reopen_date" name="abstracts_reopen_date" type="date"
+             value="{{ c.abstracts_reopen_date.isoformat() if c.abstracts_reopen_date else '' }}" style="max-width:240px;">
+      <div class="help" style="margin-top:2px;">Optional. When this date passes, abstracts reopen automatically.</div>
+    </div>
+  </fieldset>
+
+  <fieldset style="margin-top:18px; border:1px solid var(--c-card-border,#ddd); border-radius:8px; padding:14px 18px;">
+    <legend style="font-weight:600;">Registrations</legend>
+    <label style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
+      <input type="checkbox" name="not_accepting_registrations" id="not_accepting_registrations"
+             {% if not c.is_accepting_registrations %}checked{% endif %}>
+      Not accepting registrations
+    </label>
+    <div class="field" id="registrations_reopen_row" style="{% if c.is_accepting_registrations %}display:none;{% endif %} margin-bottom:0;">
+      <label for="registrations_reopen_date">Auto-reopen on</label>
+      <input class="input" id="registrations_reopen_date" name="registrations_reopen_date" type="date"
+             value="{{ c.registrations_reopen_date.isoformat() if c.registrations_reopen_date else '' }}" style="max-width:240px;">
+      <div class="help" style="margin-top:2px;">Optional. When this date passes, registrations reopen automatically.</div>
+    </div>
+  </fieldset>
+
+  <fieldset style="margin-top:18px; border:1px solid var(--c-card-border,#ddd); border-radius:8px; padding:14px 18px;">
+    <legend style="font-weight:600;">External links</legend>
+    <div class="row-2">
+      <div class="field">
+        <label for="external_registration_url">External registration URL</label>
+        <input class="input" id="external_registration_url" name="external_registration_url"
+               value="{{ c.external_registration_url or '' }}" placeholder="https://…">
+        <div class="help" style="margin-top:2px;">If set, the Register button links here instead of the internal form.</div>
+      </div>
+      <div class="field">
+        <label for="external_abstract_url">External abstract submission URL</label>
+        <input class="input" id="external_abstract_url" name="external_abstract_url"
+               value="{{ c.external_abstract_url or '' }}" placeholder="https://…">
+        <div class="help" style="margin-top:2px;">If set, the Submit button links here instead of the internal form.</div>
+      </div>
+    </div>
+  </fieldset>
 
   <div class="row-2">
     <div class="field"><label for="hero_image">Hero image</label>
@@ -68,8 +120,8 @@
         <td><input class="input" name="desc_{{ t.id }}" value="{{ t.description }}"></td>
         <td>
           <button class="btn btn-quiet btn-sm" type="submit" name="action" value="delete"
-                  formaction="{{ url_for('admin.conference_tiers', cid=c.id) }}"
-                  onclick="this.form.querySelector('[name=tier_id]').value={{ t.id }}">Delete</button>
+                   formaction="{{ url_for('admin.conference_tiers', cid=c.id) }}"
+                   data-tier-id="{{ t.id }}">Delete</button>
         </td>
       </tr>
     {% endfor %}
@@ -93,7 +145,7 @@
 {% if can('conf.delete') %}
 <hr>
 <form method="post" action="{{ url_for('admin.conference_delete_request', cid=c.id) }}"
-      onsubmit="return confirm('Send a confirmation code to delete this conference?')">
+      data-confirm="Send a confirmation code to delete this conference?">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <h3>Danger zone</h3>
   <p class="muted">Deleting a conference is irreversible. We'll email you a 6-digit confirmation code first.</p>

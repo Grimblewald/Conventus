@@ -27,6 +27,15 @@ class Conference(db.Model):
 
     abstract_deadline = db.Column(db.Date)
     early_bird_deadline = db.Column(db.Date)
+    registration_deadline = db.Column(db.Date)
+
+    is_accepting_abstracts = db.Column(db.Boolean, default=True, nullable=False)
+    is_accepting_registrations = db.Column(db.Boolean, default=True, nullable=False)
+    abstracts_reopen_date = db.Column(db.Date)
+    registrations_reopen_date = db.Column(db.Date)
+
+    external_registration_url = db.Column(db.String(500))
+    external_abstract_url = db.Column(db.String(500))
 
     tracks = db.Column(db.Text, default="")          # newline-separated
     committee = db.Column(db.Text, default="")       # "Name, Institution\n..."
@@ -61,6 +70,35 @@ class Conference(db.Model):
 
     def tracks_list(self) -> list[str]:
         return [t.strip() for t in (self.tracks or "").split("\n") if t.strip()]
+
+    def auto_reopen(self) -> bool:
+        changed = False
+        today = date.today()
+        if (not self.is_accepting_abstracts and self.abstracts_reopen_date
+                and self.abstracts_reopen_date <= today):
+            self.is_accepting_abstracts = True
+            changed = True
+        if (not self.is_accepting_registrations and self.registrations_reopen_date
+                and self.registrations_reopen_date <= today):
+            self.is_accepting_registrations = True
+            changed = True
+        return changed
+
+    @property
+    def accepts_abstracts(self) -> bool:
+        if not self.is_accepting_abstracts:
+            return False
+        if self.abstract_deadline and self.abstract_deadline < date.today():
+            return False
+        return True
+
+    @property
+    def accepts_registrations(self) -> bool:
+        if not self.is_accepting_registrations:
+            return False
+        if self.registration_deadline and self.registration_deadline < date.today():
+            return False
+        return True
 
 
 class PriceTier(db.Model):

@@ -28,9 +28,9 @@
           {% if u.role_name == 'admin' %}
             <span class="status" data-v="accepted">admin</span>
           {% else %}
-          <select class="select" name="role_for_{{ u.id }}" disabled style="width:140px;">
-            {% for r in ['unregistered','member','committee'] %}
-              <option {% if u.role_name == r %}selected{% endif %}>{{ r }}</option>
+          <select class="select role-select" data-user-id="{{ u.id }}" data-original-role="{{ u.role_name }}" style="width:140px;">
+            {% for r in editable_roles %}
+              <option value="{{ r }}" {% if u.role_name == r %}selected{% endif %}>{{ r }}</option>
             {% endfor %}
           </select>
           {% endif %}
@@ -43,7 +43,7 @@
   </table>
   <div style="display:flex; gap:10px; margin-top:14px;">
     <button class="btn btn-quiet btn-sm" type="submit" name="action" value="delete"
-            onclick="return confirm('Soft-delete the selected members?')">Soft-delete selected</button>
+            data-confirm="Soft-delete the selected members?">Soft-delete selected</button>
   </div>
 </form>
 
@@ -52,13 +52,13 @@
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="action" value="set_role">
   <div class="row-2">
-    <div class="field"><label for="user_id">User</label>
-      <select class="select" id="user_id" name="user_id" required>
-        <option value="">—</option>
-        {% for u in items if u.role_name != 'admin' %}
-          <option value="{{ u.id }}">{{ u.email }}</option>
-        {% endfor %}
-      </select></div>
+    <div class="field"><label for="user_search">User</label>
+      <div class="search-select" data-search-url="{{ url_for('admin.api_search_users') }}">
+        <input type="text" class="input search-select-input" id="user_search" placeholder="Type name or email…" autocomplete="off">
+        <input type="hidden" id="user_id" name="user_id" value="">
+        <div class="search-select-dropdown"></div>
+      </div>
+    </div>
     <div class="field"><label for="role">New role</label>
       <select class="select" id="role" name="role">
         {% for r in editable_roles %}<option>{{ r }}</option>{% endfor %}
@@ -66,4 +66,32 @@
   </div>
   <button class="btn btn-primary btn-sm" type="submit">Save role</button>
 </form>
+
+{% endblock %}
+
+{% block scripts %}
+<style>
+.search-select { position: relative; }
+.search-select-dropdown {
+  display: none;
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 100;
+  background: var(--c-card-bg, #fff);
+  border: 1px solid var(--c-card-border, #ccc);
+  border-radius: 6px;
+  max-height: 260px; overflow-y: auto;
+  box-shadow: 0 6px 18px rgba(0,0,0,.12);
+  margin-top: 2px;
+}
+.search-select-item {
+  padding: 8px 12px; cursor: pointer; font-size: 13px;
+  border-bottom: 1px solid var(--c-card-border, #eee);
+}
+.search-select-item:last-child { border-bottom: none; }
+.search-select-item:hover,
+.search-select-item.active { background: var(--c-accent, #f0f0f0); color: var(--c-accent-ink, #111); }
+
+.role-select.flash-ok { background: #e6ffe6; transition: background .3s; }
+.role-select.flash-err { background: #ffe6e6; transition: background .3s; }
+</style>
+<script src="{{ url_for('static', filename='js/member-search.js') }}"></script>
 {% endblock %}

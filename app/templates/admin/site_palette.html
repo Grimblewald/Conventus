@@ -36,23 +36,5 @@
 </form>
 {% endblock %}
 {% block scripts %}
-<script>
-  // Live-preview palette changes by writing CSS variables on the fly.
-  document.querySelectorAll('.palette-input').forEach(el => {
-    el.addEventListener('input', () => {
-      const k = el.dataset.key.replace('palette_', '');
-      const cssVar = {
-        page_bg: '--c-page-bg', page_text: '--c-page-text', muted_text: '--c-muted-text',
-        link: '--c-link', link_hover: '--c-link-hover',
-        accent: '--c-accent', accent_ink: '--c-accent-ink',
-        header_bg: '--c-header-bg', header_text: '--c-header-text',
-        footer_bg: '--c-footer-bg', footer_text: '--c-footer-text',
-        card_bg: '--c-card-bg', card_border: '--c-card-border',
-        button_bg: '--c-button-bg', button_text: '--c-button-text',
-      }[k];
-      if (cssVar) document.documentElement.style.setProperty(cssVar, el.value);
-      el.parentElement.querySelector('code').textContent = el.value;
-    });
-  });
-</script>
+<script src="{{ url_for('static', filename='js/admin-palette.js') }}"></script>
 {% endblock %}

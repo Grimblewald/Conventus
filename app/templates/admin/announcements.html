@@ -30,7 +30,7 @@
       <td>
         {% if can('ann.delete') %}
         <form method="post" action="{{ url_for('admin.announcement_delete', aid=a.id) }}"
-              onsubmit="return confirm('Soft-delete this announcement?')" style="display:inline">
+              data-confirm="Soft-delete this announcement?" style="display:inline">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button class="btn btn-quiet btn-sm">Delete</button>
         </form>

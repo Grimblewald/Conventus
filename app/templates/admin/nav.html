@@ -27,7 +27,7 @@
           <td><input type="checkbox" name="new_tab_{{ n.id }}" {% if n.open_in_new_tab %}checked{% endif %}></td>
           <td>
             <button class="btn btn-quiet btn-sm" type="submit" name="action" value="delete" formaction="{{ url_for('admin.nav') }}" formnovalidate
-              onclick="this.form.querySelectorAll('input[name=id]').forEach(e=>e.value='');this.previousElementSibling;" >Delete</button>
+              data-nav-delete>Delete</button>
             {# Simpler: per-row delete form #}
           </td>
         </tr>

@@ -80,6 +80,9 @@ def register_conf(slug):
          .first_or_404())
     if c.is_draft:
         abort(404)
+    if not c.accepts_registrations and not c.external_registration_url:
+        flash("Registration is not open for this conference.", "error")
+        return redirect(url_for("public.conference_detail", slug=c.slug))
     existing = (
         Registration.query
         .filter_by(user_id=current_user.id, conference_id=c.id)
@@ -130,6 +133,9 @@ def submit_abstract(slug):
          .first_or_404())
     if c.is_draft:
         abort(404)
+    if not c.accepts_abstracts and not c.external_abstract_url:
+        flash("Abstract submission is not open for this conference.", "error")
+        return redirect(url_for("public.conference_detail", slug=c.slug))
     tracks = c.tracks_list()
 
     if request.method == "POST":

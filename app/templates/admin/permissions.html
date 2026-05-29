@@ -6,7 +6,7 @@
 
 <form method="get" class="form" style="max-width:380px;">
   <div class="field"><label for="role_picker">Role</label>
-    <select class="select" id="role_picker" name="role" onchange="this.form.submit()">
+    <select class="select" id="role_picker" name="role">
       {% for name, label in role_choices %}
         <option value="{{ name }}" {% if role.name == name %}selected{% endif %}>{{ label }}</option>
       {% endfor %}

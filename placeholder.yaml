@@ -29,20 +29,20 @@ admin:
 # Values are CSS colour strings. Keep them legible against each other.
 # ---------------------------------------------------------------------------
 palette:
-  page_bg: "#f7f5f1"
-  page_text: "#171717"
-  muted_text: "#5b5b5b"
-  link: "#2a4d8f"
-  link_hover: "#1a3669"
-  accent: "#2a4d8f"
+  page_bg: "#faf7f1"
+  page_text: "#10172a"
+  muted_text: "#525a6f"
+  link: "#1a4680"
+  link_hover: "#0f2f5e"
+  accent: "#1a4680"
   accent_ink: "#ffffff"
-  header_bg: "#ffffff"
-  header_text: "#171717"
-  footer_bg: "#171717"
-  footer_text: "#dcdcdc"
+  header_bg: "#faf7f1"
+  header_text: "#2a3247"
+  footer_bg: "#0b2545"
+  footer_text: "#cfd7e8"
   card_bg: "#ffffff"
-  card_border: "#e4e0d6"
-  button_bg: "#171717"
+  card_border: "#e4dfd1"
+  button_bg: "#1a4680"
   button_text: "#ffffff"
 
 # ---------------------------------------------------------------------------

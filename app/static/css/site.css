@@ -10,9 +10,9 @@
 :root {
   --line:   #e6e1d5;
   --line-2: #d6cebc;
-  --shadow-sm: 0 1px 2px rgba(0,0,0,.04);
-  --shadow:    0 4px 14px rgba(0,0,0,.06);
-  --shadow-lg: 0 14px 40px rgba(0,0,0,.10);
+  --shadow-sm: 0 1px 2px color-mix(in oklab, var(--c-accent, #3d79c2) 10%, rgba(0,0,0,.06));
+  --shadow:    0 4px 14px color-mix(in oklab, var(--c-accent, #3d79c2) 8%, rgba(0,0,0,.08));
+  --shadow-lg: 0 20px 50px color-mix(in oklab, var(--c-accent, #3d79c2) 10%, rgba(0,0,0,.14));
 
   --rad-sm: 4px;
   --rad:    8px;
@@ -30,6 +30,7 @@ body {
   color: var(--c-page-text);
   font-size: 17px;
   line-height: 1.55;
+  font-feature-settings: "kern", "liga", "onum";
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -106,6 +107,9 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
   letter-spacing: 0.01em;
   color: var(--c-header-text);
 }
+.brand-text .wordmark em {
+  font-style: italic; font-weight: 500; color: var(--c-accent);
+}
 .brand-text .tagline {
   display: block; font-family: var(--f-ui);
   font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.13em;
@@ -113,8 +117,15 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
 }
 
 .nav { display: flex; gap: 26px; margin-left: auto; font-family: var(--f-ui); font-size: 15px; }
-.nav a { color: var(--c-header-text); padding: 6px 0; font-weight: 500; }
+.nav a {
+  color: var(--c-header-text); padding: 6px 0; font-weight: 500;
+  letter-spacing: 0.01em; position: relative;
+}
 .nav a:hover { color: var(--c-link); text-decoration: none; }
+.nav a.is-active::after {
+  content: ""; position: absolute; bottom: -6px; left: 0; right: 0;
+  height: 2px; background: var(--c-accent); border-radius: 1px;
+}
 
 .header-cta { display: flex; gap: 10px; align-items: center; }
 
@@ -174,8 +185,26 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
 }
 .hero-visual img { width: 100%; height: 100%; object-fit: cover; }
 
+/* Centered hero variant */
+.hero[data-layout="centered"] .hero-inner {
+  grid-template-columns: 1fr; justify-items: center; text-align: center; gap: 40px;
+}
+.hero[data-layout="centered"] .hero-visual { max-width: 920px; }
+.hero[data-layout="centered"] .hero-meta { justify-content: center; }
+.hero[data-layout="centered"] .hero-cta { justify-content: center; }
+.hero[data-layout="centered"] .countdown { justify-content: center; }
+.hero[data-layout="centered"] .hero-eyebrow { justify-content: center; }
+
+/* Banner hero variant */
+.hero[data-layout="banner"] .hero-inner {
+  grid-template-columns: 1fr; gap: 28px;
+}
+.hero[data-layout="banner"] .hero-visual {
+  aspect-ratio: 21 / 8; order: -1;
+}
+
 /* ---------------- Sections ---------------- */
-section.block { padding: 64px 0; border-bottom: 1px solid var(--c-card-border); }
+section.block { padding: 72px 0; border-bottom: 1px solid var(--c-card-border); }
 section.block.alt { background: color-mix(in oklab, var(--c-card-bg) 50%, var(--c-page-bg)); }
 /* Dark / inverted closing band. Pair with the page text colour so it works
    regardless of which palette the site is wearing today — no hard-coded
@@ -227,7 +256,7 @@ section.block.ink .table td {
 }
 .section-head {
   display: flex; align-items: baseline; justify-content: space-between;
-  gap: 24px; margin-bottom: 32px;
+  gap: 24px; margin-bottom: 36px;
   border-bottom: 1px solid var(--c-card-border); padding-bottom: 16px;
 }
 .section-head .eyebrow {
@@ -307,9 +336,15 @@ section.block.ink .table td {
   font-family: var(--f-ui); font-size: 11px; font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.16em;
   padding: 4px 10px; border-radius: 999px; justify-self: start;
+  border: 1px solid transparent;
   background: color-mix(in oklab, var(--c-accent) 12%, transparent);
   color: var(--c-accent);
+  border-color: color-mix(in oklab, var(--c-accent) 20%, transparent);
 }
+.ann .tag[data-kind="Award"] { background: #f6efd8; color: #7a5a14; border-color: #ebdcaf; }
+.ann .tag[data-kind="Call"]  { background: #efe3dc; color: #8a3d19; border-color: #e0c5b6; }
+.ann .tag[data-kind="Event"] { background: #e0ecdf; color: #2c5b3d; border-color: #c6dcc7; }
+.ann .tag[data-kind="News"]  { background: #dde8f4; color: #1a4680; border-color: #b9cde4; }
 .ann h4 { margin: 0 0 6px; }
 .ann p, .ann .md { margin: 0; color: var(--c-muted-text); }
 .ann time { font-family: var(--f-ui); font-size: 12.5px; color: var(--c-muted-text); white-space: nowrap; }
@@ -317,10 +352,11 @@ section.block.ink .table td {
 /* ---------------- Forms ---------------- */
 .form { max-width: 640px; }
 .form-wide { max-width: 980px; }
-.field { margin-bottom: 18px; }
+.field { margin-bottom: 20px; }
 .field label, .field > .label {
   display: block; font-family: var(--f-ui); font-size: 13px;
   font-weight: 600; color: var(--c-muted-text); margin-bottom: 6px;
+  letter-spacing: 0.01em;
 }
 .field .help { font-family: var(--f-ui); font-size: 12.5px; color: var(--c-muted-text); margin-top: 6px; }
 .input, .textarea, .select {
@@ -333,7 +369,7 @@ section.block.ink .table td {
   outline: none; border-color: var(--c-link);
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--c-link) 20%, transparent);
 }
-.textarea { min-height: 140px; line-height: 1.5; }
+.textarea { min-height: 160px; line-height: 1.5; }
 .select { appearance: none; padding-right: 36px;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='%23000' d='M0 0l5 6 5-6z'/></svg>");
   background-repeat: no-repeat; background-position: right 14px center; background-size: 10px 6px;
@@ -380,14 +416,19 @@ section.block.ink .table td {
   font-family: var(--f-ui); font-size: 11.5px; font-weight: 700;
   text-transform: uppercase; letter-spacing: 0.14em;
   padding: 3px 10px; border-radius: 999px;
+  border: 1px solid var(--c-card-border);
   background: color-mix(in oklab, var(--c-accent) 10%, transparent);
   color: var(--c-accent);
 }
 .status[data-v="accepted"], .status[data-v="paid"] {
-  background: color-mix(in oklab, #2f7d4f 16%, transparent); color: #2f7d4f;
+  background: #e3efe5; color: #2c5b3d; border-color: #c6dcc7;
 }
-.status[data-v="rejected"] { background: color-mix(in oklab, #a1324c 16%, transparent); color: #a1324c; }
-.status[data-v="revise"]   { background: color-mix(in oklab, #b86b1e 16%, transparent); color: #b86b1e; }
+.status[data-v="rejected"] {
+  background: #f3dee3; color: #8a2a3e; border-color: #e5c0c9;
+}
+.status[data-v="revise"] {
+  background: #f6efd8; color: #7a5a14; border-color: #ebdcaf;
+}
 
 /* Flashes */
 .flash-wrap { position: sticky; top: 78px; z-index: 40; }

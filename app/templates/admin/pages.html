@@ -16,7 +16,7 @@
       <td>{% if p.published %}Yes{% else %}Draft{% endif %}</td>
       <td>{{ p.updated_at.strftime('%-d %b %Y') }}</td>
       <td>
-        <form method="post" action="{{ url_for('admin.page_delete', pid=p.id) }}" onsubmit="return confirm('Soft-delete this page?')">
+        <form method="post" action="{{ url_for('admin.page_delete', pid=p.id) }}" data-confirm="Soft-delete this page?">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button class="btn btn-quiet btn-sm">Delete</button>
         </form>

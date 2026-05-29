@@ -55,6 +55,19 @@ def conferences():
                 early_bird_deadline=(
                     date.fromisoformat(request.form["early_bird_deadline"])
                     if request.form.get("early_bird_deadline") else None),
+                registration_deadline=(
+                    date.fromisoformat(request.form["registration_deadline"])
+                    if request.form.get("registration_deadline") else None),
+                is_accepting_abstracts=not bool(request.form.get("not_accepting_abstracts")),
+                is_accepting_registrations=not bool(request.form.get("not_accepting_registrations")),
+                abstracts_reopen_date=(
+                    date.fromisoformat(request.form["abstracts_reopen_date"])
+                    if request.form.get("abstracts_reopen_date") else None),
+                registrations_reopen_date=(
+                    date.fromisoformat(request.form["registrations_reopen_date"])
+                    if request.form.get("registrations_reopen_date") else None),
+                external_registration_url=(request.form.get("external_registration_url") or "").strip() or None,
+                external_abstract_url=(request.form.get("external_abstract_url") or "").strip() or None,
             )
             db.session.add(c)
             db.session.commit()
@@ -79,7 +92,11 @@ def conferences():
 # Edit
 # ---------------------------------------------------------------------------
 
-_DATE_FIELDS = ("start_date", "end_date", "abstract_deadline", "early_bird_deadline")
+_DATE_FIELDS = (
+    "start_date", "end_date",
+    "abstract_deadline", "early_bird_deadline", "registration_deadline",
+    "abstracts_reopen_date", "registrations_reopen_date",
+)
 
 
 @admin_bp.route("/conferences/<int:cid>/edit", methods=["GET", "POST"])
@@ -105,6 +122,10 @@ def conference_edit(cid):
             c.hero_caption = (request.form.get("hero_caption") or "").strip()
             c.is_featured = bool(request.form.get("is_featured"))
             c.is_draft = bool(request.form.get("is_draft"))
+            c.is_accepting_abstracts = not bool(request.form.get("not_accepting_abstracts"))
+            c.is_accepting_registrations = not bool(request.form.get("not_accepting_registrations"))
+            c.external_registration_url = (request.form.get("external_registration_url") or "").strip() or None
+            c.external_abstract_url = (request.form.get("external_abstract_url") or "").strip() or None
 
             for fld in _DATE_FIELDS:
                 raw = (request.form.get(fld) or "").strip()

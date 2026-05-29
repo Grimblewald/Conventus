@@ -72,10 +72,16 @@
         {% endif %}
 
         <div class="hero-cta">
-          <a class="btn btn-primary btn-lg"
-             href="{{ url_for('member.register_conf', slug=featured.slug) }}">Register</a>
-          <a class="btn btn-ghost btn-lg"
-             href="{{ url_for('member.submit_abstract', slug=featured.slug) }}">Submit an abstract</a>
+          {% if featured.external_registration_url %}
+            <a class="btn btn-primary btn-lg" href="{{ featured.external_registration_url }}" target="_blank" rel="noopener">Register ↗</a>
+          {% elif featured.accepts_registrations %}
+            <a class="btn btn-primary btn-lg" href="{{ url_for('member.register_conf', slug=featured.slug) }}">Register</a>
+          {% endif %}
+          {% if featured.external_abstract_url %}
+            <a class="btn btn-ghost btn-lg" href="{{ featured.external_abstract_url }}" target="_blank" rel="noopener">Submit an abstract ↗</a>
+          {% elif featured.accepts_abstracts %}
+            <a class="btn btn-ghost btn-lg" href="{{ url_for('member.submit_abstract', slug=featured.slug) }}">Submit an abstract</a>
+          {% endif %}
           <a class="btn btn-quiet btn-lg"
              href="{{ url_for('public.conference_detail', slug=featured.slug) }}">Programme details →</a>
         </div>
@@ -228,29 +234,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
-  // Countdown — re-used from original. Pure JS, no deps. Updates every
-  // second; degrades gracefully if no `.countdown[data-target]` is on
-  // the page.
-  (function () {
-    const el = document.querySelector('.countdown[data-target]');
-    if (!el) return;
-    const target = new Date(el.dataset.target).getTime();
-    const pills = el.querySelectorAll('.pill .n');
-    if (pills.length < 4) return;
-    function tick() {
-      const diff = Math.max(0, target - Date.now());
-      const d = Math.floor(diff / 86400000);
-      const h = Math.floor((diff / 3600000) % 24);
-      const m = Math.floor((diff / 60000) % 60);
-      const s = Math.floor((diff / 1000) % 60);
-      pills[0].textContent = d;
-      pills[1].textContent = String(h).padStart(2, '0');
-      pills[2].textContent = String(m).padStart(2, '0');
-      pills[3].textContent = String(s).padStart(2, '0');
-    }
-    tick();
-    setInterval(tick, 1000);
-  })();
-</script>
+<script src="{{ url_for('static', filename='js/countdown.js') }}"></script>
 {% endblock %}

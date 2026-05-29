@@ -1,0 +1,16 @@
+[Unit]
+Description=Society Site — daily database backup
+Wants=society-site-backup.timer
+
+[Service]
+Type=oneshot
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/society-site
+ExecStart=/opt/society-site/.venv/bin/python /opt/society-site/scripts/backup.py
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/society-site/instance /opt/society-site/backups

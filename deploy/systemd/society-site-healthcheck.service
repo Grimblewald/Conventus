@@ -1,0 +1,16 @@
+[Unit]
+Description=Society Site — health-check monitor
+Wants=society-site-healthcheck.timer
+
+[Service]
+Type=oneshot
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/society-site
+ExecStart=/opt/society-site/.venv/bin/python /opt/society-site/scripts/healthcheck.py
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/society-site/var

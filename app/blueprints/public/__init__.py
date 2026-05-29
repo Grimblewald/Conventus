@@ -124,8 +124,10 @@ def contact():
     recipients = (
         User.query
         .filter(User.role_name.in_(("admin", "committee")),
-                User.deleted_at.is_(None))
-        .order_by(User.full_name, User.email)
+                User.deleted_at.is_(None),
+                User.full_name.isnot(None),
+                User.full_name != "")
+        .order_by(User.full_name)
         .all()
     )
     if request.method == "POST":
@@ -152,7 +154,7 @@ def contact():
         body = (f"From: {sender_name} <{sender_email}>\n"
                 f"Sent via the contact form.\n\n{message}\n")
         send_mail(target.email, f"[Contact] {subject}", body)
-        flash(f"Message sent to {target.full_name or target.email}.", "success")
+        flash(f"Message sent to {target.full_name}.", "success")
         return redirect(url_for("public.contact"))
 
     return render_template("public/contact.html", recipients=recipients, form={})

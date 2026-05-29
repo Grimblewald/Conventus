@@ -116,18 +116,59 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
   color: var(--c-muted-text); margin-top: 2px;
 }
 
-.nav { display: flex; gap: 26px; margin-left: auto; font-family: var(--f-ui); font-size: 15px; }
+.nav {
+  display: flex; gap: 26px; margin-left: auto;
+  font-family: var(--f-ui); font-size: 15px;
+  align-items: center;
+}
 .nav a {
   color: var(--c-header-text); padding: 6px 0; font-weight: 500;
-  letter-spacing: 0.01em; position: relative;
+  letter-spacing: 0.01em; position: relative; white-space: nowrap;
 }
 .nav a:hover { color: var(--c-link); text-decoration: none; }
 .nav a.is-active::after {
   content: ""; position: absolute; bottom: -6px; left: 0; right: 0;
   height: 2px; background: var(--c-accent); border-radius: 1px;
 }
+.nav .nav-signout { color: var(--c-muted-text); font-weight: 400; }
 
-.header-cta { display: flex; gap: 10px; align-items: center; }
+/* Hamburger toggle */
+.nav-toggle-check { display: none; }
+.nav-toggle-btn {
+  display: none; flex-direction: column; gap: 5px;
+  cursor: pointer; padding: 8px; margin-left: auto;
+  z-index: 60; background: none; border: none;
+}
+.nav-toggle-btn span {
+  display: block; width: 22px; height: 2px;
+  background: var(--c-header-text); border-radius: 2px;
+  transition: transform .2s, opacity .2s;
+}
+
+@media (max-width: 960px) {
+  .nav-toggle-btn { display: flex; }
+  .nav {
+    display: none; flex-direction: column; align-items: stretch;
+    position: absolute; top: 100%; left: 0; right: 0;
+    background: var(--c-header-bg);
+    border-bottom: 1px solid var(--c-card-border);
+    padding: 12px 28px 20px; gap: 4px;
+    box-shadow: var(--shadow);
+    z-index: 55;
+  }
+  .nav a { padding: 10px 0; }
+
+  .nav-toggle-check:checked ~ .nav { display: flex; }
+  .nav-toggle-check:checked ~ .nav-toggle-btn span:nth-child(1) {
+    transform: translateY(7px) rotate(45deg);
+  }
+  .nav-toggle-check:checked ~ .nav-toggle-btn span:nth-child(2) {
+    opacity: 0;
+  }
+  .nav-toggle-check:checked ~ .nav-toggle-btn span:nth-child(3) {
+    transform: translateY(-7px) rotate(-45deg);
+  }
+}
 
 /* ---------------- Buttons ---------------- */
 .btn {
@@ -703,7 +744,6 @@ section.block.ink .table td {
   .admin-shell { grid-template-columns: 1fr; }
   .admin-side { position: static; }
   .hero-inner, .grid.cols-3, .grid.cols-4 { grid-template-columns: 1fr; }
-  .nav { display: none; }
   h1, .hero h1 { font-size: 2.2rem; }
   .ann { grid-template-columns: 1fr; gap: 6px; }
   .site-footer .cols { grid-template-columns: 1fr 1fr; }

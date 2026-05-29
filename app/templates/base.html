@@ -81,20 +81,22 @@
       </span>
     </a>
 
+    <input type="checkbox" id="nav-toggle" class="nav-toggle-check">
+    <label for="nav-toggle" class="nav-toggle-btn" aria-label="Menu">
+      <span></span><span></span><span></span>
+    </label>
+
     <nav class="nav" aria-label="Primary">
       {% for item in nav_items %}
         <a href="{{ item.target | target_url }}"{% if item.open_in_new_tab %} target="_blank" rel="noopener"{% endif %}>{{ item.label }}</a>
       {% endfor %}
-    </nav>
-
-    <div class="header-cta">
       {% if current_user.is_authenticated %}
-        <a class="btn btn-ghost btn-sm" href="{{ url_for('member.dashboard') }}">Dashboard</a>
-        <a class="btn btn-quiet btn-sm" href="{{ url_for('auth.logout') }}">Sign out</a>
+        <a href="{{ url_for('member.dashboard') }}">Dashboard</a>
+        <a href="{{ url_for('auth.logout') }}" class="nav-signout">Sign out</a>
       {% else %}
-        <a class="btn btn-ghost btn-sm" href="{{ url_for('auth.login') }}">Sign in</a>
+        <a href="{{ url_for('auth.login') }}">Sign in</a>
       {% endif %}
-    </div>
+    </nav>
   </div>
 </header>
 

@@ -22,7 +22,7 @@
         <select class="select" id="recipient_id" name="recipient_id" required>
           <option value="">— Select —</option>
           {% for r in recipients %}
-            <option value="{{ r.id }}">{{ r.full_name or r.email }}</option>
+            <option value="{{ r.id }}">{{ r.full_name }}</option>
           {% endfor %}
         </select>
       </div>

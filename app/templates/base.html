@@ -118,7 +118,7 @@
       <div>
         <div class="brand" style="align-items: flex-start">
           {% if site.logo_filename %}
-            <img class="brand-mark" src="{{ url_for('public.site_upload', name=site.logo_filename) }}" alt="">
+            <img class="brand-mark" src="{{ url_for('public.site_upload', name=site.logo_filename) }}" alt="{{ site.site_name }} logo">
           {% endif %}
           <span class="brand-text">
             <span class="wordmark">{{ site.site_name }}</span>

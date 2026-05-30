@@ -14,6 +14,29 @@
   --shadow:    0 4px 14px color-mix(in oklab, var(--c-accent, #3d79c2) 8%, rgba(0,0,0,.08));
   --shadow-lg: 0 20px 50px color-mix(in oklab, var(--c-accent, #3d79c2) 10%, rgba(0,0,0,.14));
 
+  /* Sensible fallbacks so the site renders legibly if base.html fails
+     to inject the --c-* and --f-* variables from SiteSettings. */
+  --c-page-bg: #faf7f1;
+  --c-page-text: #171717;
+  --c-muted-text: #5b5b5b;
+  --c-link: #2a4d8f;
+  --c-link-hover: #1a3669;
+  --c-accent: #2a4d8f;
+  --c-accent-ink: #ffffff;
+  --c-header-bg: #ffffff;
+  --c-header-text: #171717;
+  --c-footer-bg: #171717;
+  --c-footer-text: #dcdcdc;
+  --c-card-bg: #ffffff;
+  --c-card-border: #e4e0d6;
+  --c-button-bg: #171717;
+  --c-button-text: #ffffff;
+
+  --f-heading: Georgia, 'Times New Roman', serif;
+  --f-body: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --f-link: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --f-ui: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
   --rad-sm: 4px;
   --rad:    8px;
   --rad-lg: 14px;

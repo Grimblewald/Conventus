@@ -109,7 +109,7 @@
                alt="{{ featured.hero_caption or featured.title }}">
         {% elif site.hero_image_filename %}
           <img src="{{ url_for('public.site_upload', name=site.hero_image_filename) }}"
-               alt="">
+               alt="{{ site.site_name }} hero">
         {% else %}
           <div class="ph" data-label="HERO IMAGE"></div>
         {% endif %}
@@ -175,7 +175,7 @@
         <div class="eyebrow">From the society</div>
         <h2>Announcements</h2>
       </div>
-      <a class="link" href="#">Archive →</a>
+      <a class="link" href="{{ url_for('public.conferences') }}">Archive →</a>
     </div>
 
     <div class="ann-list">

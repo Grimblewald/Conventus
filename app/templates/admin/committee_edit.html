@@ -13,7 +13,7 @@
     <div>
       <div class="portrait-edit">
         {% if m and m.portrait_filename %}
-          <img src="{{ url_for('public.committee_upload', name=m.portrait_filename) }}" alt="">
+          <img src="{{ url_for('public.committee_upload', name=m.portrait_filename) }}" alt="{{ m.display_name }} portrait">
         {% else %}
           <div class="ph" data-label="PORTRAIT"></div>
         {% endif %}

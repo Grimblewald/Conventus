@@ -90,8 +90,8 @@
 .search-select-item:hover,
 .search-select-item.active { background: var(--c-accent, #f0f0f0); color: var(--c-accent-ink, #111); }
 
-.role-select.flash-ok { background: #e6ffe6; transition: background .3s; }
-.role-select.flash-err { background: #ffe6e6; transition: background .3s; }
+.role-select.flash-ok { background: var(--c-success-bg, #e6ffe6); transition: background .3s; }
+.role-select.flash-err { background: var(--c-error-bg, #ffe6e6); transition: background .3s; }
 </style>
 <script src="{{ url_for('static', filename='js/member-search.js') }}"></script>
 {% endblock %}

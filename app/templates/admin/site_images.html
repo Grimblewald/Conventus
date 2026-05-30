@@ -11,7 +11,7 @@
     <div class="image-slot">
       {% set current = s[cfg.ext_field] %}
       {% if current %}
-        <img src="{{ url_for('public.site_upload', name=current) }}" alt="">
+        <img src="{{ url_for('public.site_upload', name=current) }}" alt="{{ cfg.label }}">
       {% else %}
         <div class="ph" data-label="{{ cfg.label.upper() }}"></div>
       {% endif %}

@@ -1,1 +1,5 @@
-Single-database configuration for Flask.
+Single-database configuration for Flask-Migrate (Alembic).
+
+Migrations track schema changes so existing deployments can upgrade
+in-place with `flask db upgrade`. New deployments start from the
+`4a1b2c3d4e5f_initial_schema` baseline.

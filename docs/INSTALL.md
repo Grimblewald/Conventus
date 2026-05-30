@@ -74,9 +74,7 @@ Navigation / Footer / Committee** sections.
 
 Pick a target:
 - [Single VPS (systemd + nginx)](DEPLOY-VPS.md)
-- [Docker compose](DEPLOY-DOCKER.md)
-- [PaaS (Fly / Render / Railway)](DEPLOY-PAAS.md)
-- [Cloudflare tunnel](DEPLOY-CLOUDFLARE.md) — overlay any of the above
+- [Cloudflare tunnel — zero-config](DEPLOY-CLOUDFLARE-SIMPLE.md)
 
 Before going public, read [SECURITY.md](SECURITY.md) — it lists the env
 vars that must be set, what to verify, and the hardening the app applies

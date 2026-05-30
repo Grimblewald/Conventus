@@ -62,7 +62,7 @@ app/
 │   └── setup_wizard/       # first-run wizard
 ├── templates/              # Jinja2 templates
 └── static/                 # site.css (vars-driven) + site.js
-deploy/                     # Dockerfile, compose, systemd, nginx, Caddyfile, cloudflared
+deploy/                     # systemd units, nginx config
 scripts/                    # launch.sh, launch_cloudflared.sh, admin_cli.py
 docs/                       # install + deploy + security + updating
 placeholder.yaml            # seeded by the wizard the first time the app runs
@@ -74,9 +74,7 @@ wsgi.py                     # gunicorn entry
 
 - [`docs/INSTALL.md`](docs/INSTALL.md) — fresh install on any host
 - [`docs/DEPLOY-VPS.md`](docs/DEPLOY-VPS.md) — single VPS w/ systemd + nginx
-- [`docs/DEPLOY-DOCKER.md`](docs/DEPLOY-DOCKER.md) — docker-compose
-- [`docs/DEPLOY-PAAS.md`](docs/DEPLOY-PAAS.md) — Fly / Render / Railway
-- [`docs/DEPLOY-CLOUDFLARE.md`](docs/DEPLOY-CLOUDFLARE.md) — Cloudflare tunnel
+- [`docs/DEPLOY-CLOUDFLARE-SIMPLE.md`](docs/DEPLOY-CLOUDFLARE-SIMPLE.md) — zero-config Cloudflare tunnel
 - [`docs/SECURITY.md`](docs/SECURITY.md) — hardening notes
 - [`docs/UPDATING.md`](docs/UPDATING.md) — keeping a deployment current
 - [`docs/CUSTOMISING.md`](docs/CUSTOMISING.md) — what each admin panel does

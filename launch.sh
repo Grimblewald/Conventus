@@ -65,12 +65,17 @@ FLASK_ENV=production
 EOF
   ok ".env created with a random SECRET_KEY."
 else
-  if ! grep -q '^SECRET_KEY=' .env || grep -q 'SECRET_KEY=dev-change-me' .env 2>/dev/null; then
+  if ! grep -q '^SECRET_KEY=' .env || grep -qE 'SECRET_KEY=(dev-change-me|CHANGE-ME)' .env 2>/dev/null; then
     info "Generating a new SECRET_KEY in .env."
+    NEW_KEY=$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')
     if grep -q '^SECRET_KEY=' .env; then
-      sed -i "s/^SECRET_KEY=.*/SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')/" .env
+      if python3 -c "import sys; sys.exit(0 if sys.platform == 'darwin' else 1)" 2>/dev/null; then
+        sed -i '' "s/^SECRET_KEY=.*/SECRET_KEY=$NEW_KEY/" .env
+      else
+        sed -i "s/^SECRET_KEY=.*/SECRET_KEY=$NEW_KEY/" .env
+      fi
     else
-      echo "SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')" >> .env
+      echo "SECRET_KEY=$NEW_KEY" >> .env
     fi
   fi
 fi
@@ -86,7 +91,7 @@ if [ -z "$DOMAIN" ]; then
   info "No CLOUDFLARE_DOMAIN set."
   read -rp "  What domain do you want to use? (e.g. my-society.org): " DOMAIN
   if [ -z "$DOMAIN" ]; then
-    err "A domain is required. Set CLOUDFLARE_DOMAIN=example.org in .env and re-run."
+    err "A domain is required. Set CLOUDFLARE_DOMAIN=your-domain.example.org in .env and re-run."
     exit 1
   fi
   if ! grep -q '^CLOUDFLARE_DOMAIN=' .env 2>/dev/null; then

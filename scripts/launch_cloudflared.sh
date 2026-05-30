@@ -13,13 +13,10 @@ set -euo pipefail
 
 TUNNEL_NAME="${TUNNEL_NAME:-society-site}"
 SUBDOMAIN="${SUBDOMAIN:-app}"
-DOMAIN="${DOMAIN:-example.org}"
+DOMAIN="${DOMAIN:-your-domain.example.org}"
 PORT="${PORT:-5005}"
 PROJECT="${PROJECT:-Society Site}"
 
-# scripts/ lives at <project>/scripts, so "..", not "../..", gets us to
-# the project root. The earlier `../..` walked one level too far and
-# scattered .cloudflared/ into the parent directory.
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG_DIR="$PROJECT_ROOT/.cloudflared"
 RUN_DIR="$PROJECT_ROOT/var"

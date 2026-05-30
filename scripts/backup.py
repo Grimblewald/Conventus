@@ -70,19 +70,21 @@ def _backup_sqlite(db_path: Path, dest: Path) -> None:
 
 
 def _backup_postgres(url: str, dest: Path) -> None:
-    # Parse a SQLAlchemy URL like:
-    #   postgresql+psycopg://user:pass@host:port/dbname
-    # Strip the +psycopg driver qualifier.
+    from urllib.parse import unquote, urlparse
+
     url = url.replace("postgresql+psycopg://", "postgresql://")
     env = os.environ.copy()
-    if "@" in url:
-        # Let pg_dump parse it from the connection string
-        pass
+
+    parsed = urlparse(url)
+    if parsed.password:
+        env["PGPASSWORD"] = unquote(parsed.password)
+        safe = parsed._replace(password="****")
+        url = safe.geturl()
+
     subprocess.run(
         ["pg_dump", "-d", url, "-f", str(dest), "--no-owner", "--no-acl"],
         check=True, env=env, capture_output=True, text=True,
     )
-    # Compress
     with open(dest, "rb") as f_in:
         with gzip.open(str(dest) + ".gz", "wb") as f_out:
             shutil.copyfileobj(f_in, f_out)

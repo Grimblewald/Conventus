@@ -68,12 +68,12 @@ Get a cert with certbot:
 
 ```bash
 apt install -y certbot python3-certbot-nginx
-certbot --nginx -d example.org
+certbot --nginx -d your-domain.example.org
 ```
 
 ## 5. Open the site
 
-Visit `https://example.org/setup` and complete the wizard. Done.
+Visit `https://your-domain.example.org/setup` and complete the wizard. Done.
 
 ## 6. Promoting more admins
 

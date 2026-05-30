@@ -20,6 +20,9 @@ flask.log
 # Cloudflare tunnel local state
 .cloudflared/
 
+# Runtime state (healthcheck, logs, etc.)
+var/
+
 # Editors
 .vscode/
 .idea/

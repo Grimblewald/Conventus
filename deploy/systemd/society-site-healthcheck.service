@@ -7,10 +7,11 @@ Type=oneshot
 User=www-data
 Group=www-data
 WorkingDirectory=/opt/society-site
+EnvironmentFile=/opt/society-site/.env
 ExecStart=/opt/society-site/.venv/bin/python /opt/society-site/scripts/healthcheck.py
 
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=yes
-ReadWritePaths=/opt/society-site/var
+ReadWritePaths=/opt/society-site/var /opt/society-site/.env

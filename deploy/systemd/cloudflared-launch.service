@@ -8,7 +8,8 @@ Type=simple
 User=www-data
 Group=www-data
 WorkingDirectory=/opt/society-site
-ExecStart=/opt/society-site/launch.sh
+EnvironmentFile=/opt/society-site/.env
+ExecStart=/opt/society-site/.venv/bin/bash scripts/launch_cloudflared.sh
 Restart=always
 RestartSec=10
 
@@ -18,9 +19,6 @@ PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=yes
 ReadWritePaths=/opt/society-site/instance /opt/society-site/uploads /opt/society-site/var /opt/society-site/.cloudflared
-
-# Required for cloudflared to reach Cloudflare's edge
-AmbientCapabilities=CAP_NET_BIND_SERVICE
 
 [Install]
 WantedBy=multi-user.target

@@ -22,13 +22,13 @@ class SiteSettings(db.Model):
     id = db.Column(db.Integer, primary_key=True)
 
     # --- Identity ----------------------------------------------------------
-    site_name = db.Column(db.String(120), default="Your Society", nullable=False)
+    site_name = db.Column(db.String(120), default="Name Your Society", nullable=False)
     tagline = db.Column(db.String(240), default="")
     intro_paragraph = db.Column(db.Text, default="")
     intro_secondary = db.Column(db.Text, default="")
     short_name = db.Column(db.String(60), default="Society")
-    browser_tab_title = db.Column(db.String(120), default="Your Society")
-    copyright_line = db.Column(db.String(240), default="© {year} Your Society")
+    browser_tab_title = db.Column(db.String(120), default="Name Your Society")
+    copyright_line = db.Column(db.String(240), default="© {year} Name Your Society")
     contact_email = db.Column(db.String(200), default="")
     locale = db.Column(db.String(8), default="en")
     timezone = db.Column(db.String(40), default="UTC")

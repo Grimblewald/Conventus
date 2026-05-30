@@ -9,12 +9,12 @@
 # =============================================================================
 
 site:
-  name: "Your Society"
+  name: "Name Your Society"
   tagline: "A community of researchers and practitioners."
   short_name: "Society"
-  browser_tab_title: "Your Society"
-  copyright_line: "© {year} Your Society. All rights reserved."
-  contact_email: "contact@example.org"
+  browser_tab_title: "Name Your Society"
+  copyright_line: "© {year} Name Your Society. All rights reserved."
+  contact_email: "contact@your-domain.example.org"
   locale: "en"
   currency_code: "USD"
   currency_symbol: "$"
@@ -23,7 +23,7 @@ site:
   intro_secondary: ""
 
 admin:
-  email: "admin@example.org"
+  email: "your-email@your-domain.example.org"
   full_name: "Society Administrator"
 
 # ---------------------------------------------------------------------------
@@ -97,7 +97,7 @@ pages:
   - slug: "about"
     title: "About"
     body: |
-      Welcome to **Your Society**. Replace this text from the admin panel:
+      Welcome to **Name Your Society**. Replace this text from the admin panel:
       *Admin → Pages → About*. You can use Markdown — headings, lists, links
       and images all work. The page slug `about` is linked from the default
       navigation and footer; you can change either at any time.

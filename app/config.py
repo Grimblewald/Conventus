@@ -110,7 +110,7 @@ class BaseConfig:
 
     # --- Mail (read by services.mail at send time) --------------------------
     MAIL_BACKEND = os.environ.get("MAIL_BACKEND", "console").lower()
-    MAIL_FROM = os.environ.get("MAIL_FROM", "Your Society <noreply@example.org>")
+    MAIL_FROM = os.environ.get("MAIL_FROM", "Name Your Society <noreply@your-domain.example.org>")
 
     # --- Update checker (optional) ------------------------------------------
     UPDATE_REMOTE_URL = (os.environ.get("UPDATE_REMOTE_URL") or "").strip()

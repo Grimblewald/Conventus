@@ -12,12 +12,10 @@ The factory:
 from __future__ import annotations
 
 import logging
-import os
 from datetime import datetime
 from pathlib import Path
 
-from flask import Flask, g, redirect, request, url_for
-from flask_login import current_user
+from flask import Flask, redirect, request, url_for
 
 from .config import BaseConfig, select_config
 from .extensions import (
@@ -117,8 +115,17 @@ def _init_extensions(app: Flask) -> None:
         session_cookie_http_only=True,
     )
 
-    # Bootstrap schema + built-in roles. Idempotent; safe to run on every
-    # boot. Real schema changes still go through Flask-Migrate.
+    # Bootstrap schema + built-in roles.
+    #
+    # db.create_all() creates any missing tables from the current model
+    # definitions. This is idempotent and ensures a fresh checkout starts
+    # without needing to run migrations first.
+    #
+    # Flask-Migrate is still the canonical path for incremental schema
+    # changes on live deployments — run `flask db upgrade` as part of
+    # your deploy process. The initial migration (4a1b2c3d4e5f) also
+    # delegates to db.create_all(), so either path produces the same
+    # schema.
     #
     # Narrow exception handling: we *only* swallow the legitimate "you
     # haven't migrated yet" case (no tables exist + roles table missing).
@@ -171,7 +178,7 @@ def _register_blueprints(app: Flask) -> None:
 
 def _register_template_globals(app: Flask) -> None:
     from .models.content import get_site_settings
-    from .models.content import NavItem, FooterColumn, Page
+    from .models.content import NavItem, FooterColumn
     from .services.fonts import FONT_STACKS
 
     @app.context_processor

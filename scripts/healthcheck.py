@@ -97,7 +97,7 @@ def _send_alert(url: str, status: str) -> None:
     try:
         from app.services.mail import send_mail
     except ImportError:
-        print(f"[healthcheck] ALERT would fire, but couldn't import mail helper.")
+        print("[healthcheck] ALERT would fire, but couldn't import mail helper.")
         print(body)
         return
 

@@ -6,7 +6,6 @@ from datetime import datetime
 from ..extensions import db
 
 
-ABSTRACT_STATUSES = ("submitted", "accepted", "rejected", "revise")
 
 
 class Abstract(db.Model):

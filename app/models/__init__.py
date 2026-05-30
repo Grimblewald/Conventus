@@ -15,6 +15,7 @@ from .content import (
 )
 from .committee import CommitteeMember
 from .conference import Conference, PriceTier
+from .sponsor import Sponsor, SponsorTier
 from .announcement import Announcement
 from .registration import Registration
 from .abstract import Abstract
@@ -28,6 +29,7 @@ __all__ = [
     "get_site_settings",
     "CommitteeMember",
     "Conference", "PriceTier",
+    "Sponsor", "SponsorTier",
     "Announcement",
     "Registration",
     "Abstract",

@@ -6,12 +6,12 @@ module under `app/blueprints/admin/` and stitch them together here.
 from __future__ import annotations
 
 from flask import Blueprint, render_template
-from flask_login import current_user
 
 from ...models import (
     Abstract, Announcement, Conference, Registration, User,
 )
 from ...security import staff_required, can
+from ...services.updater import latest_status
 
 
 admin_bp = Blueprint("admin", __name__, template_folder="../../templates/admin")
@@ -66,6 +66,7 @@ def index():
         recent_abs=recent_abs,
         recent_regs=recent_regs,
         recent_anns=recent_anns,
+        update=latest_status(),
     )
 
 

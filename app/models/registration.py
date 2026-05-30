@@ -6,7 +6,6 @@ from datetime import datetime
 from ..extensions import db
 
 
-REG_STATUSES = ("pending", "paid", "cancelled")
 
 
 class Registration(db.Model):

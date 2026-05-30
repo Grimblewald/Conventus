@@ -61,7 +61,7 @@ def render(src: str) -> str:
 
     def flush_para():
         if para:
-            out.append("<p>" + " ".join(_inline(l) for l in para) + "</p>")
+            out.append("<p>" + " ".join(_inline(token) for token in para) + "</p>")
             para.clear()
 
     while i < len(lines):

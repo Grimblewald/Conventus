@@ -5,8 +5,6 @@ gated by its own permission.
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 from flask import current_app, flash, jsonify, redirect, render_template, request, url_for
 
 from . import admin_bp

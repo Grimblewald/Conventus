@@ -3,7 +3,6 @@ submission. All require login.
 """
 from __future__ import annotations
 
-from datetime import date
 from pathlib import Path
 
 from flask import (
@@ -14,7 +13,6 @@ from flask_login import current_user, login_required
 
 from ...extensions import db
 from ...models import Abstract, Conference, Registration
-from ...models.conference import PriceTier
 from ...security import audit
 from ...services.uploads import UploadError, save_figure
 

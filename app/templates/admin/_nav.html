@@ -42,8 +42,10 @@
   {% if current_user.is_admin %}
   <h5>System</h5>
   <ul>
-    <li><a href="{{ url_for('admin.permissions') }}">Permissions</a></li>
-    <li><a href="{{ url_for('admin.audit_log') }}">Audit log</a></li>
+    {% if current_user.is_admin %}
+      <li><a href="{{ url_for('admin.permissions') }}">Permissions</a></li>
+      <li><a href="{{ url_for('admin.audit_log') }}">Audit log</a></li>
+    {% endif %}
   </ul>
   {% endif %}
 </aside>

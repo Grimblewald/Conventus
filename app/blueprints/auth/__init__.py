@@ -55,7 +55,8 @@ def issue_login_otp(email: str) -> None:
     db.session.add(otp)
     db.session.commit()
 
-    site_name = current_app.config.get("SITE_NAME_FALLBACK", "Your Society")
+    from ...models.content import get_site_settings
+    site_name = get_site_settings().site_name
     send_mail(
         to=email,
         subject=f"Your {site_name} sign-in code",

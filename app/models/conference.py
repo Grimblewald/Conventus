@@ -38,7 +38,6 @@ class Conference(db.Model):
     external_abstract_url = db.Column(db.String(500))
 
     tracks = db.Column(db.Text, default="")          # newline-separated
-    committee = db.Column(db.Text, default="")       # "Name, Institution\n..."
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow,

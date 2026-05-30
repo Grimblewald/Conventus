@@ -43,7 +43,8 @@ def _send_smtp(to: str, subject: str, body: str) -> None:
     user = (os.environ.get("SMTP_USER") or "").strip()
     pw = (os.environ.get("SMTP_PASS") or "").strip()
     timeout = int(os.environ.get("SMTP_TIMEOUT", "15").strip() or 15)
-    sender = os.environ.get("MAIL_FROM", "noreply@example.org").strip()
+    from flask import current_app
+    sender = current_app.config.get("MAIL_FROM", "").strip() or "noreply@example.org"
 
     msg = EmailMessage()
     msg["From"] = sender

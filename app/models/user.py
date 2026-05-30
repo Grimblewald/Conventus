@@ -13,7 +13,6 @@ from __future__ import annotations
 from datetime import datetime
 
 from flask_login import UserMixin
-from sqlalchemy import event
 
 from ..extensions import db
 

@@ -83,4 +83,4 @@ wsgi.py                     # gunicorn entry
 
 ## License
 
-MIT — do what you like.
+GPLv3

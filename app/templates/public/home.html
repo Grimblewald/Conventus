@@ -216,59 +216,6 @@
 </section>
 {% endif %}
 
-{# ────────────────────────────────────────────────────────────────────
-   5 · Closing dark band — membership / join CTA. Colours derive from
-   the site's own page-text / page-bg tokens, so no palette is hard-
-   coded here.
-─────────────────────────────────────────────────────────────────── #}
-{% if not current_user.is_authenticated %}
-<section class="block ink">
-  <div class="container">
-    <div class="grid cols-3" style="align-items: start;">
-      <div>
-        <div class="eyebrow">Become a member</div>
-        <h2 style="font-size: 2.1rem;">
-          Join the community behind {{ site.site_name }}.
-        </h2>
-        {% if site.membership_pitch %}
-          <p style="max-width: 42ch;">{{ site.membership_pitch }}</p>
-        {% else %}
-          <p style="max-width: 42ch;">
-            Members get discounted registration for every event, access to
-            the grants &amp; jobs board, and eligibility for early-career
-            bursaries and prizes.
-          </p>
-        {% endif %}
-        <a class="btn btn-primary"
-           href="{{ url_for('auth.login') }}">Create an account</a>
-      </div>
-
-      <div>
-        <h4 class="eyebrow">What's included</h4>
-        <ul style="list-style: none; padding: 0; line-height: 1.9;">
-          <li>— Member rates at every annual event</li>
-          <li>— Voting rights at the AGM</li>
-          <li>— Access to the job &amp; grant board</li>
-          <li>— Mentoring programme pairings</li>
-          <li>— Joint events with partner societies</li>
-        </ul>
-      </div>
-
-      <div>
-        <h4 class="eyebrow">Fees</h4>
-        <table class="table">
-          <tr><th>Tier</th><th>Annual</th></tr>
-          <tr><td>Academic</td>        <td>{{ site.currency_symbol or '$' }} 120</td></tr>
-          <tr><td>Student / HDR</td>   <td>{{ site.currency_symbol or '$' }} 30</td></tr>
-          <tr><td>Industry</td>        <td>{{ site.currency_symbol or '$' }} 240</td></tr>
-          <tr><td>Emeritus</td>        <td>Complimentary</td></tr>
-        </table>
-      </div>
-    </div>
-  </div>
-</section>
-{% endif %}
-
 {% endblock %}
 
 {% block scripts %}

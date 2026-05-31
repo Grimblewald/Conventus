@@ -91,11 +91,11 @@ _interactive_env_setup() {
     if [ -z "$cur_secret" ] || [ "$cur_secret" = "$placeholder_secret" ] || [[ "$cur_secret" == CHANGE-ME* ]]; then need=1; fi
     [ "$need" = 1 ] || return 0
 
-    cat >&2 << 'INTRO'
+    cat << 'INTRO'
 
 ┌──────────────────────────────────────────────────────────────────┐
 │                                                                  │
-│  Society Site — first-run setup                                  │
+│  Conventus — first-run setup                                     │
 │                                                                  │
 │  Let's configure the essentials so everything works out of the   │
 │  box.  Advanced settings use sensible defaults — you can edit    │
@@ -120,7 +120,7 @@ INTRO
 
     if [ -z "$cur_domain" ] || [ "$cur_domain" = "$placeholder_domain" ]; then
         printf '\nDomain your site will be served on\n  (e.g. your-society.example.org): '
-        read -r new_domain </dev/tty
+        read -r new_domain </dev/tty || true
         if [ -n "$new_domain" ]; then
             _set_env "CLOUDFLARE_DOMAIN" "$new_domain"
             export CLOUDFLARE_DOMAIN="$new_domain"
@@ -129,7 +129,7 @@ INTRO
     fi
 
     printf 'Subdomain [app] (blank for apex, e.g. "www"): '
-    read -r new_sub </dev/tty
+    read -r new_sub </dev/tty || true
     if [ -n "$new_sub" ]; then
         _set_env "CLOUDFLARE_SUBDOMAIN" "$new_sub"
         SUBDOMAIN="$new_sub"
@@ -137,7 +137,7 @@ INTRO
 
     cur_token="$(grep -E '^CLOUDFLARE_API_TOKEN=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)"
     if [ -z "$cur_token" ]; then
-        cat >&2 << 'TOKENHELP'
+        cat << 'TOKENHELP'
 
   A Cloudflare API token lets this script create your tunnel and
   set up DNS without giving the VPS full account access.
@@ -150,7 +150,7 @@ INTRO
   (Press Enter to skip — you can also use cert.pem as a fallback.)
 TOKENHELP
         printf 'Cloudflare API token: '
-        read -r new_token </dev/tty
+        read -r new_token </dev/tty || true
         if [ -n "$new_token" ]; then
             _set_env "CLOUDFLARE_API_TOKEN" "$new_token"
             export CLOUDFLARE_API_TOKEN="$new_token"
@@ -162,7 +162,7 @@ TOKENHELP
     echo "    1. smtp    — send real emails (OTP login codes, contact form, alerts)"
     echo "    2. console — print to terminal (testing only — no real email delivery)"
     printf '  Choose [1/2, default: 1]: '
-    read -r mail_choice </dev/tty
+    read -r mail_choice </dev/tty || true
     mail_choice="${mail_choice:-1}"
 
     if [ "$mail_choice" = "1" ]; then
@@ -170,29 +170,29 @@ TOKENHELP
         export MAIL_BACKEND="smtp"
 
         printf '  SMTP server hostname (e.g. smtp.gmail.com): '
-        read -r val </dev/tty
+        read -r val </dev/tty || true
         [ -n "$val" ] && { _set_env "SMTP_HOST" "$val"; export SMTP_HOST="$val"; }
 
         printf '  SMTP port [587]: '
-        read -r val </dev/tty
+        read -r val </dev/tty || true
         val="${val:-587}"
         _set_env "SMTP_PORT" "$val"
         export SMTP_PORT="$val"
 
         printf '  SMTP username: '
-        read -r val </dev/tty
+        read -r val </dev/tty || true
         [ -n "$val" ] && { _set_env "SMTP_USER" "$val"; export SMTP_USER="$val"; }
 
         printf '  SMTP password: '
         stty -echo 2>/dev/null || true
-        read -r val </dev/tty
+        read -r val </dev/tty || true
         stty echo 2>/dev/null || true
         echo ""
         [ -n "$val" ] && { _set_env "SMTP_PASS" "$val"; export SMTP_PASS="$val"; }
 
         local default_from="Name Your Society <noreply@${DOMAIN}>"
         printf '  From address ["%s"]: ' "$default_from"
-        read -r val </dev/tty
+        read -r val </dev/tty || true
         val="${val:-$default_from}"
         _set_env "MAIL_FROM" "$val"
         export MAIL_FROM="$val"
@@ -265,7 +265,7 @@ fi
 # ---------- last-resort token prompt (no auth at all yet) ---------------
 if [ -z "$USE_API_TOKEN" ] && [ ! -f "$ORIGIN_CERT" ]; then
     if [ -t 0 ]; then
-        cat >&2 << 'BANNER'
+        cat << 'BANNER'
 
 ╔══════════════════════════════════════════════════════════════════╗
 ║  Cloudflare API token required                                  ║
@@ -300,7 +300,7 @@ if [ -z "$USE_API_TOKEN" ] && [ ! -f "$ORIGIN_CERT" ]; then
 ╚══════════════════════════════════════════════════════════════════╝
 BANNER
         printf 'Cloudflare API token (paste it here): '
-        read -r token </dev/tty
+        read -r token </dev/tty || true
         if [ -n "$token" ]; then
             _set_env "CLOUDFLARE_API_TOKEN" "$token"
             export CLOUDFLARE_API_TOKEN="$token"
@@ -314,10 +314,10 @@ fi
 
 # ---------- still nothing?  hard-fail with pointer to docs ------------
 if [ -z "$USE_API_TOKEN" ] && [ ! -f "$ORIGIN_CERT" ]; then
-    echo "✗ No Cloudflare credentials found." >&2
-    echo "  Set CLOUDFLARE_API_TOKEN in .env (preferred) or run" >&2
-    echo "  \`cloudflared tunnel login\` and re-run this script." >&2
-    echo "  See docs/DEPLOY-CLOUDFLARE-SIMPLE.md for details." >&2
+    echo "✗ No Cloudflare credentials found."
+    echo "  Set CLOUDFLARE_API_TOKEN in .env (preferred) or run"
+    echo "  \`cloudflared tunnel login\` and re-run this script."
+    echo "  See docs/DEPLOY-CLOUDFLARE-SIMPLE.md for details."
     exit 1
 fi
 

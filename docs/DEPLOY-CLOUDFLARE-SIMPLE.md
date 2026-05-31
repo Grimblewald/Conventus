@@ -48,10 +48,10 @@ To create the token:
 5. Give it a name like `society-site`.
 6. Under **Permissions**, add these two rows:
 
-   | Row | Scope       | Permission             | Resource                |
-   |-----|-------------|------------------------|-------------------------|
-   | 1   | Account     | Cloudflare Tunnel      | Edit                    |
-   | 2   | Zone        | DNS                    | Edit                    |
+   | Row | Scope       | Permission                           | Resource                |
+   |-----|-------------|--------------------------------------|-------------------------|
+   | 1   | Account     | Cloudflare One Connector: cloudflared | Edit                    |
+   | 2   | Zone        | DNS                                  | Edit                    |
 
 7. Under **Zone Resources** (below the second permission row):
    - Select *Include → Specific zone → your-domain.example.org*

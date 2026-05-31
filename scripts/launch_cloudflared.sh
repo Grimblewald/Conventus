@@ -12,7 +12,7 @@
 #   1. CLOUDFLARE_API_TOKEN  (recommended)
 #      A scoped API token created in the Cloudflare dashboard with
 #      exactly these permissions:
-#        Account  → Cloudflare Tunnel : Edit
+#        Account  → Cloudflare One Connector: cloudflared : Edit
 #        Zone     → DNS              : Edit  (your-domain.example.org only)
 #      Store it in .env.  If the VPS is compromised the attacker gets a
 #      narrow-scope token — not your full Cloudflare account.
@@ -155,8 +155,9 @@ INTRO
   set up DNS without giving the VPS full account access.
 
   To create one: Cloudflare Dashboard → My Profile → API Tokens
-  → Create Custom Token.  Set Account:Cloudflare Tunnel:Edit and
-  Zone:DNS:Edit (limit to your domain).  Full walkthrough:
+  → Create Custom Token.  Set Account:Cloudflare One Connector:
+  cloudflared:Edit and Zone:DNS:Edit (limit to your domain).
+  Full walkthrough:
   docs/DEPLOY-CLOUDFLARE-SIMPLE.md
 
   (Press Enter to skip — you can also use cert.pem as a fallback.)
@@ -295,7 +296,8 @@ if [ -z "$USE_API_TOKEN" ] && [ ! -f "$ORIGIN_CERT" ]; then
 ║       ┌──────────┬─────────────────────┬─────────────────────┐   ║
 ║       │ Scope    │ Permission          │ Resource            │   ║
 ║       ├──────────┼─────────────────────┼─────────────────────┤   ║
-║       │ Account  │ Cloudflare Tunnel   │ Edit                │   ║
+║       │ Account  │ Cloudflare One        │ Edit                │   ║
+║       │          │ Connector: cloudflared│                     │   ║
 ║       │ Zone     │ DNS                 │ Edit                │   ║
 ║       │          │                     │ (limit to your      │   ║
 ║       │          │                     │  domain only)       │   ║

@@ -255,11 +255,14 @@ _detect_auth() {
 _build_cfd() {
     if [ -n "$USE_API_TOKEN" ]; then
         echo "→ Auth: Cloudflare API token (scoped)"
-        cfd() { cloudflared "$@"; }
     else
         echo "→ Auth: cert.pem  (WARNING: full account access — prefer CLOUDFLARE_API_TOKEN)"
-        cfd() { cloudflared --origincert "$ORIGIN_CERT" "$@"; }
     fi
+    # Always pass --origincert so cloudflared knows where to look.
+    # In API-token mode the file may not exist — cloudflared auths via
+    # the token instead, but still needs a path to satisfy its client
+    # bootstrap.
+    cfd() { cloudflared --origincert "$ORIGIN_CERT" "$@"; }
 }
 
 _detect_auth
@@ -360,20 +363,10 @@ if [ ! -f "$TUNNEL_CREDS" ]; then
 fi
 chmod 600 "$TUNNEL_CREDS"
 
-# Project-local ingress config.  tunnel run only needs credentials-file;
-# we include origincert only when using cert.pem mode (so tunnel run can
-# auto-refresh edge registration if needed).
-if [ -n "$USE_API_TOKEN" ]; then
-    cat > "$CONFIG_FILE" << EOF
-tunnel: $TUNNEL_NAME
-credentials-file: $TUNNEL_CREDS
-ingress:
-  - hostname: $SUBDOMAIN.$DOMAIN
-    service: http://localhost:$PORT
-  - service: http_status:503
-EOF
-else
-    cat > "$CONFIG_FILE" << EOF
+# Project-local ingress config.  origincert is always present — in API-token
+# mode the file may not exist but cloudflared needs the path to bootstrap its
+# client; in cert.pem mode the file is the actual origin cert.
+cat > "$CONFIG_FILE" << EOF
 tunnel: $TUNNEL_NAME
 credentials-file: $TUNNEL_CREDS
 origincert: $ORIGIN_CERT
@@ -382,7 +375,6 @@ ingress:
     service: http://localhost:$PORT
   - service: http_status:503
 EOF
-fi
 
 # --- launch gunicorn in the background -----------------------------------
 "$PROJECT_ROOT/scripts/launch.sh" > "$FLASK_LOG" 2>&1 &

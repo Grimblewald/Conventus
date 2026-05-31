@@ -72,15 +72,40 @@
         {% endif %}
 
         <div class="hero-cta">
+          {# -- Registration -- #}
           {% if featured.external_registration_url %}
-            <a class="btn btn-primary btn-lg" href="{{ featured.external_registration_url }}" target="_blank" rel="noopener">Register ↗</a>
-          {% elif featured.accepts_registrations %}
-            <a class="btn btn-primary btn-lg" href="{{ url_for('member.register_conf', slug=featured.slug) }}">Register</a>
+            <span class="btn-stack">
+              <a class="btn btn-primary btn-lg" href="{{ featured.external_registration_url }}" target="_blank" rel="noopener">Register ↗</a>
+            </span>
+          {% elif featured.registration_status == "open" %}
+            <span class="btn-stack">
+              <a class="btn btn-primary btn-lg" href="{{ url_for('member.register_conf', slug=featured.slug) }}">Register</a>
+              {% if featured.registration_countdown %}
+                <small>Closes in {{ featured.registration_countdown }}</small>
+              {% endif %}
+            </span>
+          {% elif featured.registration_status == "pending" %}
+            <span class="btn btn-primary btn-lg is-disabled">Opens in {{ featured.registration_countdown }}</span>
+          {% else %}
+            <span class="btn btn-primary btn-lg is-disabled">Registration closed</span>
           {% endif %}
+
+          {# -- Abstracts -- #}
           {% if featured.external_abstract_url %}
-            <a class="btn btn-ghost btn-lg" href="{{ featured.external_abstract_url }}" target="_blank" rel="noopener">Submit an abstract ↗</a>
-          {% elif featured.accepts_abstracts %}
-            <a class="btn btn-ghost btn-lg" href="{{ url_for('member.submit_abstract', slug=featured.slug) }}">Submit an abstract</a>
+            <span class="btn-stack">
+              <a class="btn btn-ghost btn-lg" href="{{ featured.external_abstract_url }}" target="_blank" rel="noopener">Submit an abstract ↗</a>
+            </span>
+          {% elif featured.abstract_status == "open" %}
+            <span class="btn-stack">
+              <a class="btn btn-ghost btn-lg" href="{{ url_for('member.submit_abstract', slug=featured.slug) }}">Submit an abstract</a>
+              {% if featured.abstract_countdown %}
+                <small>Closes in {{ featured.abstract_countdown }}</small>
+              {% endif %}
+            </span>
+          {% elif featured.abstract_status == "pending" %}
+            <span class="btn btn-ghost btn-lg is-disabled">Opens in {{ featured.abstract_countdown }}</span>
+          {% else %}
+            <span class="btn btn-ghost btn-lg is-disabled">Abstracts closed</span>
           {% endif %}
           <a class="btn btn-quiet btn-lg"
              href="{{ url_for('public.conference_detail', slug=featured.slug) }}">Programme details →</a>

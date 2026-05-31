@@ -216,6 +216,18 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
 .btn-sm { padding: 7px 12px; font-size: 13px; }
 .btn-lg { padding: 14px 22px; font-size: 15px; }
 .btn[disabled] { opacity: .55; cursor: not-allowed; }
+.btn.is-disabled {
+  opacity: .45; cursor: default; pointer-events: none;
+}
+
+/* Button + countdown subtext stack */
+.btn-stack {
+  display: inline-flex; flex-direction: column; align-items: flex-start; gap: 4px;
+}
+.btn-stack small {
+  font-family: var(--f-ui); font-size: 12px; color: var(--c-muted-text);
+  padding-left: 2px;
+}
 
 /* ---------------- Hero ---------------- */
 .hero { padding: 72px 0 56px; border-bottom: 1px solid var(--c-card-border); }
@@ -761,6 +773,15 @@ section.block.ink .table td {
   opacity: .8; transition: opacity .15s;
 }
 .sponsor-bar img:hover { opacity: 1; }
+
+/* ---------------- Spinner ---------------- */
+.spinner {
+  display: inline-block; width: 1em; height: 1em;
+  border: 2px solid currentColor; border-right-color: transparent;
+  border-radius: 50%; animation: spin 0.6s linear infinite;
+  vertical-align: -0.15em; margin-right: 0.4em;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* ---------------- Responsive ---------------- */
 @media (max-width: 960px) {

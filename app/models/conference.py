@@ -6,6 +6,27 @@ from datetime import date, datetime
 from ..extensions import db
 
 
+def _countdown(until: date) -> str | None:
+    """Human-readable countdown for a future date, or None if past."""
+    today = date.today()
+    if until <= today:
+        return None
+    days = (until - today).days
+    if days >= 60:
+        return f"{round(days / 30)} months"
+    if days >= 14:
+        return f"{round(days / 7)} weeks"
+    if days >= 2:
+        return f"{days} days"
+    now = datetime.utcnow()
+    seconds = (datetime.combine(until, datetime.min.time()) - now).total_seconds()
+    if seconds >= 7200:
+        return f"{round(seconds / 3600)} hours"
+    if seconds > 0:
+        return f"{round(seconds / 60)} minutes"
+    return None
+
+
 class Conference(db.Model):
     __tablename__ = "conferences"
 
@@ -105,6 +126,44 @@ class Conference(db.Model):
         if self.registration_deadline and self.registration_deadline < date.today():
             return False
         return True
+
+    # -- Countdown-aware status helpers --
+
+    @property
+    def abstract_status(self) -> str:
+        if self.is_accepting_abstracts:
+            if self.abstract_deadline and self.abstract_deadline < date.today():
+                return "closed"
+            return "open"
+        if self.abstracts_reopen_date and self.abstracts_reopen_date > date.today():
+            return "pending"
+        return "closed"
+
+    @property
+    def abstract_countdown(self) -> str | None:
+        if self.abstract_status == "open" and self.abstract_deadline:
+            return _countdown(self.abstract_deadline)
+        if self.abstract_status == "pending" and self.abstracts_reopen_date:
+            return _countdown(self.abstracts_reopen_date)
+        return None
+
+    @property
+    def registration_status(self) -> str:
+        if self.is_accepting_registrations:
+            if self.registration_deadline and self.registration_deadline < date.today():
+                return "closed"
+            return "open"
+        if self.registrations_reopen_date and self.registrations_reopen_date > date.today():
+            return "pending"
+        return "closed"
+
+    @property
+    def registration_countdown(self) -> str | None:
+        if self.registration_status == "open" and self.registration_deadline:
+            return _countdown(self.registration_deadline)
+        if self.registration_status == "pending" and self.registrations_reopen_date:
+            return _countdown(self.registrations_reopen_date)
+        return None
 
 
 class PriceTier(db.Model):

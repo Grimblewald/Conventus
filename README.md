@@ -26,8 +26,9 @@ Your Society" everywhere and is editable from the admin panel.
 
 ## Quick start (Cloudflare Tunnel)
 
-The recommended path.  **No nginx, no certbot, no port forwarding** — just
-a domain on Cloudflare, `uv`, and `cloudflared` installed.
+The recommended path.  **No nginx, no certbot, no cert.pem, no port
+forwarding** — just a domain on Cloudflare and a scoped API token.
+Requires `cloudflared`, `curl`, `jq`, and `openssl`.
 
 ```bash
 git clone https://github.com/your-org/conventus.git
@@ -37,9 +38,10 @@ chmod +x scripts/launch_cloudflared.sh
 ```
 
 The script handles everything interactively on first run — copies the
-`.env` template, generates a `SECRET_KEY`, prompts for your domain, a
-[scoped Cloudflare API token][deploy], and your SMTP settings so email
-works out of the box.  Five minutes, one command.
+`.env` template, generates a `SECRET_KEY`, prompts for your domain,
+a [scoped Cloudflare API token][deploy], your Account ID if needed,
+and your SMTP settings so email works out of the box.  `cloudflared
+tunnel login` is never used.
 
 Visit the setup URL printed in the terminal, paste the one-time setup
 password, and step through the wizard.  After that the admin panel is

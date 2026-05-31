@@ -1,7 +1,15 @@
-# Dead-simple Cloudflare Tunnel deployment
+# Cloudflare Tunnel deployment — zero-config
 
-Get your society site live in under 2 minutes with zero networking knowledge.
-No nginx, no certbot, no firewall rules, no port forwarding.
+Get your society site live in under 5 minutes.  No nginx, no certbot, no
+firewall rules, no port forwarding.  Just a domain on Cloudflare and a
+scoped API token.
+
+`cloudflared tunnel login` is **never** used — the script calls
+Cloudflare's REST API directly via `curl` for tunnel creation, DNS
+routing, and ingress configuration.  `cloudflared` is only used for the
+final `tunnel run --token` data-plane connection.  If your VPS is ever
+compromised, the attacker gets a token scoped to one domain — not full
+access to your Cloudflare account.
 
 ## What you get
 
@@ -10,101 +18,89 @@ No nginx, no certbot, no firewall rules, no port forwarding.
 - Your app stays on `127.0.0.1` — nothing exposed to the internet except the tunnel
 - Works on any Linux host (VPS, Raspberry Pi, old laptop under your desk)
 
-## One-time setup (do this before first launch)
+## One-time setup (do this once per host)
 
-### 1. Install `cloudflared`
+### 1. Install dependencies
 
 ```bash
-# Debian / Ubuntu
+# cloudflared — the tunnel connector
 curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb -o cloudflared.deb
 sudo dpkg -i cloudflared.deb
 
-# macOS
-brew install cloudflare/cloudflare/cloudflared
+# jq — JSON processor (used for API responses)
+sudo apt install jq
 
-# Other platforms: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/
+# curl, openssl — should already be present; install if not
+sudo apt install curl openssl
 ```
+
+- macOS: `brew install cloudflared jq`
+- Other platforms: [cloudflared downloads](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/) · [jq downloads](https://jqlang.github.io/jq/download/)
 
 ### 2. Point your domain's nameservers to Cloudflare
 
-If you haven't already, change your domain's nameservers at your registrar to Cloudflare's (you'll get these when adding the domain to Cloudflare). This is needed so Cloudflare can manage DNS for the tunnel.
+Change your domain's nameservers at your registrar to Cloudflare's (you
+get these when you add the domain to the Cloudflare dashboard).  This is
+required so Cloudflare can manage DNS for the tunnel.
 
-### 3. Create a scoped API token (recommended)
+### 3. Create a scoped API token
 
 Instead of logging your full Cloudflare account into the VPS, create a
 narrowly-scoped API token that can only manage tunnels and DNS for your
-domain.  The launch script uses this token to call Cloudflare's REST API
-directly for tunnel creation and DNS routing — not the `cloudflared` CLI.
+domain.
 
-> **The launch script will prompt you for this token automatically** if it
-> isn't set yet — just have it ready.  The prompt shows the same permission
-> table below in case you haven't created one yet.
+There are two kinds — prefer **account-owned**:
 
-To create the token:
+#### Recommended: account-owned (`cfat_` prefix)
 
-1. Log into the [Cloudflare Dashboard](https://dash.cloudflare.com).
-2. Click your avatar (top-right) → **My Profile**.
-3. Select **API Tokens** in the sidebar, then click **Create Token**.
-4. Click **Create Custom Token** (the last row, not a template).
-5. Give it a name like `conventus`.
-6. Under **Permissions**, add these two rows:
+1. Go to **Cloudflare Dashboard → Manage Account → Account API Tokens** (not My Profile).
+2. Click **Create Token**, then **Create Custom Token**.
+3. Give it a name like `conventus-zenboo-org`.
+4. Under **Permissions**, add:
 
-   | Row | Scope       | Permission                           | Access |
-   |-----|-------------|--------------------------------------|--------|
-   | 1   | Account     | Argo Tunnel (Legacy)                 | Edit   |
-   | 2   | Zone        | DNS                                  | Edit   |
+   | Row | Scope       | Permission              | Access |
+   |-----|-------------|-------------------------|--------|
+   | 1   | Account     | Argo Tunnel (Legacy)    | Edit   |
+   | 2   | Zone        | DNS                     | Edit   |
 
-7. Under **Zone Resources** (below the second permission row):
-   - Select *Include → Specific zone → your-domain.example.org*
-   - This limits the token to one domain — it can't touch any other.
-8. Under **Account Resources** (below the first permission row):
-   - Leave as *Include → All accounts* (tunnel management is account-level).
-9. Click **Continue to summary**, then **Create Token**.
-10. Copy the token (it starts with a letter, ~40 characters).
+5. Under **Zone Resources**: *Include → Specific zone → your-domain.example.org*
+6. Under **Account Resources**: *Include → All accounts*
+7. Click **Continue to summary**, then **Create Token**.
+8. Copy the token (prefix `cfat_`, ~50 characters).
+9. **Also copy your Account ID** — find it in the right sidebar of any
+   Cloudflare dashboard page (Account Home → "Account ID").  You will
+   need this because account-owned tokens cannot enumerate accounts via
+   the API.  The launch script will prompt for it.
 
-Add it to your `.env`:
+#### Alternative: user-owned (`cfut_` prefix or legacy)
 
-```env
-CLOUDFLARE_API_TOKEN="paste-your-token-here"
-```
+1. Go to **Cloudflare Dashboard → My Profile → API Tokens**.
+2. Same permission rows as above, plus one more:
+   - User → User Details : Read
+3. User-owned tokens *can* enumerate accounts; you do not need to
+   provide your Account ID separately.
 
-Or just run the launch script — it will ask for the token and save it
-to `.env` for you.
+#### Both flavours need these exact permissions
 
-> **How this works:** The script calls the Cloudflare REST API directly
-> (via `curl`) for creating tunnels, listing tunnels, and routing DNS.
-> The `cloudflared` binary is only used for the final `tunnel run`
-> connection, which authenticates via tunnel credentials — no cert.pem
-> needed.  If the VPS is compromised, the attacker gets a token scoped
-> to one domain, not your full Cloudflare account.
+| Scope       | Permission              | Access |
+|-------------|-------------------------|--------|
+| Account     | Argo Tunnel (Legacy)    | Edit   |
+| Zone        | DNS                     | Edit   |
 
-### Legacy fallback: cert.pem (`cloudflared tunnel login`)
+The Zone permission must be scoped to your specific domain.
 
-If you can't use API tokens, the `cloudflared` CLI-only path still works.
-This uses `cert.pem` for authentication, which grants **full account
-access** to the machine.
-
-```bash
-cloudflared tunnel login
-```
-
-This opens your browser, authorises your account, and saves a
-**`cert.pem`** to `~/.cloudflared/`. The launch script copies it
-automatically.
-
-> **WARNING:** `cert.pem` grants **full account access** — anyone who can
-> read it can manage every domain, tunnel, and setting in your Cloudflare
-> account. Prefer the API token.
+> **The launch script prompts for the token and Account ID automatically**
+> on first run — you don't need to edit `.env` by hand.
 
 ## Launch
 
 ```bash
-git clone https://github.com/your-org/society-site.git my-site
-cd my-site
+git clone https://github.com/your-org/conventus.git
+cd conventus
 
-# The script handles everything interactively on first run — it copies
-# .env.example to .env if needed, then prompts for domain, API token,
-# and email settings.  Nothing to configure by hand.
+# The script handles everything interactively on first run — copies
+# .env.example to .env if needed, generates a SECRET_KEY, and prompts
+# for domain, API token, Account ID (if needed), and email settings.
 chmod +x scripts/launch_cloudflared.sh
 ./scripts/launch_cloudflared.sh
 ```
@@ -113,22 +109,24 @@ On first run the script walks you through:
 
 1. **Domain & subdomain** — where your site lives
 2. **API token** — the scoped token from step 3 above
-3. **Email settings** — SMTP host/port/user/password, or console mode for testing
-4. Generate a secure `SECRET_KEY`
-5. Install Python dependencies with `uv`
-6. Start gunicorn on `127.0.0.1:5005`
-7. Create a Cloudflare tunnel for your domain
-8. Route DNS so `yourdomain.com` → tunnel → your app
-9. Print the setup URL
+3. **Account ID** — required for `cfat_` tokens, optional for `cfut_`
+4. **Email settings** — SMTP host/port/user/password, or console mode for testing
+5. Generate a secure `SECRET_KEY`
+6. Install Python dependencies with `uv`
+7. Start gunicorn on `127.0.0.1:5005`
+8. Create a Cloudflare tunnel via the REST API
+9. Push ingress config and set up DNS routing
+10. Print the setup URL
 
-First time? Visit `https://yourdomain.com/setup` and paste the one-time password shown in the terminal.
+First time? Visit `https://yourdomain.com/setup` and paste the one-time
+setup password shown in the terminal.
 
 ## Keeping it running
 
 ### Option A: tmux / screen (quick)
 
 ```bash
-tmux new -s site
+tmux new -s conventus
 ./scripts/launch_cloudflared.sh
 # Ctrl+B, D to detach
 ```
@@ -150,9 +148,10 @@ SECRET_KEY=<auto-generated>
 FLASK_ENV=production
 
 # Cloudflare
-CLOUDFLARE_DOMAIN=your-domain.example.org          # your domain
-CLOUDFLARE_SUBDOMAIN=                              # blank for apex, or e.g. "www"
-CLOUDFLARE_API_TOKEN=                              # scoped API token (launch script can prompt you)
+CLOUDFLARE_DOMAIN=your-domain.example.org     # your domain
+CLOUDFLARE_SUBDOMAIN=                         # blank for apex, or e.g. "www"
+CLOUDFLARE_API_TOKEN=                         # scoped API token (set by wizard)
+CLOUDFLARE_ACCOUNT_ID=                        # only needed for cfat_ tokens
 
 # Performance (optional)
 GUNICORN_WORKERS=3
@@ -162,7 +161,9 @@ PORT=5005
 
 ## Multiple sites on one host
 
-Each project stores its tunnel state in `.cloudflared/` inside the project directory — no conflicts. Clone the repo to another folder, use a different domain, and run `launch.sh` again.
+Each project stores its tunnel state in `.cloudflared/` inside the
+project directory — no conflicts.  Clone the repo to another folder,
+use a different domain, and run the launcher again.
 
 ## Updating
 

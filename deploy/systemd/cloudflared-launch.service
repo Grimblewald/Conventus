@@ -1,5 +1,5 @@
 [Unit]
-Description=Society Site (Cloudflare Tunnel)
+Description=Conventus (Cloudflare Tunnel)
 After=network-online.target
 Wants=network-online.target
 
@@ -7,9 +7,9 @@ Wants=network-online.target
 Type=simple
 User=www-data
 Group=www-data
-WorkingDirectory=/opt/society-site
-EnvironmentFile=/opt/society-site/.env
-ExecStart=/opt/society-site/.venv/bin/bash scripts/launch_cloudflared.sh
+WorkingDirectory=/opt/conventus
+EnvironmentFile=/opt/conventus/.env
+ExecStart=/opt/conventus/.venv/bin/bash scripts/launch_cloudflared.sh
 Restart=always
 RestartSec=10
 
@@ -18,7 +18,7 @@ NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=yes
-ReadWritePaths=/opt/society-site/instance /opt/society-site/uploads /opt/society-site/var /opt/society-site/.cloudflared
+ReadWritePaths=/opt/conventus/instance /opt/conventus/uploads /opt/conventus/var /opt/conventus/.cloudflared
 
 [Install]
 WantedBy=multi-user.target

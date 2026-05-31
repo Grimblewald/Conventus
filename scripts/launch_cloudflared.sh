@@ -215,6 +215,19 @@ TOKENHELP
 # Run setup before anything else (no-op if already configured)
 _interactive_env_setup
 
+# Load .env into the shell so cloudflared commands pick up the API token,
+# domain, and other settings.  wsgi.py does the same for the Python side.
+if [ -f "$ENV_FILE" ]; then
+    set -a
+    source "$ENV_FILE" 2>/dev/null || true
+    set +a
+fi
+
+# Propagate values from .env to the local variables used throughout
+# the rest of this script (ingress, DNS, tunnel name).
+[ -n "${CLOUDFLARE_DOMAIN:-}" ]     && DOMAIN="$CLOUDFLARE_DOMAIN"
+[ -n "${CLOUDFLARE_SUBDOMAIN:-}" ]  && SUBDOMAIN="$CLOUDFLARE_SUBDOMAIN"
+
 # -----------------------------------------------------------------------
 # Auth: detect available mode
 # -----------------------------------------------------------------------

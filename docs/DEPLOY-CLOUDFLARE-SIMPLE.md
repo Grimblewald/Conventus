@@ -25,17 +25,50 @@ brew install cloudflare/cloudflare/cloudflared
 # Other platforms: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/
 ```
 
-### 2. Log in to Cloudflare
+### 2. Point your domain's nameservers to Cloudflare
+
+If you haven't already, change your domain's nameservers at your registrar to Cloudflare's (you'll get these when adding the domain to Cloudflare). This is needed so Cloudflare can manage DNS for the tunnel.
+
+### 3. Create a scoped API token (recommended)
+
+Instead of logging your full Cloudflare account into the VPS, create a
+narrowly-scoped API token that can only manage tunnels and DNS for your
+domain:
+
+1. Go to **Cloudflare Dashboard → My Profile → API Tokens → Create Token**
+2. Choose **Create Custom Token** with these permissions:
+
+   | Scope       | Permission          | Resource                |
+   |-------------|---------------------|-------------------------|
+   | Account     | Cloudflare Tunnel   | Edit (All accounts)     |
+   | Zone        | DNS                 | Edit (your-domain.example.org only) |
+
+3. Under **Zone Resources**, pick *Include → Specific zone → your-domain.example.org*
+4. Copy the token and add it to your `.env`:
+
+   ```env
+   CLOUDFLARE_API_TOKEN="your-token-here"
+   ```
+
+   > **Why this matters:** If your VPS is ever compromised, the attacker
+   > gets a token scoped to one domain's DNS — not full access to your
+   > Cloudflare account, every domain you own, and every service behind it.
+
+### Legacy fallback: `cloudflared tunnel login`
+
+If you can't use API tokens, the old flow still works:
 
 ```bash
 cloudflared tunnel login
 ```
 
-This opens your browser. Authorise the domain you want to use. A certificate is saved to `~/.cloudflared/cert.pem` — the launch script copies it automatically.
+This opens your browser, authorises your account, and saves a
+**`cert.pem`** to `~/.cloudflared/`. The launch script copies it
+automatically.
 
-### 3. Point your domain's nameservers to Cloudflare
-
-If you haven't already, change your domain's nameservers at your registrar to Cloudflare's (you'll get these when adding the domain to Cloudflare). This is needed so Cloudflare can manage DNS for the tunnel.
+> **WARNING:** `cert.pem` grants **full account access** — anyone who can
+> read it can manage every domain, tunnel, and setting in your Cloudflare
+> account. Prefer the API token.
 
 ## Launch
 
@@ -86,6 +119,7 @@ FLASK_ENV=production
 # Cloudflare
 CLOUDFLARE_DOMAIN=your-domain.example.org          # your domain
 CLOUDFLARE_SUBDOMAIN=                              # blank for apex, or e.g. "www"
+CLOUDFLARE_API_TOKEN=                              # scoped API token (recommended)
 
 # Performance (optional)
 GUNICORN_WORKERS=3

@@ -44,6 +44,26 @@ and prints a one-time setup password to the console — paste it into the
 wizard at `/setup`. Complete the wizard; the password file is deleted
 automatically and `/setup` becomes inaccessible.
 
+## Deploy to the internet (Cloudflare Tunnel)
+
+The recommended production path is a VPS + Cloudflare Tunnel.  It requires
+**no nginx, no certbot, no port forwarding** — just a domain on Cloudflare
+and a scoped API token with two permissions.
+
+```bash
+# 1. Set your domain and API token in .env
+#    CLOUDFLARE_DOMAIN=your-domain.example.org
+#    CLOUDFLARE_API_TOKEN=<from Cloudflare dashboard>
+#
+#    The launch script will prompt for the token if you haven't set it.
+
+# 2. Run the tunnel launcher
+chmod +x scripts/launch_cloudflared.sh
+./scripts/launch_cloudflared.sh
+```
+
+Full walkthrough: [`docs/DEPLOY-CLOUDFLARE-SIMPLE.md`](docs/DEPLOY-CLOUDFLARE-SIMPLE.md)
+
 ## Reading the codebase
 
 ```

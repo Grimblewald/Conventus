@@ -33,26 +33,46 @@ If you haven't already, change your domain's nameservers at your registrar to Cl
 
 Instead of logging your full Cloudflare account into the VPS, create a
 narrowly-scoped API token that can only manage tunnels and DNS for your
-domain:
+domain.
 
-1. Go to **Cloudflare Dashboard → My Profile → API Tokens → Create Token**
-2. Choose **Create Custom Token** with these permissions:
+> **The launch script will prompt you for this token automatically** if it
+> isn't set yet — just have it ready.  The prompt shows the same permission
+> table below in case you haven't created one yet.
 
-   | Scope       | Permission          | Resource                |
-   |-------------|---------------------|-------------------------|
-   | Account     | Cloudflare Tunnel   | Edit (All accounts)     |
-   | Zone        | DNS                 | Edit (your-domain.example.org only) |
+To create the token:
 
-3. Under **Zone Resources**, pick *Include → Specific zone → your-domain.example.org*
-4. Copy the token and add it to your `.env`:
+1. Log into the [Cloudflare Dashboard](https://dash.cloudflare.com).
+2. Click your avatar (top-right) → **My Profile**.
+3. Select **API Tokens** in the sidebar, then click **Create Token**.
+4. Click **Create Custom Token** (the last row, not a template).
+5. Give it a name like `society-site`.
+6. Under **Permissions**, add these two rows:
 
-   ```env
-   CLOUDFLARE_API_TOKEN="your-token-here"
-   ```
+   | Row | Scope       | Permission             | Resource                |
+   |-----|-------------|------------------------|-------------------------|
+   | 1   | Account     | Cloudflare Tunnel      | Edit                    |
+   | 2   | Zone        | DNS                    | Edit                    |
 
-   > **Why this matters:** If your VPS is ever compromised, the attacker
-   > gets a token scoped to one domain's DNS — not full access to your
-   > Cloudflare account, every domain you own, and every service behind it.
+7. Under **Zone Resources** (below the second permission row):
+   - Select *Include → Specific zone → your-domain.example.org*
+   - This limits the token to one domain — it can't touch any other.
+8. Under **Account Resources** (below the first permission row):
+   - Leave as *Include → All accounts* (tunnel management is account-level).
+9. Click **Continue to summary**, then **Create Token**.
+10. Copy the token (it starts with a letter, ~40 characters).
+
+Add it to your `.env`:
+
+```env
+CLOUDFLARE_API_TOKEN="paste-your-token-here"
+```
+
+Or just run the launch script — it will ask for the token and save it
+to `.env` for you.
+
+> **Why this matters:** If your VPS is ever compromised, the attacker
+> gets a token scoped to one domain's DNS — not full access to your
+> Cloudflare account, every domain you own, and every service behind it.
 
 ### Legacy fallback: `cloudflared tunnel login`
 
@@ -75,11 +95,14 @@ automatically.
 ```bash
 git clone https://github.com/your-org/society-site.git my-site
 cd my-site
-chmod +x launch.sh
-./launch.sh
+
+# The script will prompt for your Cloudflare API token on first run if
+# you haven't set CLOUDFLARE_API_TOKEN in .env yet.
+chmod +x scripts/launch_cloudflared.sh
+./scripts/launch_cloudflared.sh
 ```
 
-The script will ask for your domain on first run (or read `CLOUDFLARE_DOMAIN` from `.env`), then:
+The script will:
 
 1. Generate a secure `SECRET_KEY`
 2. Install Python dependencies with `uv`
@@ -96,7 +119,7 @@ First time? Visit `https://yourdomain.com/setup` and paste the one-time password
 
 ```bash
 tmux new -s site
-./launch.sh
+./scripts/launch_cloudflared.sh
 # Ctrl+B, D to detach
 ```
 
@@ -119,7 +142,7 @@ FLASK_ENV=production
 # Cloudflare
 CLOUDFLARE_DOMAIN=your-domain.example.org          # your domain
 CLOUDFLARE_SUBDOMAIN=                              # blank for apex, or e.g. "www"
-CLOUDFLARE_API_TOKEN=                              # scoped API token (recommended)
+CLOUDFLARE_API_TOKEN=                              # scoped API token (launch script can prompt you)
 
 # Performance (optional)
 GUNICORN_WORKERS=3
@@ -136,5 +159,5 @@ Each project stores its tunnel state in `.cloudflared/` inside the project direc
 ```bash
 git pull
 uv sync
-# If the script is running, Ctrl+C and re-run ./launch.sh
+# If the script is running, Ctrl+C and re-run ./scripts/launch_cloudflared.sh
 ```

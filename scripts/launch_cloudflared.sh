@@ -52,25 +52,113 @@ chmod 700 "$CONFIG_DIR" 2>/dev/null || true
 chmod 700 "$RUN_DIR" 2>/dev/null || true
 
 # -----------------------------------------------------------------------
-# Auth mode detection
+# Auth: detect available mode
 # -----------------------------------------------------------------------
-USE_API_TOKEN=""
-if [ -n "${CLOUDFLARE_API_TOKEN:-}" ]; then
-    USE_API_TOKEN=1
-    echo "→ Auth: Cloudflare API token (scoped)"
-else
-    echo "→ Auth: cert.pem  (WARNING: full account access — prefer CLOUDFLARE_API_TOKEN)"
+ENV_FILE="$PROJECT_ROOT/.env"
+
+_detect_auth() {
+    USE_API_TOKEN=""
+    if [ -n "${CLOUDFLARE_API_TOKEN:-}" ]; then
+        USE_API_TOKEN=1
+    fi
+}
+
+_build_cfd() {
+    if [ -n "$USE_API_TOKEN" ]; then
+        echo "→ Auth: Cloudflare API token (scoped)"
+        cfd() { cloudflared "$@"; }
+    else
+        echo "→ Auth: cert.pem  (WARNING: full account access — prefer CLOUDFLARE_API_TOKEN)"
+        cfd() { cloudflared --origincert "$ORIGIN_CERT" "$@"; }
+    fi
+}
+
+_save_token_to_env() {
+    local token="$1"
+    if [ ! -f "$ENV_FILE" ]; then
+        printf 'CLOUDFLARE_API_TOKEN=%s\n' "$token" > "$ENV_FILE"
+    elif grep -q '^CLOUDFLARE_API_TOKEN=' "$ENV_FILE" 2>/dev/null; then
+        sed -i "s|^CLOUDFLARE_API_TOKEN=.*|CLOUDFLARE_API_TOKEN=$token|" "$ENV_FILE"
+    elif grep -q '^# CLOUDFLARE_API_TOKEN=' "$ENV_FILE" 2>/dev/null; then
+        sed -i "s|^# CLOUDFLARE_API_TOKEN=.*|CLOUDFLARE_API_TOKEN=$token|" "$ENV_FILE"
+    else
+        printf '\nCLOUDFLARE_API_TOKEN=%s\n' "$token" >> "$ENV_FILE"
+    fi
+}
+
+_detect_auth
+
+# Bootstrap cert.pem from ~/.cloudflared as a one-time convenience so
+# existing setups aren't broken.  This ONLY fires when neither an API
+# token nor a project-local cert.pem exist.
+if [ -z "$USE_API_TOKEN" ] && [ ! -f "$ORIGIN_CERT" ]; then
+    if [ -f "$HOME/.cloudflared/cert.pem" ]; then
+        cp "$HOME/.cloudflared/cert.pem" "$ORIGIN_CERT"
+        chmod 600 "$ORIGIN_CERT"
+        echo "  copied origin cert from ~/.cloudflared/cert.pem (one-time)"
+    fi
 fi
 
-# Build management-wrapper flags.  For API operations (create / list /
-# route-dns) cloudflared reads CLOUDFLARE_API_TOKEN from the environment
-# automatically; no extra flag needed.  For cert.pem mode we pass
-# --origincert on every command.
-if [ -n "$USE_API_TOKEN" ]; then
-    cfd() { cloudflared "$@"; }
-else
-    cfd() { cloudflared --origincert "$ORIGIN_CERT" "$@"; }
+# ---------- interactive token prompt (no auth at all yet) ---------------
+if [ -z "$USE_API_TOKEN" ] && [ ! -f "$ORIGIN_CERT" ]; then
+    if [ -t 0 ]; then
+        cat >&2 << 'BANNER'
+
+╔══════════════════════════════════════════════════════════════════╗
+║  Cloudflare API token required                                  ║
+║                                                                  ║
+║  This script needs credentials to create and manage your         ║
+║  Cloudflare tunnel.  A scoped API token is the safe choice.     ║
+║                                                                  ║
+║  To create one in 60 seconds:                                    ║
+║                                                                  ║
+║    1. Open the Cloudflare Dashboard                              ║
+║       →  My Profile  →  API Tokens  →  Create Token              ║
+║                                                                  ║
+║    2. Choose  Create Custom Token  and set EXACTLY:              ║
+║                                                                  ║
+║       ┌──────────┬─────────────────────┬─────────────────────┐   ║
+║       │ Scope    │ Permission          │ Resource            │   ║
+║       ├──────────┼─────────────────────┼─────────────────────┤   ║
+║       │ Account  │ Cloudflare Tunnel   │ Edit                │   ║
+║       │ Zone     │ DNS                 │ Edit                │   ║
+║       │          │                     │ (limit to your      │   ║
+║       │          │                     │  domain only)       │   ║
+║       └──────────┴─────────────────────┴─────────────────────┘   ║
+║                                                                  ║
+║    3. Copy the token (starts with a letter, ~40 chars).          ║
+║                                                                  ║
+║  Full step-by-step with screenshots:                             ║
+║    docs/DEPLOY-CLOUDFLARE-SIMPLE.md                              ║
+║                                                                  ║
+║  Legacy alternative (NOT recommended):                           ║
+║    Ctrl+C, run `cloudflared tunnel login`, re-run this script.   ║
+║    This grants FULL Cloudflare account access to this machine.   ║
+╚══════════════════════════════════════════════════════════════════╝
+BANNER
+        printf 'Cloudflare API token (paste it here): '
+        read -r token </dev/tty
+        if [ -n "$token" ]; then
+            _save_token_to_env "$token"
+            export CLOUDFLARE_API_TOKEN="$token"
+            _detect_auth
+            echo "  token saved to .env"
+        else
+            echo "  skipped — no token provided."
+        fi
+    fi
 fi
+
+# ---------- still nothing?  hard-fail with pointer to docs ------------
+if [ -z "$USE_API_TOKEN" ] && [ ! -f "$ORIGIN_CERT" ]; then
+    echo "✗ No Cloudflare credentials found." >&2
+    echo "  Set CLOUDFLARE_API_TOKEN in .env (preferred) or run" >&2
+    echo "  \`cloudflared tunnel login\` and re-run this script." >&2
+    echo "  See docs/DEPLOY-CLOUDFLARE-SIMPLE.md for details." >&2
+    exit 1
+fi
+
+_build_cfd
 
 echo "→ $PROJECT (tunnel: $TUNNEL_NAME → $SUBDOMAIN.$DOMAIN, app: :$PORT)"
 echo "  state dir: $CONFIG_DIR"
@@ -79,23 +167,6 @@ command -v cloudflared >/dev/null || {
     echo "✗ cloudflared not installed — see https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/install-and-setup/installation/" >&2
     exit 1
 }
-
-# -----------------------------------------------------------------------
-# Obtain authentication (cert.pem fallback only)
-# -----------------------------------------------------------------------
-if [ -z "$USE_API_TOKEN" ]; then
-    if [ ! -f "$ORIGIN_CERT" ]; then
-        if [ -f "$HOME/.cloudflared/cert.pem" ]; then
-            cp "$HOME/.cloudflared/cert.pem" "$ORIGIN_CERT"
-            chmod 600 "$ORIGIN_CERT"
-            echo "  copied origin cert from ~/.cloudflared/cert.pem (one-time)"
-        else
-            echo "✗ no cert.pem in $CONFIG_DIR or ~/.cloudflared" >&2
-            echo "  run \`cloudflared tunnel login\`, or set CLOUDFLARE_API_TOKEN in .env." >&2
-            exit 1
-        fi
-    fi
-fi
 
 # Create the tunnel if it doesn't exist.  --credentials-file keeps its
 # JSON inside the project dir instead of ~/.cloudflared/<UUID>.json.

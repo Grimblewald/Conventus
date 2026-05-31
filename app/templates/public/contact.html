@@ -12,9 +12,8 @@
     {% if recipients %}
     <form method="post" class="form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      {# Honeypot — bots fill this; humans never see it. #}
-      <div style="position:absolute; left:-9999px;" aria-hidden="true">
-        <label>Website <input name="website" tabindex="-1" autocomplete="off"></label>
+      <div class="field" style="position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); border:0;" aria-hidden="true">
+        <label>To combat spam, confirm you are human <input name="confirm_human" type="text" tabindex="-1" autocomplete="off"></label>
       </div>
 
       <div class="field">

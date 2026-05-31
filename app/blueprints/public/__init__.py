@@ -132,7 +132,7 @@ def contact():
     )
     if request.method == "POST":
         # Honeypot — if a bot fills `website`, silently no-op success.
-        if request.form.get("website", "").strip():
+        if request.form.get("confirm_human", "").strip():
             flash("Message sent.", "success")
             return redirect(url_for("public.contact"))
 

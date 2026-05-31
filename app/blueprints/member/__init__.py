@@ -4,6 +4,7 @@ submission. All require login.
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import datetime
 
 from flask import (
     Blueprint, abort, current_app, flash, redirect, render_template,
@@ -13,7 +14,9 @@ from flask_login import current_user, login_required
 
 from ...extensions import db
 from ...models import Abstract, Conference, Registration
+from ...models.content import get_site_settings
 from ...security import audit
+from ...services.payments import payment_url_for, send_payment_email
 from ...services.uploads import UploadError, save_figure
 
 
@@ -110,8 +113,18 @@ def register_conf(slug):
         audit.record("registration.saved",
                      target_kind="registration", target_id=reg.id,
                      summary=f"{current_user.email} → {c.slug} ({tier.name})")
-        flash("Registration saved. You'll receive a payment link by email.",
-              "success")
+
+        site = get_site_settings()
+        if site.payment_portal_enabled:
+            pay_url = payment_url_for(reg)
+            send_payment_email(reg, pay_url)
+            reg.payment_sent_at = datetime.utcnow()
+            db.session.commit()
+            flash("Registration saved. A payment link has been emailed to you.",
+                  "success")
+        else:
+            flash("Registration saved. Our payment portal is under construction — "
+                  "you will be notified when it is ready.", "warning")
         return redirect(url_for("member.dashboard"))
 
     return render_template("member/register_conference.html",
@@ -200,3 +213,20 @@ def abstract_figure(aid):
     folder = Path(current_app.config["UPLOAD_FOLDER"]) / "abstracts"
     name = a.figure_filename.split("/", 1)[-1]
     return send_from_directory(folder, name)
+
+
+# ---------------------------------------------------------------------------
+# Payment stub — replace with real payment provider integration.
+# ---------------------------------------------------------------------------
+
+@member_bp.route("/pay/<int:reg_id>")
+@login_required
+def pay_registration(reg_id):
+    reg = Registration.query.get_or_404(reg_id)
+    if reg.user_id != current_user.id:
+        abort(403)
+    if reg.status == "paid":
+        flash("This registration is already paid.", "success")
+        return redirect(url_for("member.dashboard"))
+    site = get_site_settings()
+    return render_template("member/pay.html", reg=reg, site=site)

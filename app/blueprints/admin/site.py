@@ -45,6 +45,7 @@ def site_identity():
             val = (request.form.get(fld) or "").strip()
             if val:
                 setattr(s, fld, val)
+        s.payment_portal_enabled = request.form.get("payment_portal_enabled") == "1"
         db.session.commit()
         audit.record("site.identity_updated",
                      target_kind="site_settings", target_id=s.id,

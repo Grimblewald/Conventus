@@ -1,0 +1,57 @@
+{% extends "admin/_base.html" %}
+{% block title %}Registrations · Admin{% endblock %}
+{% block admin %}
+<div class="section-head"><div><div class="eyebrow">Conferences</div><h2>Registrations</h2></div></div>
+
+<div style="display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap;">
+  <a class="btn btn-{% if status_filter == 'all' %}primary{% else %}ghost{% endif %} btn-sm"
+     href="{{ url_for('admin.registrations', conference_id=conference_id, status='all') }}">All</a>
+  <a class="btn btn-{% if status_filter == 'pending' %}primary{% else %}ghost{% endif %} btn-sm"
+     href="{{ url_for('admin.registrations', conference_id=conference_id, status='pending') }}">Pending</a>
+  <a class="btn btn-{% if status_filter == 'paid' %}primary{% else %}ghost{% endif %} btn-sm"
+     href="{{ url_for('admin.registrations', conference_id=conference_id, status='paid') }}">Paid</a>
+  <a class="btn btn-{% if status_filter == 'cancelled' %}primary{% else %}ghost{% endif %} btn-sm"
+     href="{{ url_for('admin.registrations', conference_id=conference_id, status='cancelled') }}">Cancelled</a>
+</div>
+
+<div style="display:flex; gap:8px; margin-bottom:18px;">
+  <select class="select" style="max-width:300px;"
+          onchange="window.location=this.value">
+    <option value="{{ url_for('admin.registrations', status=status_filter) }}">All conferences</option>
+    {% for c in conferences %}
+      <option value="{{ url_for('admin.registrations', conference_id=c.id, status=status_filter) }}"
+              {% if conference_id == c.id %}selected{% endif %}>{{ c.title }}</option>
+    {% endfor %}
+  </select>
+</div>
+
+{% if regs %}
+<table class="table">
+  <thead><tr><th>User</th><th>Conference</th><th>Tier</th><th>Amount</th><th>Status</th><th>Payment sent</th><th>Date</th><th></th></tr></thead>
+  <tbody>
+    {% for r in regs %}
+    <tr>
+      <td>{{ r.user.email if r.user else '—' }}</td>
+      <td>{{ r.conference.title if r.conference else '—' }}</td>
+      <td>{{ r.tier_name }}</td>
+      <td>{{ site.currency_symbol }}{{ r.amount }}</td>
+      <td><span class="status" data-v="{{ r.status }}">{{ r.status }}</span></td>
+      <td>{{ r.payment_sent_at.strftime('%-d %b %Y') if r.payment_sent_at else '—' }}</td>
+      <td>{{ r.created_at.strftime('%-d %b %Y') }}</td>
+      <td>
+        {% if r.status != 'paid' %}
+        <form method="post" action="{{ url_for('admin.registration_status', reg_id=r.id) }}" style="display:inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="status" value="paid">
+          <button class="btn btn-primary btn-sm" type="submit">Mark paid</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">No registrations found.</p>
+{% endif %}
+{% endblock %}

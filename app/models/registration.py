@@ -23,6 +23,7 @@ class Registration(db.Model):
     dietary = db.Column(db.String(200), default="")
     accessibility = db.Column(db.String(400), default="")
     status = db.Column(db.String(40), default="pending", nullable=False)
+    payment_sent_at = db.Column(db.DateTime, nullable=True)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow,

@@ -35,6 +35,9 @@ class SiteSettings(db.Model):
     currency_code = db.Column(db.String(8), default="USD")
     currency_symbol = db.Column(db.String(4), default="$")
 
+    # --- Payments ---------------------------------------------------------
+    payment_portal_enabled = db.Column(db.Boolean, default=False, nullable=False)
+
     # --- Palette (every value an admin can change from Site → Palette) -----
     # Stored as hex/CSS colour strings.
     palette_page_bg = db.Column(db.String(24), default="#f7f5f1")

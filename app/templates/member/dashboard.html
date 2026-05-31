@@ -14,7 +14,7 @@
     <h3>Registrations</h3>
     {% if regs %}
       <table class="table">
-        <thead><tr><th>Conference</th><th>Tier</th><th>Amount</th><th>Status</th></tr></thead>
+        <thead><tr><th>Conference</th><th>Tier</th><th>Amount</th><th>Payment</th><th></th></tr></thead>
         <tbody>
           {% for r in regs %}
           <tr>
@@ -22,6 +22,11 @@
             <td>{{ r.tier_name }}</td>
             <td>{{ site.currency_symbol }}{{ r.amount }} {{ site.currency_code }}</td>
             <td><span class="status" data-v="{{ r.status }}">{{ r.status }}</span></td>
+            <td>
+              {% if r.status == 'pending' %}
+                <a class="btn btn-primary btn-sm" href="{{ url_for('member.pay_registration', reg_id=r.id) }}">Pay</a>
+              {% endif %}
+            </td>
           </tr>
           {% endfor %}
         </tbody>

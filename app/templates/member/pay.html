@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Pay · {{ site.site_name }}{% endblock %}
+{% block content %}
+<section class="block">
+  <div class="container container-narrow">
+    <div class="section-head">
+      <div>
+        <div class="eyebrow">Payment</div>
+        <h2>{{ reg.conference.title }}</h2>
+      </div>
+    </div>
+
+    <div class="card" style="padding:24px;">
+      <table class="table">
+        <tr><th>Tier</th><td>{{ reg.tier_name }}</td></tr>
+        <tr><th>Amount</th><td>{{ site.currency_symbol }}{{ reg.amount }} {{ site.currency_code }}</td></tr>
+        <tr><th>Status</th><td><span class="status" data-v="{{ reg.status }}">{{ reg.status }}</span></td></tr>
+        <tr><th>Date</th><td>{{ reg.created_at.strftime('%-d %B %Y') }}</td></tr>
+      </table>
+    </div>
+
+    <div class="card" style="padding:24px; margin-top:18px; background: var(--c-page-bg); border-color: #e8c954;">
+      <h3 style="margin-top:0;">Payment portal under construction</h3>
+      <p>
+        This society has not yet connected a payment provider.
+        {% if reg.payment_sent_at %}
+          A payment link was emailed to you on {{ reg.payment_sent_at.strftime('%-d %B %Y') }}.
+        {% endif %}
+      </p>
+      <p class="muted">
+        The society administrator will notify you when online payments are available.
+        In the meantime, your registration is held and your place is reserved.
+      </p>
+    </div>
+
+    <a class="btn btn-ghost" href="{{ url_for('member.dashboard') }}">← Back to dashboard</a>
+  </div>
+</section>
+{% endblock %}

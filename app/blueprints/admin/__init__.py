@@ -5,8 +5,10 @@ module under `app/blueprints/admin/` and stitch them together here.
 """
 from __future__ import annotations
 
-from flask import Blueprint, render_template
+from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask_login import current_user
 
+from ...extensions import db
 from ...models import (
     Abstract, Announcement, Conference, Registration, User,
 )
@@ -68,6 +70,54 @@ def index():
         recent_anns=recent_anns,
         update=latest_status(),
     )
+
+
+# ---------------------------------------------------------------------------
+# Registrations list — view and manually mark as paid.
+# ---------------------------------------------------------------------------
+
+@admin_bp.route("/registrations")
+@staff_required
+def registrations():
+    conference_id = request.args.get("conference_id", type=int)
+    status_filter = request.args.get("status", "all")
+    query = Registration.query.filter(Registration.deleted_at.is_(None))
+    if conference_id:
+        query = query.filter_by(conference_id=conference_id)
+    if status_filter != "all":
+        query = query.filter_by(status=status_filter)
+    regs = query.order_by(Registration.created_at.desc()).all()
+    conf_list = (
+        Conference.query
+        .filter(Conference.deleted_at.is_(None))
+        .order_by(Conference.start_date.desc())
+        .all()
+    )
+    return render_template(
+        "admin/registrations.html",
+        regs=regs,
+        conferences=conf_list,
+        conference_id=conference_id,
+        status_filter=status_filter,
+    )
+
+
+@admin_bp.route("/registrations/<int:reg_id>/status", methods=["POST"])
+@staff_required
+def registration_status(reg_id):
+    reg = Registration.query.get_or_404(reg_id)
+    new_status = (request.form.get("status") or "").strip()
+    if new_status in ("pending", "paid", "cancelled"):
+        reg.status = new_status
+        db.session.commit()
+        from ...security import audit as audit_log
+        audit_log.record(
+            "registration.status_changed",
+            target_kind="registration", target_id=reg.id,
+            summary=f"{current_user.email} → {reg.status}",
+        )
+        flash(f"Registration marked as {new_status}.", "success")
+    return redirect(url_for("admin.registrations"))
 
 
 # ---------------------------------------------------------------------------

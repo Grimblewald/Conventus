@@ -39,6 +39,14 @@
   </div>
   <div class="field"><label for="copyright_line">Copyright line ({year} is replaced live)</label>
     <input class="input" id="copyright_line" name="copyright_line" value="{{ s.copyright_line }}"></div>
+  <div class="field" style="margin-top:18px; padding-top:18px; border-top:1px solid var(--c-card-border);">
+    <label style="display:flex; align-items:center; gap:10px;">
+      <input type="hidden" name="payment_portal_enabled" value="0">
+      <input type="checkbox" id="payment_portal_enabled" name="payment_portal_enabled" value="1" {% if s.payment_portal_enabled %}checked{% endif %}>
+      Enable payment portal
+    </label>
+    <div class="help">When enabled, members receive a payment link by email after registering. When disabled, registrations show a "coming soon" notice. See <code>app/services/payments.py</code> for integration points.</div>
+  </div>
   <button class="btn btn-primary" type="submit">Save identity</button>
 </form>
 {% endblock %}

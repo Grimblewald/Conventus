@@ -11,6 +11,10 @@ User=REPLACE_WITH_YOUR_USER
 Group=REPLACE_WITH_YOUR_USER
 WorkingDirectory=REPLACE_WITH_PROJECT_ROOT
 EnvironmentFile=REPLACE_WITH_PROJECT_ROOT/.env
+# systemd's default PATH is minimal and doesn't include the user's local
+# bin (where uv, pipx, cargo install to).  We extend it so the launch
+# scripts can find uv.
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:REPLACE_WITH_USER_HOME/.local/bin:REPLACE_WITH_USER_HOME/.cargo/bin
 ExecStart=REPLACE_WITH_PROJECT_ROOT/scripts/launch_cloudflared.sh
 Restart=always
 RestartSec=10

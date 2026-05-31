@@ -26,16 +26,19 @@ fi
 # present (e.g. logged in as root directly), default to the owner of the
 # project directory.
 USER="${SUDO_USER:-$(stat -c '%U' "$PROJECT_ROOT" 2>/dev/null || echo root)}"
+HOME_DIR="$(eval echo "~$USER")"
 
 echo "→ Installing cloudflared-launch.service"
 echo "  project: $PROJECT_ROOT"
 echo "  user:    $USER"
+echo "  home:    $HOME_DIR"
 
 # Substitute placeholders.  We use '|' as the sed delimiter because project
 # paths contain '/' characters.
 sed \
     -e "s|REPLACE_WITH_YOUR_USER|${USER}|g" \
     -e "s|REPLACE_WITH_PROJECT_ROOT|${PROJECT_ROOT}|g" \
+    -e "s|REPLACE_WITH_USER_HOME|${HOME_DIR}|g" \
     "$UNIT_SRC" > "$UNIT_DST"
 
 chmod 644 "$UNIT_DST"

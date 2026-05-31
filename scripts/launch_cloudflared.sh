@@ -255,6 +255,11 @@ _detect_auth() {
 _build_cfd() {
     if [ -n "$USE_API_TOKEN" ]; then
         echo "→ Auth: Cloudflare API token (scoped)"
+        # cloudflared requires an origincert path to bootstrap its client
+        # even when using API-token auth.  Give it a project-local path;
+        # if the file is empty cloudflared falls back to the token.
+        export TUNNEL_ORIGIN_CERT="$ORIGIN_CERT"
+        touch "$ORIGIN_CERT" 2>/dev/null || true
         cfd() { cloudflared "$@"; }
     else
         echo "→ Auth: cert.pem  (WARNING: full account access — prefer CLOUDFLARE_API_TOKEN)"
@@ -263,14 +268,6 @@ _build_cfd() {
 }
 
 _detect_auth
-
-# If we are using an API token, remove any stale cert.pem left over from
-# a bootstrap on a previous run — it would take priority over the token
-# and cause 'invalid certificate' errors.
-if [ -n "$USE_API_TOKEN" ] && [ -f "$ORIGIN_CERT" ]; then
-    echo "  removing stale cert.pem (API token takes priority)"
-    rm -f "$ORIGIN_CERT"
-fi
 
 # Bootstrap cert.pem from ~/.cloudflared as a one-time convenience so
 # existing setups aren't broken.  This ONLY fires when neither an API

@@ -273,7 +273,7 @@ if [ -z "$USE_API_TOKEN" ] && [ ! -f "$ORIGIN_CERT" ]; then
 ║                                                                  ║
 ║    3. Copy the token (starts with a letter, ~40 chars).          ║
 ║                                                                  ║
-║  Full step-by-step with screenshots:                             ║
+║  Full step-by-step can be found at:                             ║
 ║    docs/DEPLOY-CLOUDFLARE-SIMPLE.md                              ║
 ║                                                                  ║
 ║  Legacy alternative (NOT recommended):                           ║

@@ -1,81 +1,58 @@
-# Installing on any host
+# Prerequisites + manual setup
 
-Tested on Linux + macOS, Python 3.12+. Anything that can run `uv` and bind a
-TCP port works — a tiny VPS, a Raspberry Pi at home behind a Cloudflare
-tunnel, a NAS, your laptop.
+The recommended path is the [`launch_cloudflared.sh`][launch] script
+documented in the README — it handles `.env` creation, secret generation,
+and all prompts interactively.  This page covers what you need installed
+and the manual steps if you prefer to work without the script.
 
-## 1. Prerequisites
+[launch]: ../scripts/launch_cloudflared.sh
 
-* **Python 3.12** (`python3 --version`)
-* **uv** — fast resolver & runner. Install with `pip install uv` or follow
-  the [official instructions](https://docs.astral.sh/uv/getting-started/installation/).
-* A way to receive email — SMTP credentials, or just run with
-  `MAIL_BACKEND=console` for local testing (OTPs print to stdout).
-* **Optional:** Postgres if you expect bursty load (many registrations or
-  abstracts in a short window); Redis if you'll run multiple Gunicorn
-  workers and want rate-limit state shared between them.
+## Prerequisites
 
-## 2. Clone + configure
+* **Python 3.12** or later (`python3 --version`)
+* **uv** — install with `pip install uv` or follow the
+  [official instructions](https://docs.astral.sh/uv/getting-started/installation/)
+* **cloudflared** (for the Cloudflare Tunnel path) — install from
+  [Cloudflare's download page](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)
+* A way to receive email — SMTP credentials, or `MAIL_BACKEND=console` for
+  local testing (OTPs print to the terminal)
+* **Optional:** Postgres if you expect bursty load; Redis if you run
+  multiple Gunicorn workers and want shared rate-limit state
+
+## Manual setup (without the launch script)
 
 ```bash
-git clone <this repo> society-site
-cd society-site
+git clone https://github.com/your-org/conventus.git
+cd conventus
 
 cp .env.example .env
 $EDITOR .env
 ```
 
-At minimum:
+At minimum set in `.env`:
 
-* Set `SECRET_KEY` to a real value. Refusing to start with the default is a
-  feature, not a bug — generate one with
-  `python -c "import secrets; print(secrets.token_urlsafe(48))"`.
-* Decide on `MAIL_BACKEND` (`console` for now is fine).
-* Leave `DATABASE_URL` unset to use SQLite, or point at Postgres.
+* `SECRET_KEY` — generate with:
+  `python -c "import secrets; print(secrets.token_urlsafe(48))"`
+* `CLOUDFLARE_DOMAIN` — your domain
+* `CLOUDFLARE_API_TOKEN` — scoped token (see [DEPLOY-CLOUDFLARE-SIMPLE.md](DEPLOY-CLOUDFLARE-SIMPLE.md))
+* `MAIL_BACKEND=console` for local dev, or SMTP settings for real email
 
-## 3. Install dependencies
+Then install dependencies and launch:
 
 ```bash
 uv sync
-```
-
-This creates a `.venv/`, installs everything from `pyproject.toml`, and
-records a lockfile.
-
-## 4. First launch
-
-```bash
 uv run gunicorn --bind 127.0.0.1:5005 wsgi:app
 ```
 
-The server prints something like:
+Open `http://127.0.0.1:5005`. Every URL redirects to `/setup` until the
+first-run wizard is complete.  A one-time setup password is printed to the
+console — paste it into the wizard.
 
-```
-=========================================================================
- FIRST-RUN SETUP REQUIRED
-=========================================================================
- Open the site and visit /setup. Use this one-time password:
-     gJk7p3v...
- Stored at .../instance/setup-pw
- It will be DELETED automatically after setup completes.
-=========================================================================
-```
+## Going to production
 
-Open `http://127.0.0.1:5005`. Every URL redirects to `/setup` until
-configuration is complete. Paste the password, step through the wizard
-(admin email, site identity, palette, fonts), submit. The `setup-pw` file
-is removed automatically and the wizard becomes permanently unreachable.
-
-You are now logged in as the admin. The rest of customisation happens in
-**Admin → Site → Palette / Fonts / Images / Identity** and the **Pages /
-Navigation / Footer / Committee** sections.
-
-## 5. Going to production
-
-Pick a target:
-- [Single VPS (systemd + nginx)](DEPLOY-VPS.md)
-- [Cloudflare tunnel — zero-config](DEPLOY-CLOUDFLARE-SIMPLE.md)
+- [Cloudflare Tunnel — zero-config (recommended)](DEPLOY-CLOUDFLARE-SIMPLE.md)
+- [Single VPS — systemd + nginx](DEPLOY-VPS.md)
 
 Before going public, read [SECURITY.md](SECURITY.md) — it lists the env
-vars that must be set, what to verify, and the hardening the app applies
+vars that must be set for production and the hardening the app applies
 for you.

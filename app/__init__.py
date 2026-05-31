@@ -46,6 +46,7 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
     _configure_logging(app)
 
     _init_extensions(app)
+    _connect_mailer(app)
     _register_blueprints(app)
     _register_template_globals(app)
     _register_setup_gate(app)
@@ -77,9 +78,15 @@ def _configure_logging(app: Flask) -> None:
         level=level,
         format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
     )
-    # Suppress noisy access logs in dev — gunicorn provides them in prod
     if app.debug:
         logging.getLogger("werkzeug").setLevel(logging.WARNING)
+
+
+def _connect_mailer(app: Flask) -> None:
+    """Pre-warm the persistent SMTP connection (no-op in console mode)."""
+    from .services.mail import connect_mailer
+    with app.app_context():
+        connect_mailer()
 
 
 def _init_extensions(app: Flask) -> None:

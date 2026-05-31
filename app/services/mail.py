@@ -4,17 +4,38 @@ Reads `MAIL_BACKEND` and SMTP settings from environment at send time so
 admin can rotate SMTP credentials without restarting the app (env reload
 not implemented yet — but config-not-read-at-import-time keeps that future
 option open).
+
+SMTP connections are persistent at the process level — a single connection
+is established on first use (or eagerly at app startup) and reused across
+all requests. A module-level lock ensures thread safety.
 """
 from __future__ import annotations
 
 import logging
 import os
 import smtplib
+import threading
 from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
 
 
 log = logging.getLogger(__name__)
+
+_smtp_conn: smtplib.SMTP | None = None
+_smtp_lock = threading.Lock()
+
+
+def connect_mailer() -> None:
+    """Eagerly establish the SMTP connection at startup (no-op if console)."""
+    backend = os.environ.get("MAIL_BACKEND", "console").strip().lower()
+    if backend != "smtp":
+        return
+    try:
+        _get_smtp_connection()
+        log.info("SMTP connection established")
+    except Exception:
+        log.warning("SMTP connect failed — will retry on first send_mail()",
+                    exc_info=True)
 
 
 def send_mail(to: str, subject: str, body: str) -> bool:
@@ -38,11 +59,6 @@ def _send_console(to: str, subject: str, body: str) -> None:
 
 
 def _send_smtp(to: str, subject: str, body: str) -> None:
-    host = os.environ["SMTP_HOST"].strip()
-    port = int(os.environ.get("SMTP_PORT", "587").strip() or 587)
-    user = (os.environ.get("SMTP_USER") or "").strip()
-    pw = (os.environ.get("SMTP_PASS") or "").strip()
-    timeout = int(os.environ.get("SMTP_TIMEOUT", "15").strip() or 15)
     from flask import current_app
     sender = current_app.config.get("MAIL_FROM", "").strip() or "noreply@example.org"
 
@@ -54,18 +70,43 @@ def _send_smtp(to: str, subject: str, body: str) -> None:
     msg["Date"] = formatdate(localtime=True)
     msg.set_content(body)
 
-    # 465 = implicit TLS, 587 = STARTTLS, 25 = plaintext (avoid).
+    _get_smtp_connection().send_message(msg)
+
+
+def _get_smtp_connection() -> smtplib.SMTP:
+    """Return a connected, authenticated SMTP object.  Thread-safe."""
+    global _smtp_conn
+    with _smtp_lock:
+        if _smtp_conn is not None:
+            try:
+                _smtp_conn.noop()
+            except Exception:
+                log.debug("SMTP connection dropped — reconnecting")
+                try:
+                    _smtp_conn.quit()
+                except Exception:
+                    pass
+                _smtp_conn = None
+        if _smtp_conn is None:
+            _smtp_conn = _connect_smtp()
+    return _smtp_conn
+
+
+def _connect_smtp() -> smtplib.SMTP:
+    host = os.environ["SMTP_HOST"].strip()
+    port = int(os.environ.get("SMTP_PORT", "587").strip() or 587)
+    user = (os.environ.get("SMTP_USER") or "").strip()
+    pw = (os.environ.get("SMTP_PASS") or "").strip()
+    timeout = int(os.environ.get("SMTP_TIMEOUT", "15").strip() or 15)
+
     if port == 465:
-        with smtplib.SMTP_SSL(host, port, timeout=timeout) as s:
-            if user:
-                s.login(user, pw)
-            s.send_message(msg)
+        s = smtplib.SMTP_SSL(host, port, timeout=timeout)
     else:
-        with smtplib.SMTP(host, port, timeout=timeout) as s:
+        s = smtplib.SMTP(host, port, timeout=timeout)
+        s.ehlo()
+        if port != 25:
+            s.starttls()
             s.ehlo()
-            if port != 25:
-                s.starttls()
-                s.ehlo()
-            if user:
-                s.login(user, pw)
-            s.send_message(msg)
+    if user:
+        s.login(user, pw)
+    return s

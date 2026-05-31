@@ -52,9 +52,167 @@ chmod 700 "$CONFIG_DIR" 2>/dev/null || true
 chmod 700 "$RUN_DIR" 2>/dev/null || true
 
 # -----------------------------------------------------------------------
-# Auth: detect available mode
+# Interactive first-run setup  (prompts for core .env settings)
 # -----------------------------------------------------------------------
 ENV_FILE="$PROJECT_ROOT/.env"
+
+_set_env() {
+    local key="$1" val="$2" tmp="$ENV_FILE.tmp"
+    if grep -q "^${key}=" "$ENV_FILE" 2>/dev/null; then
+        sed "s|^${key}=.*|${key}=${val}|" "$ENV_FILE" > "$tmp" && mv "$tmp" "$ENV_FILE"
+    elif grep -q "^# ${key}=" "$ENV_FILE" 2>/dev/null; then
+        sed "s|^# ${key}=.*|${key}=${val}|" "$ENV_FILE" > "$tmp" && mv "$tmp" "$ENV_FILE"
+    else
+        cp "$ENV_FILE" "$tmp"
+        printf '%s=%s\n' "$key" "$val" >> "$tmp"
+        mv "$tmp" "$ENV_FILE"
+    fi
+}
+
+_interactive_env_setup() {
+    [ -t 0 ] || return 0
+
+    if [ ! -f "$ENV_FILE" ]; then
+        cp "$PROJECT_ROOT/.env.example" "$ENV_FILE"
+    fi
+
+    local cur_domain cur_token cur_secret cur_mail
+    cur_domain="$(grep -E '^CLOUDFLARE_DOMAIN=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)"
+    cur_token="$(grep -E '^CLOUDFLARE_API_TOKEN=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)"
+    cur_secret="$(grep -E '^SECRET_KEY=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)"
+    cur_mail="$(grep -E '^MAIL_BACKEND=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)"
+
+    local placeholder_domain="your-domain.example.org"
+    local placeholder_secret="CHANGE-ME-generate-with-secrets.token_urlsafe-48"
+
+    local need=0
+    if [ -z "$cur_domain" ] || [ "$cur_domain" = "$placeholder_domain" ]; then need=1; fi
+    if [ -z "$cur_token" ]; then need=1; fi
+    if [ -z "$cur_secret" ] || [ "$cur_secret" = "$placeholder_secret" ] || [[ "$cur_secret" == CHANGE-ME* ]]; then need=1; fi
+    [ "$need" = 1 ] || return 0
+
+    cat >&2 << 'INTRO'
+
+┌──────────────────────────────────────────────────────────────────┐
+│                                                                  │
+│  Society Site — first-run setup                                  │
+│                                                                  │
+│  Let's configure the essentials so everything works out of the   │
+│  box.  Advanced settings use sensible defaults — you can edit    │
+│  .env later to tweak them.                                       │
+│                                                                  │
+│  Press Enter to accept the [default] shown in brackets.          │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+INTRO
+
+    if [ -z "$cur_secret" ] || [ "$cur_secret" = "$placeholder_secret" ] || [[ "$cur_secret" == CHANGE-ME* ]]; then
+        local new_secret
+        new_secret="$(python3 -c "import secrets; print(secrets.token_urlsafe(48))" 2>/dev/null \
+                   || python -c "import secrets; print(secrets.token_urlsafe(48))" 2>/dev/null \
+                   || openssl rand -base64 36 2>/dev/null)"
+        if [ -n "$new_secret" ]; then
+            _set_env "SECRET_KEY" "$new_secret"
+            export SECRET_KEY="$new_secret"
+            echo "  SECRET_KEY = (generated)"
+        fi
+    fi
+
+    if [ -z "$cur_domain" ] || [ "$cur_domain" = "$placeholder_domain" ]; then
+        printf '\nDomain your site will be served on\n  (e.g. your-society.example.org): '
+        read -r new_domain </dev/tty
+        if [ -n "$new_domain" ]; then
+            _set_env "CLOUDFLARE_DOMAIN" "$new_domain"
+            export CLOUDFLARE_DOMAIN="$new_domain"
+            DOMAIN="$new_domain"
+        fi
+    fi
+
+    printf 'Subdomain [app] (blank for apex, e.g. "www"): '
+    read -r new_sub </dev/tty
+    if [ -n "$new_sub" ]; then
+        _set_env "CLOUDFLARE_SUBDOMAIN" "$new_sub"
+        SUBDOMAIN="$new_sub"
+    fi
+
+    cur_token="$(grep -E '^CLOUDFLARE_API_TOKEN=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)"
+    if [ -z "$cur_token" ]; then
+        cat >&2 << 'TOKENHELP'
+
+  A Cloudflare API token lets this script create your tunnel and
+  set up DNS without giving the VPS full account access.
+
+  To create one: Cloudflare Dashboard → My Profile → API Tokens
+  → Create Custom Token.  Set Account:Cloudflare Tunnel:Edit and
+  Zone:DNS:Edit (limit to your domain).  Full walkthrough:
+  docs/DEPLOY-CLOUDFLARE-SIMPLE.md
+
+  (Press Enter to skip — you can also use cert.pem as a fallback.)
+TOKENHELP
+        printf 'Cloudflare API token: '
+        read -r new_token </dev/tty
+        if [ -n "$new_token" ]; then
+            _set_env "CLOUDFLARE_API_TOKEN" "$new_token"
+            export CLOUDFLARE_API_TOKEN="$new_token"
+        fi
+    fi
+
+    echo ""
+    echo "  Email delivery:"
+    echo "    1. smtp    — send real emails (OTP login codes, contact form, alerts)"
+    echo "    2. console — print to terminal (testing only — no real email delivery)"
+    printf '  Choose [1/2, default: 1]: '
+    read -r mail_choice </dev/tty
+    mail_choice="${mail_choice:-1}"
+
+    if [ "$mail_choice" = "1" ]; then
+        _set_env "MAIL_BACKEND" "smtp"
+        export MAIL_BACKEND="smtp"
+
+        printf '  SMTP server hostname (e.g. smtp.gmail.com): '
+        read -r val </dev/tty
+        [ -n "$val" ] && { _set_env "SMTP_HOST" "$val"; export SMTP_HOST="$val"; }
+
+        printf '  SMTP port [587]: '
+        read -r val </dev/tty
+        val="${val:-587}"
+        _set_env "SMTP_PORT" "$val"
+        export SMTP_PORT="$val"
+
+        printf '  SMTP username: '
+        read -r val </dev/tty
+        [ -n "$val" ] && { _set_env "SMTP_USER" "$val"; export SMTP_USER="$val"; }
+
+        printf '  SMTP password: '
+        stty -echo 2>/dev/null || true
+        read -r val </dev/tty
+        stty echo 2>/dev/null || true
+        echo ""
+        [ -n "$val" ] && { _set_env "SMTP_PASS" "$val"; export SMTP_PASS="$val"; }
+
+        local default_from="Name Your Society <noreply@${DOMAIN}>"
+        printf '  From address ["%s"]: ' "$default_from"
+        read -r val </dev/tty
+        val="${val:-$default_from}"
+        _set_env "MAIL_FROM" "$val"
+        export MAIL_FROM="$val"
+    else
+        _set_env "MAIL_BACKEND" "console"
+        export MAIL_BACKEND="console"
+        echo "  Email set to console mode (no real delivery)."
+    fi
+
+    echo ""
+    echo "  ✔  Settings saved to .env"
+    echo ""
+}
+
+# Run setup before anything else (no-op if already configured)
+_interactive_env_setup
+
+# -----------------------------------------------------------------------
+# Auth: detect available mode
+# -----------------------------------------------------------------------
 
 _detect_auth() {
     USE_API_TOKEN=""
@@ -73,19 +231,6 @@ _build_cfd() {
     fi
 }
 
-_save_token_to_env() {
-    local token="$1"
-    if [ ! -f "$ENV_FILE" ]; then
-        printf 'CLOUDFLARE_API_TOKEN=%s\n' "$token" > "$ENV_FILE"
-    elif grep -q '^CLOUDFLARE_API_TOKEN=' "$ENV_FILE" 2>/dev/null; then
-        sed -i "s|^CLOUDFLARE_API_TOKEN=.*|CLOUDFLARE_API_TOKEN=$token|" "$ENV_FILE"
-    elif grep -q '^# CLOUDFLARE_API_TOKEN=' "$ENV_FILE" 2>/dev/null; then
-        sed -i "s|^# CLOUDFLARE_API_TOKEN=.*|CLOUDFLARE_API_TOKEN=$token|" "$ENV_FILE"
-    else
-        printf '\nCLOUDFLARE_API_TOKEN=%s\n' "$token" >> "$ENV_FILE"
-    fi
-}
-
 _detect_auth
 
 # Bootstrap cert.pem from ~/.cloudflared as a one-time convenience so
@@ -99,7 +244,7 @@ if [ -z "$USE_API_TOKEN" ] && [ ! -f "$ORIGIN_CERT" ]; then
     fi
 fi
 
-# ---------- interactive token prompt (no auth at all yet) ---------------
+# ---------- last-resort token prompt (no auth at all yet) ---------------
 if [ -z "$USE_API_TOKEN" ] && [ ! -f "$ORIGIN_CERT" ]; then
     if [ -t 0 ]; then
         cat >&2 << 'BANNER'
@@ -139,7 +284,7 @@ BANNER
         printf 'Cloudflare API token (paste it here): '
         read -r token </dev/tty
         if [ -n "$token" ]; then
-            _save_token_to_env "$token"
+            _set_env "CLOUDFLARE_API_TOKEN" "$token"
             export CLOUDFLARE_API_TOKEN="$token"
             _detect_auth
             echo "  token saved to .env"

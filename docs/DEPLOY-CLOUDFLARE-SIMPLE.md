@@ -96,20 +96,24 @@ automatically.
 git clone https://github.com/your-org/society-site.git my-site
 cd my-site
 
-# The script will prompt for your Cloudflare API token on first run if
-# you haven't set CLOUDFLARE_API_TOKEN in .env yet.
+# The script handles everything interactively on first run — it copies
+# .env.example to .env if needed, then prompts for domain, API token,
+# and email settings.  Nothing to configure by hand.
 chmod +x scripts/launch_cloudflared.sh
 ./scripts/launch_cloudflared.sh
 ```
 
-The script will:
+On first run the script walks you through:
 
-1. Generate a secure `SECRET_KEY`
-2. Install Python dependencies with `uv`
-3. Start gunicorn on `127.0.0.1:5005`
-4. Create a Cloudflare tunnel for your domain
-5. Route DNS so `yourdomain.com` → tunnel → your app
-6. Print the setup URL
+1. **Domain & subdomain** — where your site lives
+2. **API token** — the scoped token from step 3 above
+3. **Email settings** — SMTP host/port/user/password, or console mode for testing
+4. Generate a secure `SECRET_KEY`
+5. Install Python dependencies with `uv`
+6. Start gunicorn on `127.0.0.1:5005`
+7. Create a Cloudflare tunnel for your domain
+8. Route DNS so `yourdomain.com` → tunnel → your app
+9. Print the setup URL
 
 First time? Visit `https://yourdomain.com/setup` and paste the one-time password shown in the terminal.
 

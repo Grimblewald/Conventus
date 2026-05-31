@@ -47,17 +47,14 @@ automatically and `/setup` becomes inaccessible.
 ## Deploy to the internet (Cloudflare Tunnel)
 
 The recommended production path is a VPS + Cloudflare Tunnel.  It requires
-**no nginx, no certbot, no port forwarding** — just a domain on Cloudflare
-and a scoped API token with two permissions.
+**no nginx, no certbot, no port forwarding** — just a domain on Cloudflare.
 
 ```bash
-# 1. Set your domain and API token in .env
-#    CLOUDFLARE_DOMAIN=your-domain.example.org
-#    CLOUDFLARE_API_TOKEN=<from Cloudflare dashboard>
-#
-#    The launch script will prompt for the token if you haven't set it.
-
-# 2. Run the tunnel launcher
+# 1. Run the launcher — it handles everything interactively:
+#    - copies .env from .env.example if it doesn't exist
+#    - prompts for your domain, API token, and email settings
+#    - generates a SECRET_KEY automatically
+#    - saves everything to .env so the next run skips the prompts
 chmod +x scripts/launch_cloudflared.sh
 ./scripts/launch_cloudflared.sh
 ```

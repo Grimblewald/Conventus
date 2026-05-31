@@ -20,7 +20,7 @@ site:
   currency_symbol: "$"
   timezone: "UTC"
   intro_paragraph: "We are a community of researchers and practitioners dedicated to advancing knowledge through collaboration, conferences, and publications."
-  intro_secondary: ""
+  closing_statement: ""
 
 admin:
   email: "your-email@your-domain.example.org"

@@ -137,6 +137,11 @@
         </div>
       {% endfor %}
     </div>
+    {% if site.closing_statement %}
+    <div style="text-align: center; padding-bottom: 20px; font-family: var(--f-ui); font-size: 13.5px; color: color-mix(in oklab, var(--c-footer-text) 75%, transparent);" class="md">
+      {{ site.closing_statement | md | safe }}
+    </div>
+    {% endif %}
     <div class="fine">
       <div>{{ site.copyright_line.replace('{year}', now().year|string) if site.copyright_line else '' }}</div>
       <div></div>

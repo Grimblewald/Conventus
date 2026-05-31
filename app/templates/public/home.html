@@ -15,10 +15,10 @@
       <div class="eyebrow">{{ site.tagline }}</div>
     {% endif %}
     {% if site.intro_paragraph %}
-      <p class="lede">{{ site.intro_paragraph }}</p>
+      <div class="lede md">{{ site.intro_paragraph | md | safe }}</div>
     {% endif %}
     {% if site.intro_secondary %}
-      <p>{{ site.intro_secondary }}</p>
+      <div class="md">{{ site.intro_secondary | md | safe }}</div>
     {% endif %}
   </div>
 </section>

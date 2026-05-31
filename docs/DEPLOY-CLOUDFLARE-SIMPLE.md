@@ -131,15 +131,15 @@ tmux new -s conventus
 # Ctrl+B, D to detach
 ```
 
-### Option B: systemd (permanent, auto-restarts on boot)
+### Option B: systemd user service (permanent, auto-restarts on boot)
 
 ```bash
-sudo scripts/register-service.sh
+scripts/register-service.sh
 ```
 
-The script auto-detects the project directory and your username, writes
-the unit file with the correct paths, and starts the service.  Nothing to
-edit by hand.
+No `sudo` needed.  Installs a user-level systemd service that starts
+at boot (via `loginctl enable-linger`) and runs the launcher under your
+own user account.  All status and log commands use `systemctl --user`.
 
 ## Configuration
 

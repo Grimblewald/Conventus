@@ -15,6 +15,10 @@ EnvironmentFile=REPLACE_WITH_PROJECT_ROOT/.env
 # bin (where uv, pipx, cargo install to).  We extend it so the launch
 # scripts can find uv.
 Environment=PATH=/usr/local/bin:/usr/bin:/bin:REPLACE_WITH_USER_HOME/.local/bin:REPLACE_WITH_USER_HOME/.cargo/bin
+# uv writes to ~/.cache/uv by default, but ProtectHome=read-only blocks
+# writes to the home directory.  Point it at the project's var/ instead.
+Environment=UV_CACHE_DIR=REPLACE_WITH_PROJECT_ROOT/var/uv-cache
+Environment=XDG_CACHE_HOME=REPLACE_WITH_PROJECT_ROOT/var
 ExecStart=REPLACE_WITH_PROJECT_ROOT/scripts/launch_cloudflared.sh
 Restart=always
 RestartSec=10

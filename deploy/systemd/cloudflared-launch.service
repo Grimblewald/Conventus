@@ -11,7 +11,7 @@ User=REPLACE_WITH_YOUR_USER
 Group=REPLACE_WITH_YOUR_USER
 WorkingDirectory=REPLACE_WITH_PROJECT_ROOT
 EnvironmentFile=REPLACE_WITH_PROJECT_ROOT/.env
-ExecStart=REPLACE_WITH_PROJECT_ROOT/.venv/bin/bash REPLACE_WITH_PROJECT_ROOT/scripts/launch_cloudflared.sh
+ExecStart=REPLACE_WITH_PROJECT_ROOT/scripts/launch_cloudflared.sh
 Restart=always
 RestartSec=10
 

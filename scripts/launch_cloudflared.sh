@@ -51,6 +51,9 @@ mkdir -p "$CONFIG_DIR" "$RUN_DIR"
 chmod 700 "$CONFIG_DIR" 2>/dev/null || true
 chmod 700 "$RUN_DIR" 2>/dev/null || true
 
+echo "→ Conventus launcher starting..."
+echo "  project root: $PROJECT_ROOT"
+
 # -----------------------------------------------------------------------
 # Interactive first-run setup  (prompts for core .env settings)
 # -----------------------------------------------------------------------
@@ -69,18 +72,27 @@ _set_env() {
     fi
 }
 
+_strip_quotes() {
+    local val="$1"
+    val="${val#\"}"; val="${val%\"}"
+    val="${val#\'}"; val="${val%\'}"
+    printf '%s' "$val"
+}
+
 _interactive_env_setup() {
     [ -t 0 ] || return 0
+    echo "→ Checking configuration..."
 
     if [ ! -f "$ENV_FILE" ]; then
+        echo "  .env not found — copying from .env.example"
         cp "$PROJECT_ROOT/.env.example" "$ENV_FILE"
     fi
 
     local cur_domain cur_token cur_secret cur_mail
-    cur_domain="$(grep -E '^CLOUDFLARE_DOMAIN=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)"
-    cur_token="$(grep -E '^CLOUDFLARE_API_TOKEN=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)"
-    cur_secret="$(grep -E '^SECRET_KEY=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)"
-    cur_mail="$(grep -E '^MAIL_BACKEND=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)"
+    cur_domain="$(_strip_quotes "$(grep -E '^CLOUDFLARE_DOMAIN=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)")"
+    cur_token="$(_strip_quotes "$(grep -E '^CLOUDFLARE_API_TOKEN=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)")"
+    cur_secret="$(_strip_quotes "$(grep -E '^SECRET_KEY=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)")"
+    cur_mail="$(_strip_quotes "$(grep -E '^MAIL_BACKEND=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)")"
 
     local placeholder_domain="your-domain.example.org"
     local placeholder_secret="CHANGE-ME-generate-with-secrets.token_urlsafe-48"
@@ -89,7 +101,7 @@ _interactive_env_setup() {
     if [ -z "$cur_domain" ] || [ "$cur_domain" = "$placeholder_domain" ]; then need=1; fi
     if [ -z "$cur_token" ]; then need=1; fi
     if [ -z "$cur_secret" ] || [ "$cur_secret" = "$placeholder_secret" ] || [[ "$cur_secret" == CHANGE-ME* ]]; then need=1; fi
-    [ "$need" = 1 ] || return 0
+    [ "$need" = 1 ] || { echo "  All core settings present — nothing to configure."; return 0; }
 
     cat << 'INTRO'
 
@@ -135,7 +147,7 @@ INTRO
         SUBDOMAIN="$new_sub"
     fi
 
-    cur_token="$(grep -E '^CLOUDFLARE_API_TOKEN=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)"
+    cur_token="$(_strip_quotes "$(grep -E '^CLOUDFLARE_API_TOKEN=' "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2-)")"
     if [ -z "$cur_token" ]; then
         cat << 'TOKENHELP'
 

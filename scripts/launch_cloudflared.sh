@@ -205,6 +205,11 @@ TOKENHELP
     echo ""
     echo "  ✔  Settings saved to .env"
     echo ""
+    echo "  Note: rate limiting uses in-process memory by default, which is"
+    echo "  fine for single-workder or small deployments.  If you scale to"
+    echo "  many gunicorn workers, set RATELIMIT_STORAGE_URI=redis://... in"
+    echo "  .env to share limits across workers."
+    echo ""
 }
 
 # Run setup before anything else (no-op if already configured)

@@ -51,7 +51,7 @@ To create the token:
 
    | Row | Scope       | Permission                           | Access |
    |-----|-------------|--------------------------------------|--------|
-   | 1   | Account     | Cloudflare One Connector: cloudflared | Edit   |
+   | 1   | Account     | Argo Tunnel (Legacy)                 | Edit   |
    | 2   | Zone        | DNS                                  | Edit   |
 
 7. Under **Zone Resources** (below the second permission row):

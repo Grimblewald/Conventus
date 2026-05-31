@@ -35,7 +35,7 @@ TUNNEL_NAME="${TUNNEL_NAME:-society-site}"
 SUBDOMAIN="${SUBDOMAIN:-app}"
 DOMAIN="${DOMAIN:-your-domain.example.org}"
 PORT="${PORT:-5005}"
-PROJECT="${PROJECT:-Society Site}"
+PROJECT="${PROJECT:-Conventus}"
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONFIG_DIR="$PROJECT_ROOT/.cloudflared"
@@ -255,23 +255,15 @@ _detect_auth() {
 _build_cfd() {
     if [ -n "$USE_API_TOKEN" ]; then
         echo "→ Auth: Cloudflare API token (scoped)"
-        # cloudflared requires an origincert path to bootstrap its client
-        # even when using API-token auth.  Give it a project-local path;
-        # if the file is empty cloudflared falls back to the token.
-        export TUNNEL_ORIGIN_CERT="$ORIGIN_CERT"
-        touch "$ORIGIN_CERT" 2>/dev/null || true
-        cfd() { cloudflared "$@"; }
     else
         echo "→ Auth: cert.pem  (WARNING: full account access — prefer CLOUDFLARE_API_TOKEN)"
-        cfd() { cloudflared --origincert "$ORIGIN_CERT" "$@"; }
     fi
 }
 
 _detect_auth
 
-# Bootstrap cert.pem from ~/.cloudflared as a one-time convenience so
-# existing setups aren't broken.  This ONLY fires when neither an API
-# token nor a project-local cert.pem exist.
+# Bootstrap cert.pem from ~/.cloudflared as a one-time convenience.
+# This ONLY fires when NOT using an API token AND no project-local cert exists.
 if [ -z "$USE_API_TOKEN" ] && [ ! -f "$ORIGIN_CERT" ]; then
     if [ -f "$HOME/.cloudflared/cert.pem" ]; then
         cp "$HOME/.cloudflared/cert.pem" "$ORIGIN_CERT"
@@ -350,49 +342,143 @@ command -v cloudflared >/dev/null || {
     exit 1
 }
 
-# Create the tunnel if it doesn't exist.  --credentials-file keeps its
-# JSON inside the project dir instead of ~/.cloudflared/<UUID>.json.
-if ! cfd tunnel list 2>/dev/null | awk '{print $2}' | grep -qx "$TUNNEL_NAME"; then
-    echo "  creating tunnel $TUNNEL_NAME (credentials → $TUNNEL_CREDS)"
-    TUNNEL_OUT="$(cfd tunnel create --credentials-file "$TUNNEL_CREDS" "$TUNNEL_NAME" 2>&1)" || {
-        echo "$TUNNEL_OUT" >&2
-        if echo "$TUNNEL_OUT" | grep -qi "origin cert"; then
-            if [ -n "$USE_API_TOKEN" ]; then
-                echo "✗ cloudflared may be too old to support API tokens." >&2
-                echo "  Update cloudflared to v2024.2.0 or later:" >&2
-                echo "  https://github.com/cloudflare/cloudflared/releases" >&2
-                echo "  Or fall back to cert.pem: run \`cloudflared tunnel login\`" >&2
-                echo "  and re-run this script." >&2
-            else
-                echo "✗ Could not find a valid origin certificate." >&2
-                echo "  Run \`cloudflared tunnel login\` and re-run this script." >&2
-            fi
-        fi
-        exit 1
-    }
-fi
+# ═══════════════════════════════════════════════════════════════════════
+# Tunnel management — API-token mode uses the Cloudflare REST API
+# directly; cert.pem mode uses the cloudflared CLI.
+# ═══════════════════════════════════════════════════════════════════════
 
-if [ ! -f "$TUNNEL_CREDS" ]; then
-    echo "✗ expected tunnel credentials at $TUNNEL_CREDS but none found." >&2
-    echo "  the tunnel was probably created against ~/.cloudflared earlier." >&2
-    echo "  either move its JSON in, or \`cfd tunnel delete $TUNNEL_NAME\` and rerun." >&2
-    exit 1
-fi
-chmod 600 "$TUNNEL_CREDS"
-
-# Project-local ingress config.
 if [ -n "$USE_API_TOKEN" ]; then
+    # ---- API helpers ----
+    _cf_api() {
+        # Usage: _cf_api GET /path  OR  _cf_api POST /path '{"json":"body"}'
+        local method="$1" path="$2" body="${3:-}"
+        if [ -n "$body" ]; then
+            curl -sS -X "$method" "https://api.cloudflare.com/client/v4$path" \
+                -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "$body"
+        else
+            curl -sS -X "$method" "https://api.cloudflare.com/client/v4$path" \
+                -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
+                -H "Content-Type: application/json"
+        fi
+    }
+
+    _cf_json() {
+        # Extract a dotted-path value from Cloudflare API JSON on stdin.
+        # e.g.  _cf_json result.0.id  or  _cf_json result
+        python3 -c "
+import json,sys
+try:
+    d=json.load(sys.stdin)
+    if not d.get('success'):
+        sys.stderr.write('API error: ' + str(d.get('errors',['?'])[0]) + '\n')
+        sys.exit(1)
+    val=d
+    for k in '$1'.split('.'):
+        val=val[int(k) if isinstance(val,list) else k]
+    sys.stdout.write(str(val))
+except Exception as e:
+    sys.stderr.write('JSON parse error: ' + str(e) + '\n')
+    sys.exit(1)
+" 2>/dev/null
+    }
+
+    # ---- fetch account ID ----
+    echo "  fetching account info..."
+    ACCOUNT_ID="$(_cf_api GET /accounts | _cf_json result.0.id)"
+    if [ -z "$ACCOUNT_ID" ]; then
+        echo "✗ Could not determine account ID from API token." >&2
+        exit 1
+    fi
+
+    # ---- find or create tunnel ----
+    echo "  looking up tunnel \"$TUNNEL_NAME\"..."
+    # List all tunnels and find ours by name (the API returns all tunnels).
+    TUNNEL_INFO="$(_cf_api GET "/accounts/$ACCOUNT_ID/cfd_tunnel?is_deleted=false")"
+    TUNNEL_ID="$(echo "$TUNNEL_INFO" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+for t in d.get('result',[]):
+    if t.get('name')=='$TUNNEL_NAME':
+        print(t['id'])
+        break
+" 2>/dev/null)"
+
+    if [ -n "$TUNNEL_ID" ]; then
+        echo "  tunnel already exists ($TUNNEL_ID)"
+    else
+        echo "  creating tunnel \"$TUNNEL_NAME\" via API..."
+        TUNNEL_ID="$(_cf_api POST "/accounts/$ACCOUNT_ID/cfd_tunnel" \
+            "{\"name\":\"$TUNNEL_NAME\",\"config_src\":\"cloudflare\"}" \
+            | _cf_json result.id)"
+        if [ -z "$TUNNEL_ID" ]; then
+            echo "✗ Failed to create tunnel via API." >&2
+            exit 1
+        fi
+    fi
+
+    # ---- fetch tunnel token → credentials JSON ----
+    if [ ! -f "$TUNNEL_CREDS" ]; then
+        echo "  fetching tunnel token..."
+        TUNNEL_TOKEN="$(_cf_api GET "/accounts/$ACCOUNT_ID/cfd_tunnel/$TUNNEL_ID/token" \
+            | _cf_json result)"
+        if [ -z "$TUNNEL_TOKEN" ]; then
+            echo "✗ Failed to fetch tunnel token." >&2
+            exit 1
+        fi
+        # The token is base64-encoded JSON containing AccountTag, TunnelSecret,
+        # and TunnelID — the same format cloudflared expects in a creds file.
+        printf '%s\n' "$TUNNEL_TOKEN" > "$TUNNEL_CREDS"
+        chmod 600 "$TUNNEL_CREDS"
+    fi
+
+    # ---- DNS route ----
+    echo "  fetching zone ID for $DOMAIN..."
+    ZONE_ID="$(_cf_api GET "/zones?name=$DOMAIN" | _cf_json result.0.id)"
+    if [ -z "$ZONE_ID" ]; then
+        echo "✗ Could not find Cloudflare zone for $DOMAIN." >&2
+        echo "  Is the domain added to your Cloudflare account?" >&2
+        exit 1
+    fi
+
+    echo "  creating DNS record $SUBDOMAIN.$DOMAIN → $TUNNEL_ID.cfargotunnel.com"
+    _cf_api POST "/zones/$ZONE_ID/dns_records" \
+        "{\"type\":\"CNAME\",\"name\":\"$SUBDOMAIN.$DOMAIN\",\"content\":\"$TUNNEL_ID.cfargotunnel.com\",\"proxied\":true}" \
+        > /dev/null 2>&1 || true   # may already exist — that's fine
+
+    # ---- ingress config (no origincert needed) ----
     cat > "$CONFIG_FILE" << EOF
-tunnel: $TUNNEL_NAME
+tunnel: $TUNNEL_ID
 credentials-file: $TUNNEL_CREDS
 ingress:
   - hostname: $SUBDOMAIN.$DOMAIN
     service: http://localhost:$PORT
   - service: http_status:503
 EOF
+
+    # ---- final tunnel run command ----
+    TUNNEL_CMD=(cloudflared tunnel --config "$CONFIG_FILE" run "$TUNNEL_ID")
+
 else
+    # ---- cert.pem mode: cloudflared CLI for everything ----
+    cfd() { cloudflared --origincert "$ORIGIN_CERT" "$@"; }
+
+    if ! cfd tunnel list 2>/dev/null | awk '{print $2}' | grep -qx "$TUNNEL_NAME"; then
+        echo "  creating tunnel $TUNNEL_NAME (credentials → $TUNNEL_CREDS)"
+        TUNNEL_OUT="$(cfd tunnel create --credentials-file "$TUNNEL_CREDS" "$TUNNEL_NAME" 2>&1)" || {
+            echo "$TUNNEL_OUT" >&2
+            echo "✗ Failed to create tunnel." >&2
+            echo "  Run \`cloudflared tunnel login\` and re-run this script." >&2
+            exit 1
+        }
+    fi
+
+    TUNNEL_ID=$(cfd tunnel list | awk -v n="$TUNNEL_NAME" '$2==n {print $1}')
+    cfd tunnel route dns --overwrite-dns "$TUNNEL_ID" "$SUBDOMAIN.$DOMAIN" || true
+
     cat > "$CONFIG_FILE" << EOF
-tunnel: $TUNNEL_NAME
+tunnel: $TUNNEL_ID
 credentials-file: $TUNNEL_CREDS
 origincert: $ORIGIN_CERT
 ingress:
@@ -400,7 +486,16 @@ ingress:
     service: http://localhost:$PORT
   - service: http_status:503
 EOF
+
+    TUNNEL_CMD=(cfd --config "$CONFIG_FILE" tunnel run "$TUNNEL_ID")
 fi
+
+# Verify credentials file exists
+if [ ! -f "$TUNNEL_CREDS" ]; then
+    echo "✗ expected tunnel credentials at $TUNNEL_CREDS but none found." >&2
+    exit 1
+fi
+chmod 600 "$TUNNEL_CREDS"
 
 # --- launch gunicorn in the background -----------------------------------
 "$PROJECT_ROOT/scripts/launch.sh" > "$FLASK_LOG" 2>&1 &
@@ -421,10 +516,6 @@ if ! kill -0 "$FLASK_PID" 2>/dev/null; then
     exit 1
 fi
 
-# --- DNS route ------------------------------------------------------------
-TUNNEL_ID=$(cfd tunnel list | awk -v n="$TUNNEL_NAME" '$2==n {print $1}')
-cfd tunnel route dns --overwrite-dns "$TUNNEL_ID" "$SUBDOMAIN.$DOMAIN" || true
-
 echo
 echo "  Public:  https://$SUBDOMAIN.$DOMAIN"
 echo "  Local:   http://localhost:$PORT"
@@ -432,6 +523,4 @@ echo "  Logs:    $FLASK_LOG / $TUNNEL_LOG"
 echo "  Ctrl+C to stop."
 echo
 
-# tunnel run authenticates via --credentials-file — no cert or API token
-# needed at the edge.
-exec cfd --config "$CONFIG_FILE" tunnel run "$TUNNEL_NAME"
+exec "${TUNNEL_CMD[@]}"

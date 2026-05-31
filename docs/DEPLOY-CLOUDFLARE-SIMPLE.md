@@ -33,7 +33,8 @@ If you haven't already, change your domain's nameservers at your registrar to Cl
 
 Instead of logging your full Cloudflare account into the VPS, create a
 narrowly-scoped API token that can only manage tunnels and DNS for your
-domain.
+domain.  The launch script uses this token to call Cloudflare's REST API
+directly for tunnel creation and DNS routing — not the `cloudflared` CLI.
 
 > **The launch script will prompt you for this token automatically** if it
 > isn't set yet — just have it ready.  The prompt shows the same permission
@@ -45,13 +46,13 @@ To create the token:
 2. Click your avatar (top-right) → **My Profile**.
 3. Select **API Tokens** in the sidebar, then click **Create Token**.
 4. Click **Create Custom Token** (the last row, not a template).
-5. Give it a name like `society-site`.
+5. Give it a name like `conventus`.
 6. Under **Permissions**, add these two rows:
 
-   | Row | Scope       | Permission                           | Resource                |
-   |-----|-------------|--------------------------------------|-------------------------|
-   | 1   | Account     | Cloudflare One Connector: cloudflared | Edit                    |
-   | 2   | Zone        | DNS                                  | Edit                    |
+   | Row | Scope       | Permission                           | Access |
+   |-----|-------------|--------------------------------------|--------|
+   | 1   | Account     | Cloudflare One Connector: cloudflared | Edit   |
+   | 2   | Zone        | DNS                                  | Edit   |
 
 7. Under **Zone Resources** (below the second permission row):
    - Select *Include → Specific zone → your-domain.example.org*
@@ -70,13 +71,18 @@ CLOUDFLARE_API_TOKEN="paste-your-token-here"
 Or just run the launch script — it will ask for the token and save it
 to `.env` for you.
 
-> **Why this matters:** If your VPS is ever compromised, the attacker
-> gets a token scoped to one domain's DNS — not full access to your
-> Cloudflare account, every domain you own, and every service behind it.
+> **How this works:** The script calls the Cloudflare REST API directly
+> (via `curl`) for creating tunnels, listing tunnels, and routing DNS.
+> The `cloudflared` binary is only used for the final `tunnel run`
+> connection, which authenticates via tunnel credentials — no cert.pem
+> needed.  If the VPS is compromised, the attacker gets a token scoped
+> to one domain, not your full Cloudflare account.
 
-### Legacy fallback: `cloudflared tunnel login`
+### Legacy fallback: cert.pem (`cloudflared tunnel login`)
 
-If you can't use API tokens, the old flow still works:
+If you can't use API tokens, the `cloudflared` CLI-only path still works.
+This uses `cert.pem` for authentication, which grants **full account
+access** to the machine.
 
 ```bash
 cloudflared tunnel login

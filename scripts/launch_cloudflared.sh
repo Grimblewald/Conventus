@@ -255,17 +255,22 @@ _detect_auth() {
 _build_cfd() {
     if [ -n "$USE_API_TOKEN" ]; then
         echo "→ Auth: Cloudflare API token (scoped)"
+        cfd() { cloudflared "$@"; }
     else
         echo "→ Auth: cert.pem  (WARNING: full account access — prefer CLOUDFLARE_API_TOKEN)"
+        cfd() { cloudflared --origincert "$ORIGIN_CERT" "$@"; }
     fi
-    # Always pass --origincert so cloudflared knows where to look.
-    # In API-token mode the file may not exist — cloudflared auths via
-    # the token instead, but still needs a path to satisfy its client
-    # bootstrap.
-    cfd() { cloudflared --origincert "$ORIGIN_CERT" "$@"; }
 }
 
 _detect_auth
+
+# If we are using an API token, remove any stale cert.pem left over from
+# a bootstrap on a previous run — it would take priority over the token
+# and cause 'invalid certificate' errors.
+if [ -n "$USE_API_TOKEN" ] && [ -f "$ORIGIN_CERT" ]; then
+    echo "  removing stale cert.pem (API token takes priority)"
+    rm -f "$ORIGIN_CERT"
+fi
 
 # Bootstrap cert.pem from ~/.cloudflared as a one-time convenience so
 # existing setups aren't broken.  This ONLY fires when neither an API
@@ -352,7 +357,22 @@ command -v cloudflared >/dev/null || {
 # JSON inside the project dir instead of ~/.cloudflared/<UUID>.json.
 if ! cfd tunnel list 2>/dev/null | awk '{print $2}' | grep -qx "$TUNNEL_NAME"; then
     echo "  creating tunnel $TUNNEL_NAME (credentials → $TUNNEL_CREDS)"
-    cfd tunnel create --credentials-file "$TUNNEL_CREDS" "$TUNNEL_NAME"
+    TUNNEL_OUT="$(cfd tunnel create --credentials-file "$TUNNEL_CREDS" "$TUNNEL_NAME" 2>&1)" || {
+        echo "$TUNNEL_OUT" >&2
+        if echo "$TUNNEL_OUT" | grep -qi "origin cert"; then
+            if [ -n "$USE_API_TOKEN" ]; then
+                echo "✗ cloudflared may be too old to support API tokens." >&2
+                echo "  Update cloudflared to v2024.2.0 or later:" >&2
+                echo "  https://github.com/cloudflare/cloudflared/releases" >&2
+                echo "  Or fall back to cert.pem: run \`cloudflared tunnel login\`" >&2
+                echo "  and re-run this script." >&2
+            else
+                echo "✗ Could not find a valid origin certificate." >&2
+                echo "  Run \`cloudflared tunnel login\` and re-run this script." >&2
+            fi
+        fi
+        exit 1
+    }
 fi
 
 if [ ! -f "$TUNNEL_CREDS" ]; then
@@ -363,10 +383,18 @@ if [ ! -f "$TUNNEL_CREDS" ]; then
 fi
 chmod 600 "$TUNNEL_CREDS"
 
-# Project-local ingress config.  origincert is always present — in API-token
-# mode the file may not exist but cloudflared needs the path to bootstrap its
-# client; in cert.pem mode the file is the actual origin cert.
-cat > "$CONFIG_FILE" << EOF
+# Project-local ingress config.
+if [ -n "$USE_API_TOKEN" ]; then
+    cat > "$CONFIG_FILE" << EOF
+tunnel: $TUNNEL_NAME
+credentials-file: $TUNNEL_CREDS
+ingress:
+  - hostname: $SUBDOMAIN.$DOMAIN
+    service: http://localhost:$PORT
+  - service: http_status:503
+EOF
+else
+    cat > "$CONFIG_FILE" << EOF
 tunnel: $TUNNEL_NAME
 credentials-file: $TUNNEL_CREDS
 origincert: $ORIGIN_CERT
@@ -375,6 +403,7 @@ ingress:
     service: http://localhost:$PORT
   - service: http_status:503
 EOF
+fi
 
 # --- launch gunicorn in the background -----------------------------------
 "$PROJECT_ROOT/scripts/launch.sh" > "$FLASK_LOG" 2>&1 &

@@ -40,4 +40,19 @@
   </div>
 </section>
 
+<script>
+(function() {
+  var forms = document.querySelectorAll('form');
+  forms.forEach(function(form) {
+    form.addEventListener('submit', function() {
+      if (form.action.indexOf('/resend') === -1) return;
+      var btn = form.querySelector('button[type="submit"]');
+      if (!btn || btn.disabled) return;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>Sending code&hellip;';
+    });
+  });
+})();
+</script>
+
 {% endblock %}

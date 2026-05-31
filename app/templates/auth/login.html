@@ -39,4 +39,17 @@
   </div>
 </section>
 
+<script>
+(function() {
+  var form = document.querySelector('form');
+  if (!form) return;
+  form.addEventListener('submit', function() {
+    var btn = form.querySelector('button[type="submit"]');
+    if (!btn || btn.disabled) return;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>Requesting OTP&hellip;';
+  });
+})();
+</script>
+
 {% endblock %}

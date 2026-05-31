@@ -131,13 +131,15 @@ tmux new -s conventus
 # Ctrl+B, D to detach
 ```
 
-### Option B: systemd (permanent)
+### Option B: systemd (permanent, auto-restarts on boot)
 
 ```bash
-sudo cp deploy/systemd/cloudflared-launch.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now cloudflared-launch
+sudo scripts/register-service.sh
 ```
+
+The script auto-detects the project directory and your username, writes
+the unit file with the correct paths, and starts the service.  Nothing to
+edit by hand.
 
 ## Configuration
 

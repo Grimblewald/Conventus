@@ -5,20 +5,22 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=www-data
-Group=www-data
-WorkingDirectory=/opt/conventus
-EnvironmentFile=/opt/conventus/.env
-ExecStart=/opt/conventus/.venv/bin/bash scripts/launch_cloudflared.sh
+# Change these to match where you cloned the repo.  Pick a user that can
+# read/write the project directory and has cloudflared on its PATH.
+User=REPLACE_WITH_YOUR_USER
+Group=REPLACE_WITH_YOUR_USER
+WorkingDirectory=REPLACE_WITH_PROJECT_ROOT
+EnvironmentFile=REPLACE_WITH_PROJECT_ROOT/.env
+ExecStart=REPLACE_WITH_PROJECT_ROOT/.venv/bin/bash REPLACE_WITH_PROJECT_ROOT/scripts/launch_cloudflared.sh
 Restart=always
 RestartSec=10
 
-# Hardening
+# Hardening — adjust ReadWritePaths to match your project root.
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
-ProtectHome=yes
-ReadWritePaths=/opt/conventus/instance /opt/conventus/uploads /opt/conventus/var /opt/conventus/.cloudflared
+ProtectHome=read-only
+ReadWritePaths=REPLACE_WITH_PROJECT_ROOT/instance REPLACE_WITH_PROJECT_ROOT/uploads REPLACE_WITH_PROJECT_ROOT/var REPLACE_WITH_PROJECT_ROOT/.cloudflared
 
 [Install]
 WantedBy=multi-user.target

@@ -40,3 +40,4 @@ build/
 # Migrations DB lockfile (Alembic generates these on each env)
 # but version files SHOULD be committed
 migrations/__pycache__/
+/backups

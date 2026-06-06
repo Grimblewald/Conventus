@@ -68,6 +68,11 @@
         <input class="input" id="registration_deadline" name="registration_deadline" type="date" value="{{ c.registration_deadline.isoformat() if c.registration_deadline else '' }}" style="max-width:240px;">
         <div class="help">Registrations close automatically after this date.</div>
       </div>
+      <div class="field">
+        <label for="max_abstracts_per_user">Max abstracts per user</label>
+        <input class="input" id="max_abstracts_per_user" name="max_abstracts_per_user" type="number" min="1" value="{{ c.max_abstracts_per_user or '' }}" style="max-width:120px;" placeholder="Unlimited">
+        <div class="help">Leave empty for unlimited. Otherwise users cannot submit more than this number.</div>
+      </div>
       <fieldset class="toggle-fieldset">
         <legend>Abstract submissions</legend>
         <label class="check-label">

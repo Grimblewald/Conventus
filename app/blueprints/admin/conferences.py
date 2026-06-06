@@ -141,6 +141,8 @@ def conference_save(cid):
         c.is_accepting_registrations = not bool(request.form.get("not_accepting_registrations"))
         c.external_registration_url = (request.form.get("external_registration_url") or "").strip() or None
         c.external_abstract_url = (request.form.get("external_abstract_url") or "").strip() or None
+        raw_max = (request.form.get("max_abstracts_per_user") or "").strip()
+        c.max_abstracts_per_user = int(raw_max) if raw_max else None
 
         for fld in _DATE_FIELDS:
             raw = (request.form.get(fld) or "").strip()

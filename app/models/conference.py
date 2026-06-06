@@ -50,6 +50,7 @@ class Conference(db.Model):
     abstract_deadline = db.Column(db.Date)
     early_bird_deadline = db.Column(db.Date)
     registration_deadline = db.Column(db.Date)
+    max_abstracts_per_user = db.Column(db.Integer, nullable=True)
 
     is_accepting_abstracts = db.Column(db.Boolean, default=True, nullable=False)
     is_accepting_registrations = db.Column(db.Boolean, default=True, nullable=False)

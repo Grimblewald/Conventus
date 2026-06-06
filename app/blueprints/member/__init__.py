@@ -147,6 +147,23 @@ def submit_abstract(slug):
     if not c.accepts_abstracts and not c.external_abstract_url:
         flash("Abstract submission is not open for this conference.", "error")
         return redirect(url_for("public.conference_detail", slug=c.slug))
+
+    # Enforce per-user abstract limit
+    if c.max_abstracts_per_user:
+        existing = (
+            Abstract.query
+            .filter_by(user_id=current_user.id, conference_id=c.id)
+            .filter(Abstract.status != "retracted")
+            .filter(Abstract.deleted_at.is_(None))
+            .count()
+        )
+        if existing >= c.max_abstracts_per_user:
+            flash(
+                f"You've reached the limit of {c.max_abstracts_per_user} "
+                f"abstract(s) for this conference.", "error",
+            )
+            return redirect(url_for("public.conference_detail", slug=c.slug))
+
     tracks = c.tracks_list()
 
     if request.method == "POST":

@@ -85,24 +85,14 @@ chmod +x scripts/*.sh 2>/dev/null || true
 
 # 3. Migrate database
 info "Applying database migrations…"
-# Alembic's alembic_version table tracks the current revision.  Fresh
-# DB restores may be missing it — fall back to the instance/db-version
-# file we write after each successful migration.
-CURRENT="$(uv run flask db current 2>/dev/null | grep '^[0-9a-f]' || true)"
-if [ -z "$CURRENT" ] && [ -f "$PROJECT_ROOT/instance/db-version" ]; then
-    CURRENT="$(cat "$PROJECT_ROOT/instance/db-version")"
-    uv run flask db stamp "$CURRENT"
-    ok "Stamped from db-version file ($CURRENT)."
-elif [ -z "$CURRENT" ]; then
+# If the DB was restored from a raw backup, the alembic_version table
+# may be missing.  Stamp the baseline so only incremental migrations
+# run (avoids the initial db.create_all() creating columns that later
+# migrations are already prepared to add).
+if ! uv run flask db current 2>/dev/null | grep -q '^[0-9a-f]'; then
     uv run flask db stamp 4a1b2c3d4e5f
-    ok "Stamped baseline migration."
 fi
 uv run flask db upgrade
-# Persist the current head so raw DB restores have a reference point.
-HEAD="$(uv run flask db heads 2>/dev/null | grep -o '^[0-9a-f]\+' || true)"
-if [ -n "$HEAD" ]; then
-    printf '%s' "$HEAD" > "$PROJECT_ROOT/instance/db-version"
-fi
 ok "Migrations applied."
 
 # 4. Restart

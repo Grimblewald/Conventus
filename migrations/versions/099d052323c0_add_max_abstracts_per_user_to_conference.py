@@ -9,7 +9,6 @@ from alembic import op
 import sqlalchemy as sa
 
 
-# revision identifiers, used by Alembic.
 revision = '099d052323c0'
 down_revision = '9676ce7e8ae8'
 branch_labels = None
@@ -18,9 +17,15 @@ depends_on = None
 
 def upgrade():
     with op.batch_alter_table('conferences', schema=None) as batch_op:
-        batch_op.add_column(sa.Column('max_abstracts_per_user', sa.Integer(), nullable=True))
+        try:
+            batch_op.add_column(sa.Column('max_abstracts_per_user', sa.Integer(), nullable=True))
+        except sa.exc.OperationalError:
+            pass
 
 
 def downgrade():
     with op.batch_alter_table('conferences', schema=None) as batch_op:
-        batch_op.drop_column('max_abstracts_per_user')
+        try:
+            batch_op.drop_column('max_abstracts_per_user')
+        except sa.exc.OperationalError:
+            pass

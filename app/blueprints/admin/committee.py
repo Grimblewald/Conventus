@@ -71,6 +71,25 @@ def _committee_form(m: CommitteeMember | None):
 
         m.is_contactable = bool(request.form.get("is_contactable"))
 
+        # Dynamic roles/affiliations
+        roles_json = []
+        for i in range(20):
+            role = (request.form.get(f"dyn_role_{i}") or "").strip()
+            affil = (request.form.get(f"dyn_affil_{i}") or "").strip()
+            deleted = request.form.get(f"dyn_delete_{i}")
+            if deleted:
+                continue
+            if role or affil:
+                roles_json.append({"role": role, "affiliation": affil})
+        new_roles = request.form.getlist("new_dyn_role[]")
+        new_affils = request.form.getlist("new_dyn_affil[]")
+        for i, role in enumerate(new_roles):
+            role = role.strip()
+            affil = (new_affils[i] if i < len(new_affils) else "").strip()
+            if role or affil:
+                roles_json.append({"role": role, "affiliation": affil})
+        m.dynamic_roles = roles_json if roles_json else None
+
         # Optional user linkage
         try:
             uid = int(request.form.get("user_id") or "")

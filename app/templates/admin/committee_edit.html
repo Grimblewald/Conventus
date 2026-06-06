@@ -54,6 +54,33 @@
         <div class="field"><label for="affiliation">Affiliation</label>
           <input class="input" id="affiliation" name="affiliation" value="{{ m.affiliation if m else '' }}"></div>
       </div>
+      <fieldset class="toggle-fieldset">
+        <legend>Additional roles &amp; affiliations</legend>
+        <div id="dyn-roles-container">
+          {% if m and m.dynamic_roles %}
+            {% for entry in m.dynamic_roles %}
+            <div class="row-2 dyn-role-row" style="margin-bottom:8px;" data-idx="{{ loop.index0 }}">
+              <input class="input input-sm" name="dyn_role_{{ loop.index0 }}" value="{{ entry.role }}" placeholder="Role">
+              <div style="display:flex; gap:6px;">
+                <input class="input input-sm" name="dyn_affil_{{ loop.index0 }}" value="{{ entry.affiliation }}" placeholder="Affiliation" style="flex:1;">
+                <button type="button" class="btn btn-quiet btn-sm js-rem-dyn-role" title="Remove">×</button>
+              </div>
+            </div>
+            {% endfor %}
+          {% endif %}
+        </div>
+        <template id="dyn-role-tmpl">
+          <div class="row-2 dyn-role-row dyn-role-row--new" style="margin-bottom:8px;">
+            <input class="input input-sm" name="new_dyn_role[]" value="" placeholder="Role">
+            <div style="display:flex; gap:6px;">
+              <input class="input input-sm" name="new_dyn_affil[]" value="" placeholder="Affiliation" style="flex:1;">
+              <button type="button" class="btn btn-quiet btn-sm js-rem-dyn-role" title="Remove">×</button>
+            </div>
+          </div>
+        </template>
+        <button type="button" class="btn btn-ghost btn-sm" id="add-dyn-role-btn" style="margin-top:6px;">+ Add role</button>
+        <div class="help">Add extra roles and affiliations that appear on your committee profile.</div>
+      </fieldset>
       <div class="field"><label for="interests">Research interests / keywords</label>
         <textarea class="textarea" id="interests" name="interests" rows="3">{{ m.interests if m else '' }}</textarea></div>
       <div class="row-3">

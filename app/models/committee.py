@@ -24,6 +24,7 @@ class CommitteeMember(db.Model):
     full_name = db.Column(db.String(200), nullable=False)
     role = db.Column(db.String(120), default="")          # President / Secretary
     affiliation = db.Column(db.String(200), default="")
+    dynamic_roles = db.Column(db.JSON, default=None)
     position = db.Column(db.String(200), default="")      # Senior Lecturer / ...
     interests = db.Column(db.Text, default="")            # free text / keywords
 

@@ -23,6 +23,11 @@
             </div>
             <h3>{{ m.display_name }}</h3>
             {% if m.role %}<div class="role">{{ m.role }}</div>{% endif %}
+            {% if m.dynamic_roles %}
+              {% for entry in m.dynamic_roles %}
+                <div class="aff" style="margin-top:2px;">{% if entry.role %}{{ entry.role }}{% endif %}{% if entry.role and entry.affiliation %} · {% endif %}{{ entry.affiliation }}</div>
+              {% endfor %}
+            {% endif %}
             {% if m.position or m.affiliation %}
               <div class="aff">{{ m.position }}{% if m.position and m.affiliation %} · {% endif %}{{ m.affiliation }}</div>
             {% endif %}

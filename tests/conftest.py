@@ -15,23 +15,34 @@ os.environ.setdefault("SECRET_KEY", "test-key-do-not-use-in-production")
 os.environ.setdefault("MAIL_BACKEND", "console")
 os.environ.setdefault("RATELIMIT_STORAGE_URI", "memory://")
 
-from app import create_app
 from app.extensions import db as _db
 
 
 @pytest.fixture(scope="session")
 def app():
-    """Session-scoped Flask app with a temp instance and DB."""
-    app = create_app()
-    app.config.update({
-        "TESTING": True,
-        "WTF_CSRF_ENABLED": False,
-        "SERVER_NAME": "localhost",
-        "PREFERRED_URL_SCHEME": "http",
-    })
+    """Session-scoped Flask app with a temp instance and DB.
 
+    Overrides the DB URI at the config-class level *before* create_app()
+    so that _init_extensions → db.create_all() targets the temp file
+    rather than the live instance/app.db.
+    """
     with tempfile.TemporaryDirectory() as tmp:
+        db_uri = f"sqlite:///{tmp}/app.db"
+        from app.config import BaseConfig, DevelopmentConfig
+        # Override class-level defaults so create_app() picks up the temp path.
+        BaseConfig.SQLALCHEMY_DATABASE_URI = db_uri
+        DevelopmentConfig.SQLALCHEMY_DATABASE_URI = db_uri
+
+        from app import create_app
+        app = create_app()
+
         app.instance_path = tmp
+        app.config.update({
+            "TESTING": True,
+            "WTF_CSRF_ENABLED": False,
+            "SERVER_NAME": "localhost",
+            "PREFERRED_URL_SCHEME": "http",
+        })
         app.config["UPLOAD_FOLDER"] = str(Path(tmp) / "uploads")
         app.config["SETUP_FLAG_PATH"] = str(Path(tmp) / ".setup-complete")
         app.config["SETUP_PASSWORD_PATH"] = str(Path(tmp) / "setup-pw")

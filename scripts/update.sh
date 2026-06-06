@@ -80,6 +80,9 @@ if ! git pull; then
 fi
 ok "Pull succeeded."
 
+# Ensure scripts are executable (git may strip the +x bit on conflict)
+chmod +x scripts/*.sh 2>/dev/null || true
+
 # 3. Migrate database
 info "Applying database migrations…"
 uv run flask db upgrade

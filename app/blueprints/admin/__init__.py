@@ -107,7 +107,7 @@ def registrations():
 def registration_status(reg_id):
     reg = Registration.query.get_or_404(reg_id)
     new_status = (request.form.get("status") or "").strip()
-    if new_status in ("pending", "paid", "cancelled"):
+    if new_status in ("pending", "paid", "refunded", "cancelled"):
         reg.status = new_status
         db.session.commit()
         from ...security import audit as audit_log

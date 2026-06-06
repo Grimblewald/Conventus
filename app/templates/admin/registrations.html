@@ -12,6 +12,8 @@
      href="{{ url_for('admin.registrations', conference_id=conference_id, status='paid') }}">Paid</a>
   <a class="btn btn-{% if status_filter == 'cancelled' %}primary{% else %}ghost{% endif %} btn-sm"
      href="{{ url_for('admin.registrations', conference_id=conference_id, status='cancelled') }}">Cancelled</a>
+  <a class="btn btn-{% if status_filter == 'refunded' %}primary{% else %}ghost{% endif %} btn-sm"
+     href="{{ url_for('admin.registrations', conference_id=conference_id, status='refunded') }}">Refunded</a>
 </div>
 
 <div style="display:flex; gap:8px; margin-bottom:18px;">
@@ -38,15 +40,18 @@
       <td><span class="status" data-v="{{ r.status }}">{{ r.status }}</span></td>
       <td>{{ r.payment_sent_at.strftime('%-d %b %Y') if r.payment_sent_at else '—' }}</td>
       <td>{{ r.created_at.strftime('%-d %b %Y') }}</td>
-      <td>
-        {% if r.status != 'paid' %}
-        <form method="post" action="{{ url_for('admin.registration_status', reg_id=r.id) }}" style="display:inline;">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="status" value="paid">
-          <button class="btn btn-primary btn-sm" type="submit">Mark paid</button>
-        </form>
-        {% endif %}
-      </td>
+        <td>
+          <form method="post" action="{{ url_for('admin.registration_status', reg_id=r.id) }}" style="display:flex; gap:4px; align-items:center;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <select name="status" class="select" style="font-size:12px; padding:4px 8px; width:auto;">
+              <option value="pending" {% if r.status == 'pending' %}selected{% endif %}>Pending</option>
+              <option value="paid" {% if r.status == 'paid' %}selected{% endif %}>Paid</option>
+              <option value="refunded" {% if r.status == 'refunded' %}selected{% endif %}>Refunded</option>
+              <option value="cancelled" {% if r.status == 'cancelled' %}selected{% endif %}>Cancelled</option>
+            </select>
+            <button class="btn btn-primary btn-sm" type="submit">Save</button>
+          </form>
+        </td>
     </tr>
     {% endfor %}
   </tbody>

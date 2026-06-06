@@ -5,6 +5,9 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+# systemd runs with a minimal PATH — ensure uv is findable
+export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
+
 WORKERS="${GUNICORN_WORKERS:-3}"
 THREADS="${GUNICORN_THREADS:-32}"
 PORT="${PORT:-5005}"

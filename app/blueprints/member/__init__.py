@@ -215,6 +215,28 @@ def submit_abstract(slug):
 
 
 # ---------------------------------------------------------------------------
+# Retract an abstract
+# ---------------------------------------------------------------------------
+
+@member_bp.route("/abstracts/<int:aid>/retract", methods=["POST"])
+@login_required
+def retract_abstract(aid):
+    a = Abstract.query.get_or_404(aid)
+    if a.user_id != current_user.id:
+        abort(403)
+    if a.status not in ("submitted", "accepted"):
+        flash("This abstract can no longer be retracted.", "error")
+        return redirect(url_for("member.dashboard"))
+    a.status = "retracted"
+    db.session.commit()
+    audit.record("abstract.retracted",
+                 target_kind="abstract", target_id=a.id,
+                 summary=f"{current_user.email} retracted '{a.title}'")
+    flash("Abstract retracted.", "success")
+    return redirect(url_for("member.dashboard"))
+
+
+# ---------------------------------------------------------------------------
 # Author-only figure download
 # ---------------------------------------------------------------------------
 

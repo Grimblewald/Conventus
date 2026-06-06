@@ -17,7 +17,7 @@ from ...models import Abstract, Conference, Registration
 from ...models.content import get_site_settings
 from ...security import audit
 from ...services.payments import payment_url_for, send_payment_email
-from ...services.uploads import UploadError, save_figure
+from ...services.uploads import UploadError, save_figure, save_image
 
 
 member_bp = Blueprint("member", __name__)
@@ -197,6 +197,23 @@ def submit_abstract(slug):
                         upload_folder=current_app.config["UPLOAD_FOLDER"],
                         max_bytes=current_app.config["MAX_FIGURE_BYTES"],
                     )
+                except UploadError as e:
+                    flash(str(e), "error")
+                    return render_template("member/submit_abstract.html",
+                                           c=c, tracks=tracks, form=request.form)
+
+            pic = request.files.get("profile_picture")
+            if pic and pic.filename:
+                try:
+                    rel = save_image(
+                        pic,
+                        upload_folder=current_app.config["UPLOAD_FOLDER"],
+                        subdir="abstracts",
+                        prefix="profile-",
+                        max_bytes=current_app.config["MAX_HERO_BYTES"],
+                        target_size=400,
+                    )
+                    a.profile_picture_filename = rel.split("/", 1)[-1]
                 except UploadError as e:
                     flash(str(e), "error")
                     return render_template("member/submit_abstract.html",

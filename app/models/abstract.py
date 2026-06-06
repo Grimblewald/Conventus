@@ -26,6 +26,7 @@ class Abstract(db.Model):
     coi = db.Column(db.Text, default="")
 
     figure_filename = db.Column(db.String(240))
+    profile_picture_filename = db.Column(db.String(240))
     status = db.Column(db.String(40), default="submitted", nullable=False)
     reviewer_notes = db.Column(db.Text, default="")
     decided_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)

@@ -6,214 +6,271 @@
   <a class="link" href="{{ url_for('admin.conferences') }}">← back</a>
 </div>
 
-<form method="post" class="form form-wide" enctype="multipart/form-data">
+<form method="post" action="{{ url_for('admin.conference_save', cid=c.id) }}"
+      class="form form-wide" enctype="multipart/form-data" id="conf-edit-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <div class="row-2">
-    <div class="field"><label for="title">Title</label><input class="input" id="title" name="title" required value="{{ c.title }}"></div>
-    <div class="field"><label for="slug">Slug</label><input class="input" id="slug" name="slug" required value="{{ c.slug }}"></div>
-  </div>
-  <div class="field"><label for="subtitle">Subtitle</label><input class="input" id="subtitle" name="subtitle" value="{{ c.subtitle }}"></div>
-  <div class="row-2">
-    <div class="field"><label for="start_date">Start</label>
-      <input class="input" id="start_date" name="start_date" type="date" required value="{{ c.start_date.isoformat() }}"></div>
-    <div class="field"><label for="end_date">End</label>
-      <input class="input" id="end_date" name="end_date" type="date" required value="{{ c.end_date.isoformat() }}"></div>
-  </div>
-  <div class="row-2">
-    <div class="field"><label for="city">City</label><input class="input" id="city" name="city" value="{{ c.city }}"></div>
-    <div class="field"><label for="venue">Venue</label><input class="input" id="venue" name="venue" value="{{ c.venue }}"></div>
-  </div>
-  <div class="field"><label for="summary">Summary</label><textarea class="textarea" id="summary" name="summary" rows="3">{{ c.summary }}</textarea></div>
-  <div class="field"><label for="body">Body (Markdown)</label><textarea class="textarea" id="body" name="body" rows="10">{{ c.body }}</textarea></div>
-  <div class="field"><label for="tracks">Tracks (one per line)</label><textarea class="textarea" id="tracks" name="tracks" rows="4">{{ c.tracks }}</textarea></div>
-  <div class="row-2">
-    <div class="field"><label for="abstract_deadline">Abstract deadline</label>
-      <input class="input" id="abstract_deadline" name="abstract_deadline" type="date" value="{{ c.abstract_deadline.isoformat() if c.abstract_deadline else '' }}"></div>
-    <div class="field"><label for="early_bird_deadline">Early-bird deadline</label>
-      <input class="input" id="early_bird_deadline" name="early_bird_deadline" type="date" value="{{ c.early_bird_deadline.isoformat() if c.early_bird_deadline else '' }}"></div>
-  </div>
-  <div class="field"><label for="registration_deadline">Registration deadline</label>
-    <input class="input" id="registration_deadline" name="registration_deadline" type="date" value="{{ c.registration_deadline.isoformat() if c.registration_deadline else '' }}" style="max-width:240px;">
-    <div class="help" style="margin-top:2px;">Registrations close automatically after this date.</div>
-  </div>
 
-  <fieldset style="margin-top:18px; border:1px solid var(--c-card-border,#ddd); border-radius:8px; padding:14px 18px;">
-    <legend style="font-weight:600;">Abstract submissions</legend>
-    <label style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
-      <input type="checkbox" name="not_accepting_abstracts" id="not_accepting_abstracts"
-             {% if not c.is_accepting_abstracts %}checked{% endif %}>
-      Not accepting abstracts
-    </label>
-    <div class="field" id="abstracts_reopen_row" style="{% if c.is_accepting_abstracts %}display:none;{% endif %} margin-bottom:0;">
-      <label for="abstracts_reopen_date">Auto-reopen on</label>
-      <input class="input" id="abstracts_reopen_date" name="abstracts_reopen_date" type="date"
-             value="{{ c.abstracts_reopen_date.isoformat() if c.abstracts_reopen_date else '' }}" style="max-width:240px;">
-      <div class="help" style="margin-top:2px;">Optional. When this date passes, abstracts reopen automatically.</div>
-    </div>
-  </fieldset>
-
-  <fieldset style="margin-top:18px; border:1px solid var(--c-card-border,#ddd); border-radius:8px; padding:14px 18px;">
-    <legend style="font-weight:600;">Registrations</legend>
-    <label style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">
-      <input type="checkbox" name="not_accepting_registrations" id="not_accepting_registrations"
-             {% if not c.is_accepting_registrations %}checked{% endif %}>
-      Not accepting registrations
-    </label>
-    <div class="field" id="registrations_reopen_row" style="{% if c.is_accepting_registrations %}display:none;{% endif %} margin-bottom:0;">
-      <label for="registrations_reopen_date">Auto-reopen on</label>
-      <input class="input" id="registrations_reopen_date" name="registrations_reopen_date" type="date"
-             value="{{ c.registrations_reopen_date.isoformat() if c.registrations_reopen_date else '' }}" style="max-width:240px;">
-      <div class="help" style="margin-top:2px;">Optional. When this date passes, registrations reopen automatically.</div>
-    </div>
-  </fieldset>
-
-  <fieldset style="margin-top:18px; border:1px solid var(--c-card-border,#ddd); border-radius:8px; padding:14px 18px;">
-    <legend style="font-weight:600;">External links</legend>
-    <div class="row-2">
-      <div class="field">
-        <label for="external_registration_url">External registration URL</label>
-        <input class="input" id="external_registration_url" name="external_registration_url"
-               value="{{ c.external_registration_url or '' }}" placeholder="https://…">
-        <div class="help" style="margin-top:2px;">If set, the Register button links here instead of the internal form.</div>
+  <!-- ============================================================ -->
+  <!-- Basic Information                                             -->
+  <!-- ============================================================ -->
+  <details class="edit-section" open>
+    <summary class="edit-section-summary">Basic Information</summary>
+    <div class="edit-section-body">
+      <div class="row-2">
+        <div class="field"><label for="title">Title</label><input class="input" id="title" name="title" required value="{{ c.title }}"></div>
+        <div class="field"><label for="slug">Slug</label><input class="input" id="slug" name="slug" required value="{{ c.slug }}"></div>
       </div>
-      <div class="field">
-        <label for="external_abstract_url">External abstract submission URL</label>
-        <input class="input" id="external_abstract_url" name="external_abstract_url"
-               value="{{ c.external_abstract_url or '' }}" placeholder="https://…">
-        <div class="help" style="margin-top:2px;">If set, the Submit button links here instead of the internal form.</div>
+      <div class="field"><label for="subtitle">Subtitle</label><input class="input" id="subtitle" name="subtitle" value="{{ c.subtitle }}"></div>
+      <div class="row-2">
+        <div class="field"><label for="city">City</label><input class="input" id="city" name="city" value="{{ c.city }}"></div>
+        <div class="field"><label for="venue">Venue</label><input class="input" id="venue" name="venue" value="{{ c.venue }}"></div>
+      </div>
+      <div class="row-2">
+        <div class="field"><label for="start_date">Start</label>
+          <input class="input" id="start_date" name="start_date" type="date" required value="{{ c.start_date.isoformat() }}"></div>
+        <div class="field"><label for="end_date">End</label>
+          <input class="input" id="end_date" name="end_date" type="date" required value="{{ c.end_date.isoformat() }}"></div>
+      </div>
+      <div class="row-2">
+        <label class="check-label"><input type="checkbox" name="is_featured" {% if c.is_featured %}checked{% endif %}> Feature on home</label>
+        <label class="check-label"><input type="checkbox" name="is_draft" {% if c.is_draft %}checked{% endif %}> Draft (hide from public)</label>
       </div>
     </div>
-  </fieldset>
+  </details>
 
-  <div class="row-2">
-    <div class="field"><label for="hero_image">Hero image</label>
-      <input class="input" id="hero_image" name="hero_image" type="file" accept=".png,.jpg,.jpeg,.webp">
-      {% if c.hero_image_filename %}<label style="display:block; margin-top:6px;"><input type="checkbox" name="remove_hero_image"> Remove current</label>{% endif %}
+  <!-- ============================================================ -->
+  <!-- Content                                                       -->
+  <!-- ============================================================ -->
+  <details class="edit-section">
+    <summary class="edit-section-summary">Content</summary>
+    <div class="edit-section-body">
+      <div class="field"><label for="summary">Summary</label><textarea class="textarea" id="summary" name="summary" rows="3">{{ c.summary }}</textarea></div>
+      <div class="field"><label for="body">Body (Markdown)</label><textarea class="textarea" id="body" name="body" rows="10">{{ c.body }}</textarea></div>
+      <div class="field"><label for="tracks">Tracks (one per line)</label><textarea class="textarea" id="tracks" name="tracks" rows="4">{{ c.tracks }}</textarea></div>
+      <div class="field"><label for="hero_caption">Hero caption</label>
+        <input class="input" id="hero_caption" name="hero_caption" value="{{ c.hero_caption }}"></div>
     </div>
-    <div class="field"><label for="booklet">Booklet (PDF)</label>
-      <input class="input" id="booklet" name="booklet" type="file" accept=".pdf">
-      {% if c.booklet_filename %}<label style="display:block; margin-top:6px;"><input type="checkbox" name="remove_booklet"> Remove current</label>{% endif %}
+  </details>
+
+  <!-- ============================================================ -->
+  <!-- Dates & Deadlines                                             -->
+  <!-- ============================================================ -->
+  <details class="edit-section">
+    <summary class="edit-section-summary">Dates &amp; Deadlines</summary>
+    <div class="edit-section-body">
+      <div class="row-2">
+        <div class="field"><label for="abstract_deadline">Abstract deadline</label>
+          <input class="input" id="abstract_deadline" name="abstract_deadline" type="date" value="{{ c.abstract_deadline.isoformat() if c.abstract_deadline else '' }}"></div>
+        <div class="field"><label for="early_bird_deadline">Early-bird deadline</label>
+          <input class="input" id="early_bird_deadline" name="early_bird_deadline" type="date" value="{{ c.early_bird_deadline.isoformat() if c.early_bird_deadline else '' }}"></div>
+      </div>
+      <div class="field"><label for="registration_deadline">Registration deadline</label>
+        <input class="input" id="registration_deadline" name="registration_deadline" type="date" value="{{ c.registration_deadline.isoformat() if c.registration_deadline else '' }}" style="max-width:240px;">
+        <div class="help">Registrations close automatically after this date.</div>
+      </div>
+      <fieldset class="toggle-fieldset">
+        <legend>Abstract submissions</legend>
+        <label class="check-label">
+          <input type="checkbox" name="not_accepting_abstracts" id="not_accepting_abstracts"
+                 {% if not c.is_accepting_abstracts %}checked{% endif %}>
+          Not accepting abstracts
+        </label>
+        <div class="field" id="abstracts_reopen_row" style="{% if c.is_accepting_abstracts %}display:none;{% endif %} margin-bottom:0;">
+          <label for="abstracts_reopen_date">Auto-reopen on</label>
+          <input class="input" id="abstracts_reopen_date" name="abstracts_reopen_date" type="date"
+                 value="{{ c.abstracts_reopen_date.isoformat() if c.abstracts_reopen_date else '' }}" style="max-width:240px;">
+          <div class="help">Optional. When this date passes, abstracts reopen automatically.</div>
+        </div>
+      </fieldset>
+      <fieldset class="toggle-fieldset">
+        <legend>Registrations</legend>
+        <label class="check-label">
+          <input type="checkbox" name="not_accepting_registrations" id="not_accepting_registrations"
+                 {% if not c.is_accepting_registrations %}checked{% endif %}>
+          Not accepting registrations
+        </label>
+        <div class="field" id="registrations_reopen_row" style="{% if c.is_accepting_registrations %}display:none;{% endif %} margin-bottom:0;">
+          <label for="registrations_reopen_date">Auto-reopen on</label>
+          <input class="input" id="registrations_reopen_date" name="registrations_reopen_date" type="date"
+                 value="{{ c.registrations_reopen_date.isoformat() if c.registrations_reopen_date else '' }}" style="max-width:240px;">
+          <div class="help">Optional. When this date passes, registrations reopen automatically.</div>
+        </div>
+      </fieldset>
     </div>
-  </div>
-  <div class="field"><label for="hero_caption">Hero caption</label>
-    <input class="input" id="hero_caption" name="hero_caption" value="{{ c.hero_caption }}"></div>
+  </details>
 
-  <div class="row-2">
-    <label><input type="checkbox" name="is_featured" {% if c.is_featured %}checked{% endif %}> Feature on home</label>
-    <label><input type="checkbox" name="is_draft" {% if c.is_draft %}checked{% endif %}> Draft (hide from public)</label>
-  </div>
-  <div style="margin-top:14px;"><button class="btn btn-primary" type="submit">Save</button></div>
-</form>
+  <!-- ============================================================ -->
+  <!-- External Links                                                -->
+  <!-- ============================================================ -->
+  <details class="edit-section">
+    <summary class="edit-section-summary">External Links</summary>
+    <div class="edit-section-body">
+      <div class="row-2">
+        <div class="field">
+          <label for="external_registration_url">External registration URL</label>
+          <input class="input" id="external_registration_url" name="external_registration_url"
+                 value="{{ c.external_registration_url or '' }}" placeholder="https://…">
+          <div class="help">If set, the Register button links here instead of the internal form.</div>
+        </div>
+        <div class="field">
+          <label for="external_abstract_url">External abstract submission URL</label>
+          <input class="input" id="external_abstract_url" name="external_abstract_url"
+                 value="{{ c.external_abstract_url or '' }}" placeholder="https://…">
+          <div class="help">If set, the Submit button links here instead of the internal form.</div>
+        </div>
+      </div>
+    </div>
+  </details>
 
-<h3 style="margin-top:36px;">Registration tiers</h3>
-<form method="post" action="{{ url_for('admin.conference_tiers', cid=c.id) }}" class="form form-wide">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <input type="hidden" name="action" value="save">
-  <table class="table">
-    <thead><tr><th>Order</th><th>Name</th><th>Amount ({{ site.currency_code }})</th><th>Description</th><th></th></tr></thead>
-    <tbody>
-    {% for t in c.price_tiers %}
-      <tr>
-        <td><input class="input" name="order_{{ t.id }}" value="{{ t.display_order }}" style="width:64px;"></td>
-        <td><input class="input" name="name_{{ t.id }}" value="{{ t.name }}"></td>
-        <td><input class="input" name="amount_{{ t.id }}" value="{{ t.amount }}" style="width:120px;"></td>
-        <td><input class="input" name="desc_{{ t.id }}" value="{{ t.description }}"></td>
-        <td>
-          <button class="btn btn-quiet btn-sm" type="submit" name="action" value="delete"
-                   formaction="{{ url_for('admin.conference_tiers', cid=c.id) }}"
-                   data-tier-id="{{ t.id }}">Delete</button>
-        </td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  <input type="hidden" name="tier_id" value="">
-  <button class="btn btn-primary btn-sm" type="submit">Save tiers</button>
-</form>
+  <!-- ============================================================ -->
+  <!-- Media                                                         -->
+  <!-- ============================================================ -->
+  <details class="edit-section">
+    <summary class="edit-section-summary">Media</summary>
+    <div class="edit-section-body">
+      <div class="row-2">
+        <div class="field">
+          <label for="hero_image">Hero image</label>
+          <input class="input" id="hero_image" name="hero_image" type="file" accept=".png,.jpg,.jpeg,.webp">
+          {% if c.hero_image_filename %}
+            <label class="check-label" style="margin-top:8px;"><input type="checkbox" name="remove_hero_image"> Remove current</label>
+          {% endif %}
+        </div>
+        <div class="field">
+          <label for="booklet">Booklet (PDF)</label>
+          <input class="input" id="booklet" name="booklet" type="file" accept=".pdf">
+          {% if c.booklet_filename %}
+            <label class="check-label" style="margin-top:8px;"><input type="checkbox" name="remove_booklet"> Remove current</label>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </details>
 
-<form method="post" action="{{ url_for('admin.conference_tiers', cid=c.id) }}" class="form" style="margin-top:14px; max-width:680px;">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <input type="hidden" name="action" value="add">
-  <div class="row-3">
-    <div class="field"><label for="t_name">Name</label><input class="input" id="t_name" name="name" required></div>
-    <div class="field"><label for="t_amount">Amount</label><input class="input" id="t_amount" name="amount" type="number" min="0" required></div>
-    <div class="field"><label for="t_desc">Description</label><input class="input" id="t_desc" name="description"></div>
-  </div>
-  <button class="btn btn-primary btn-sm" type="submit">+ Add tier</button>
-</form>
-
-<h3 style="margin-top:36px;">Sponsors</h3>
-{% if c.sponsor_tiers %}
-<form method="post" action="{{ url_for('admin.conference_sponsors', cid=c.id) }}" class="form form-wide">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <input type="hidden" name="action" value="save_tiers">
-  <table class="table">
-    <thead><tr><th style="width:60px">Order</th><th>Name</th><th>Sponsors</th><th></th></tr></thead>
-    <tbody>
-    {% for t in c.sponsor_tiers %}
-      <tr>
-        <td><input class="input" name="tier_order_{{ t.id }}" value="{{ t.display_order }}" style="width:64px;"></td>
-        <td><input class="input" name="tier_name_{{ t.id }}" value="{{ t.name }}"></td>
-        <td style="font-size:13px;">
-          {% for s in t.sponsors %}
-            <div style="display:flex; align-items:center; gap:8px; padding:4px 0;">
-              {% if s.logo_filename %}
-                <img src="{{ url_for('public.sponsor_upload', name=s.logo_filename) }}" style="height:28px; width:auto; max-width:80px; object-fit:contain;">
-              {% endif %}
-              <span>{{ s.name }}</span>
-              {% if s.url %}<a href="{{ s.url }}" target="_blank" rel="noopener" style="font-size:11px;">↗</a>{% endif %}
-              <button class="btn btn-quiet btn-sm" type="submit" name="action" value="delete_sponsor"
-                      formaction="{{ url_for('admin.conference_sponsors', cid=c.id) }}">
-                <input type="hidden" name="sponsor_id" value="{{ s.id }}">×</button>
-            </div>
+  <!-- ============================================================ -->
+  <!-- Price Tiers                                                   -->
+  <!-- ============================================================ -->
+  <details class="edit-section">
+    <summary class="edit-section-summary">Price Tiers</summary>
+    <div class="edit-section-body">
+      <table class="table">
+        <thead><tr><th style="width:64px">Order</th><th>Name</th><th>Amount ({{ site.currency_code }})</th><th>Description</th><th style="width:70px"></th></tr></thead>
+        <tbody id="tiers-tbody">
+          {% for t in c.price_tiers %}
+          <tr class="tier-row" data-tier-id="{{ t.id }}">
+            <td><input class="input" name="tier_order_{{ t.id }}" value="{{ t.display_order }}" style="width:64px;"></td>
+            <td><input class="input" name="tier_name_{{ t.id }}" value="{{ t.name }}"></td>
+            <td><input class="input" name="tier_amount_{{ t.id }}" value="{{ t.amount }}" style="width:120px;"></td>
+            <td><input class="input" name="tier_desc_{{ t.id }}" value="{{ t.description }}"></td>
+            <td>
+              <input type="hidden" name="tier_delete_{{ t.id }}" value="">
+              <button type="button" class="btn btn-quiet btn-sm js-remove-tier">Remove</button>
+            </td>
+          </tr>
           {% endfor %}
-        </td>
-        <td>
-          <button class="btn btn-quiet btn-sm" type="submit" name="action" value="delete_tier"
-                  formaction="{{ url_for('admin.conference_sponsors', cid=c.id) }}"
-                  data-confirm="Delete this tier and all its sponsors?">
-            <input type="hidden" name="tier_id" value="{{ t.id }}">Delete tier</button>
-        </td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-  <button class="btn btn-primary btn-sm" type="submit">Save tiers</button>
-</form>
-{% endif %}
+        </tbody>
+      </table>
+      <template id="tier-row-tmpl">
+        <tr class="tier-row tier-row--new">
+          <td><input class="input" name="new_tier_order[]" value="" style="width:64px;"></td>
+          <td><input class="input" name="new_tier_name[]" value=""></td>
+          <td><input class="input" name="new_tier_amount[]" value="" style="width:120px;"></td>
+          <td><input class="input" name="new_tier_desc[]" value=""></td>
+          <td><button type="button" class="btn btn-quiet btn-sm js-remove-row">Remove</button></td>
+        </tr>
+      </template>
+      <button type="button" class="btn btn-ghost btn-sm" id="add-tier-btn" style="margin-top:8px;">+ Add tier</button>
+    </div>
+  </details>
 
-{% for t in c.sponsor_tiers %}
-<form method="post" action="{{ url_for('admin.conference_sponsors', cid=c.id) }}" enctype="multipart/form-data" class="form" style="margin-top:14px; max-width:680px;">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <input type="hidden" name="action" value="add_sponsor">
-  <input type="hidden" name="tier_id" value="{{ t.id }}">
-  <div style="font-weight:600; margin-bottom:10px; font-size:14px;">Add sponsor to {{ t.name }}</div>
-  <div class="row-3">
-    <div class="field"><label for="sp_name_{{ t.id }}">Name</label><input class="input" id="sp_name_{{ t.id }}" name="name" required></div>
-    <div class="field"><label for="sp_url_{{ t.id }}">URL</label><input class="input" id="sp_url_{{ t.id }}" name="url" placeholder="https://…"></div>
-    <div class="field"><label for="sp_logo_{{ t.id }}">Logo</label><input class="input" id="sp_logo_{{ t.id }}" name="logo" type="file" accept=".png,.jpg,.jpeg,.webp,.svg"></div>
-  </div>
-  <button class="btn btn-primary btn-sm" type="submit">+ Add sponsor</button>
-</form>
-{% endfor %}
+  <!-- ============================================================ -->
+  <!-- Sponsors                                                      -->
+  <!-- ============================================================ -->
+  <details class="edit-section">
+    <summary class="edit-section-summary">Sponsors</summary>
+    <div class="edit-section-body">
+      {% if c.sponsor_tiers %}
+      <table class="table">
+        <thead><tr><th style="width:64px">Order</th><th>Name</th><th>Sponsors</th><th style="width:70px"></th></tr></thead>
+        <tbody id="sponsor-tiers-tbody">
+          {% for st in c.sponsor_tiers %}
+          <tr class="stier-row" data-tier-id="{{ st.id }}">
+            <td><input class="input" name="stier_order_{{ st.id }}" value="{{ st.display_order }}" style="width:64px;"></td>
+            <td><input class="input" name="stier_name_{{ st.id }}" value="{{ st.name }}"></td>
+            <td class="stier-sponsors-cell">
+              <div class="sponsor-list" data-tier-id="{{ st.id }}">
+                {% for s in st.sponsors %}
+                <div class="sponsor-row" data-sponsor-id="{{ s.id }}">
+                  <input type="hidden" name="sponsor_delete_{{ s.id }}" value="">
+                  {% if s.logo_filename %}
+                    <img src="{{ url_for('public.sponsor_upload', name=s.logo_filename) }}" class="sponsor-thumb" alt="">
+                  {% endif %}
+                  <input class="input input-sm" name="sponsor_name_{{ s.id }}" value="{{ s.name }}" style="width:140px;">
+                  <input class="input input-sm" name="sponsor_url_{{ s.id }}" value="{{ s.url or '' }}" placeholder="URL" style="width:160px;">
+                  <input class="input input-sm" name="sponsor_order_{{ s.id }}" value="{{ s.display_order }}" style="width:52px;" title="Order">
+                  <button type="button" class="btn btn-quiet btn-sm js-remove-sponsor" title="Remove sponsor">×</button>
+                </div>
+                {% endfor %}
+              </div>
+              <button type="button" class="btn btn-ghost btn-sm js-add-sponsor" data-tier-id="{{ st.id }}" style="margin-top:6px;">+ Add sponsor</button>
+            </td>
+            <td>
+              <input type="hidden" name="stier_delete_{{ st.id }}" value="">
+              <button type="button" class="btn btn-quiet btn-sm js-remove-stier">Remove</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="muted" id="no-sponsor-tiers-msg">No sponsor tiers yet.</p>
+      {% endif %}
 
-<form method="post" action="{{ url_for('admin.conference_sponsors', cid=c.id) }}" class="form" style="margin-top:18px; max-width:480px;">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <input type="hidden" name="action" value="add_tier">
-  <div class="field"><label for="tier_name">New tier name</label>
-    <input class="input" id="tier_name" name="name" required placeholder="Platinum, Gold, Silver…">
+      <template id="stier-row-tmpl">
+        <tr class="stier-row stier-row--new">
+          <td><input class="input" name="new_stier_order[]" value="" style="width:64px;"></td>
+          <td><input class="input" name="new_stier_name[]" value=""></td>
+          <td class="stier-sponsors-cell">
+            <div class="sponsor-list" data-tier-id="new">
+              <span class="muted" style="font-size:12px;">Save first, then add sponsors.</span>
+            </div>
+          </td>
+          <td><button type="button" class="btn btn-quiet btn-sm js-remove-row">Remove</button></td>
+        </tr>
+      </template>
+
+      <template id="sponsor-row-tmpl">
+        <div class="sponsor-row sponsor-row--new">
+          <input class="input input-sm" name="new_sponsor_name_PLACEHOLDER" value="" style="width:140px;" placeholder="Name">
+          <input class="input input-sm" name="new_sponsor_url_PLACEHOLDER" value="" style="width:160px;" placeholder="URL">
+          <input class="input input-sm" name="new_sponsor_order_PLACEHOLDER" value="" style="width:52px;" title="Order">
+          <input class="input input-sm" name="new_sponsor_logo_PLACEHOLDER" type="file" accept=".png,.jpg,.jpeg,.webp,.svg" style="width:140px;">
+          <button type="button" class="btn btn-quiet btn-sm js-remove-row" title="Remove">×</button>
+        </div>
+      </template>
+
+      <button type="button" class="btn btn-ghost btn-sm" id="add-stier-btn" style="margin-top:8px;">+ Add sponsor tier</button>
+    </div>
+  </details>
+
+  <!-- ============================================================ -->
+  <!-- Save                                                          -->
+  <!-- ============================================================ -->
+  <div class="save-bar">
+    <button class="btn btn-primary btn-lg" type="submit">Save all changes</button>
+    <span class="save-bar-status">Review your changes above, then save.</span>
   </div>
-  <button class="btn btn-ghost btn-sm" type="submit">+ Add tier</button>
 </form>
 
 {% if can('conf.delete') %}
-<hr>
-<form method="post" action="{{ url_for('admin.conference_delete_request', cid=c.id) }}"
-      data-confirm="Send a confirmation code to delete this conference?">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <h3>Danger zone</h3>
-  <p class="muted">Deleting a conference is irreversible. We'll email you a 6-digit confirmation code first.</p>
-  <button class="btn btn-quiet" type="submit">Begin delete →</button>
-</form>
+<div class="danger-zone">
+  <form method="post" action="{{ url_for('admin.conference_delete_request', cid=c.id) }}"
+        data-confirm="Send a confirmation code to delete this conference?">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <h4>Danger zone</h4>
+    <p class="muted">Deleting a conference is irreversible. We'll email you a 6-digit confirmation code first.</p>
+    <button class="btn btn-quiet" type="submit">Begin delete →</button>
+  </form>
+</div>
 {% endif %}
 {% endblock %}

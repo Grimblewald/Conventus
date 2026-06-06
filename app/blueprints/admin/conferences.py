@@ -11,7 +11,7 @@ from flask_login import current_user
 
 from . import admin_bp
 from ...extensions import db
-from ...models import Abstract, Conference, OTPCode, Registration
+from ...models import Abstract, Conference, OTPCode, Registration, Sponsor, SponsorTier
 from ...models.conference import PriceTier
 from ...security import requires_permission, audit
 from ...services.mail import send_mail
@@ -101,88 +101,216 @@ _DATE_FIELDS = (
 )
 
 
-@admin_bp.route("/conferences/<int:cid>/edit", methods=["GET", "POST"])
+@admin_bp.route("/conferences/<int:cid>/edit", methods=["GET"])
 @requires_permission("conf.edit")
 def conference_edit(cid):
     c = Conference.query.get_or_404(cid)
-    if request.method == "POST":
-        try:
-            new_slug = slugify(request.form.get("slug", ""))
-            if not new_slug:
-                raise ValueError("Slug is empty after sanitisation.")
-            if _slug_taken(new_slug, exclude_id=c.id):
-                flash(f"Slug “{new_slug}” is already used by another conference.", "error")
-                return render_template("admin/conference_edit.html", c=c)
-            c.slug = new_slug
-            c.title = (request.form.get("title") or "").strip()
-            c.subtitle = (request.form.get("subtitle") or "").strip()
-            c.summary = (request.form.get("summary") or "").strip()
-            c.body = (request.form.get("body") or "").strip()
-            c.city = (request.form.get("city") or "").strip()
-            c.venue = (request.form.get("venue") or "").strip()
-            c.tracks = request.form.get("tracks", "")
-            c.hero_caption = (request.form.get("hero_caption") or "").strip()
-            c.is_featured = bool(request.form.get("is_featured"))
-            if c.is_featured:
-                _unfeature_others(c.id)
-            c.is_draft = bool(request.form.get("is_draft"))
-            c.is_accepting_abstracts = not bool(request.form.get("not_accepting_abstracts"))
-            c.is_accepting_registrations = not bool(request.form.get("not_accepting_registrations"))
-            c.external_registration_url = (request.form.get("external_registration_url") or "").strip() or None
-            c.external_abstract_url = (request.form.get("external_abstract_url") or "").strip() or None
-
-            for fld in _DATE_FIELDS:
-                raw = (request.form.get(fld) or "").strip()
-                setattr(c, fld, date.fromisoformat(raw) if raw else None)
-
-            # Hero image
-            f = request.files.get("hero_image")
-            if f and f.filename:
-                rel = save_image(
-                    f, upload_folder=current_app.config["UPLOAD_FOLDER"],
-                    subdir="conferences", prefix=f"hero-c{c.id}",
-                    max_bytes=current_app.config["MAX_HERO_BYTES"],
-                    target_size=1920,
-                )
-                if c.hero_image_filename:
-                    remove_upload(current_app.config["UPLOAD_FOLDER"],
-                                  f"conferences/{c.hero_image_filename}")
-                c.hero_image_filename = rel.split("/", 1)[-1]
-            elif request.form.get("remove_hero_image"):
-                if c.hero_image_filename:
-                    remove_upload(current_app.config["UPLOAD_FOLDER"],
-                                  f"conferences/{c.hero_image_filename}")
-                c.hero_image_filename = None
-
-            # Booklet PDF
-            pdf = request.files.get("booklet")
-            if pdf and pdf.filename:
-                rel = save_pdf(
-                    pdf, upload_folder=current_app.config["UPLOAD_FOLDER"],
-                    subdir="conferences", prefix=f"booklet-c{c.id}",
-                    max_bytes=current_app.config["MAX_BOOKLET_BYTES"],
-                )
-                if c.booklet_filename:
-                    remove_upload(current_app.config["UPLOAD_FOLDER"],
-                                  f"conferences/{c.booklet_filename}")
-                c.booklet_filename = rel.split("/", 1)[-1]
-            elif request.form.get("remove_booklet"):
-                if c.booklet_filename:
-                    remove_upload(current_app.config["UPLOAD_FOLDER"],
-                                  f"conferences/{c.booklet_filename}")
-                c.booklet_filename = None
-
-            db.session.commit()
-            audit.record("conference.updated",
-                         target_kind="conference", target_id=c.id,
-                         summary=f"Edited “{c.title}”")
-            flash("Conference updated.", "success")
-            return redirect(url_for("admin.conferences"))
-        except UploadError as e:
-            flash(str(e), "error")
-        except Exception as e:
-            flash(f"Could not update conference: {e}", "error")
     return render_template("admin/conference_edit.html", c=c)
+
+
+# ---------------------------------------------------------------------------
+# Unified save (handles conference fields, price tiers, sponsor tiers, sponsors)
+# ---------------------------------------------------------------------------
+
+@admin_bp.route("/conferences/<int:cid>/save", methods=["POST"])
+@requires_permission("conf.edit")
+def conference_save(cid):
+    c = Conference.query.get_or_404(cid)
+    try:
+        # -- Conference fields --
+        new_slug = slugify(request.form.get("slug", ""))
+        if not new_slug:
+            raise ValueError("Slug is empty after sanitisation.")
+        if _slug_taken(new_slug, exclude_id=c.id):
+            raise ValueError(f"Slug \"{new_slug}\" is already used by another conference.")
+        c.slug = new_slug
+        c.title = (request.form.get("title") or "").strip()
+        c.subtitle = (request.form.get("subtitle") or "").strip()
+        c.summary = (request.form.get("summary") or "").strip()
+        c.body = (request.form.get("body") or "").strip()
+        c.city = (request.form.get("city") or "").strip()
+        c.venue = (request.form.get("venue") or "").strip()
+        c.tracks = request.form.get("tracks", "")
+        c.hero_caption = (request.form.get("hero_caption") or "").strip()
+        c.is_featured = bool(request.form.get("is_featured"))
+        if c.is_featured:
+            _unfeature_others(c.id)
+        c.is_draft = bool(request.form.get("is_draft"))
+        c.is_accepting_abstracts = not bool(request.form.get("not_accepting_abstracts"))
+        c.is_accepting_registrations = not bool(request.form.get("not_accepting_registrations"))
+        c.external_registration_url = (request.form.get("external_registration_url") or "").strip() or None
+        c.external_abstract_url = (request.form.get("external_abstract_url") or "").strip() or None
+
+        for fld in _DATE_FIELDS:
+            raw = (request.form.get(fld) or "").strip()
+            setattr(c, fld, date.fromisoformat(raw) if raw else None)
+
+        # Hero image
+        f = request.files.get("hero_image")
+        if f and f.filename:
+            rel = save_image(
+                f, upload_folder=current_app.config["UPLOAD_FOLDER"],
+                subdir="conferences", prefix=f"hero-c{c.id}",
+                max_bytes=current_app.config["MAX_HERO_BYTES"], target_size=1920,
+            )
+            if c.hero_image_filename:
+                remove_upload(current_app.config["UPLOAD_FOLDER"],
+                              f"conferences/{c.hero_image_filename}")
+            c.hero_image_filename = rel.split("/", 1)[-1]
+        elif request.form.get("remove_hero_image"):
+            if c.hero_image_filename:
+                remove_upload(current_app.config["UPLOAD_FOLDER"],
+                              f"conferences/{c.hero_image_filename}")
+            c.hero_image_filename = None
+
+        # Booklet PDF
+        pdf = request.files.get("booklet")
+        if pdf and pdf.filename:
+            rel = save_pdf(
+                pdf, upload_folder=current_app.config["UPLOAD_FOLDER"],
+                subdir="conferences", prefix=f"booklet-c{c.id}",
+                max_bytes=current_app.config["MAX_BOOKLET_BYTES"],
+            )
+            if c.booklet_filename:
+                remove_upload(current_app.config["UPLOAD_FOLDER"],
+                              f"conferences/{c.booklet_filename}")
+            c.booklet_filename = rel.split("/", 1)[-1]
+        elif request.form.get("remove_booklet"):
+            if c.booklet_filename:
+                remove_upload(current_app.config["UPLOAD_FOLDER"],
+                              f"conferences/{c.booklet_filename}")
+            c.booklet_filename = None
+
+        # -- Price tiers --
+        for t in list(c.price_tiers):
+            if request.form.get(f"tier_delete_{t.id}"):
+                db.session.delete(t)
+                continue
+            t.name = (request.form.get(f"tier_name_{t.id}") or t.name).strip()
+            try:
+                t.amount = int(request.form.get(f"tier_amount_{t.id}") or t.amount)
+            except ValueError:
+                pass
+            t.description = (request.form.get(f"tier_desc_{t.id}") or "").strip()
+            try:
+                t.display_order = int(request.form.get(f"tier_order_{t.id}") or 0)
+            except ValueError:
+                pass
+
+        # Add new price tiers
+        new_names = request.form.getlist("new_tier_name[]")
+        new_amounts = request.form.getlist("new_tier_amount[]")
+        new_descs = request.form.getlist("new_tier_desc[]")
+        new_orders = request.form.getlist("new_tier_order[]")
+        for i, name in enumerate(new_names):
+            name = name.strip()
+            if not name:
+                continue
+            amount = 0
+            try:
+                amount = int(new_amounts[i] or 0)
+            except (IndexError, ValueError):
+                pass
+            desc = (new_descs[i] if i < len(new_descs) else "").strip()
+            order = 0
+            try:
+                order = int(new_orders[i] or 0)
+            except (IndexError, ValueError):
+                pass
+            db.session.add(PriceTier(
+                conference_id=c.id,
+                name=name,
+                amount=amount,
+                description=desc,
+                display_order=order,
+            ))
+
+        # -- Sponsor tiers + sponsors --
+        for st in list(c.sponsor_tiers):
+            if request.form.get(f"stier_delete_{st.id}"):
+                for s in st.sponsors:
+                    if s.logo_filename:
+                        remove_upload(current_app.config["UPLOAD_FOLDER"], f"sponsors/{s.logo_filename}")
+                db.session.delete(st)
+                continue
+            st.name = (request.form.get(f"stier_name_{st.id}") or st.name).strip()
+            try:
+                st.display_order = int(request.form.get(f"stier_order_{st.id}") or st.display_order)
+            except ValueError:
+                pass
+
+            # Sponsors within this tier
+            for s in list(st.sponsors):
+                if request.form.get(f"sponsor_delete_{s.id}"):
+                    if s.logo_filename:
+                        remove_upload(current_app.config["UPLOAD_FOLDER"], f"sponsors/{s.logo_filename}")
+                    db.session.delete(s)
+                    continue
+                s.name = (request.form.get(f"sponsor_name_{s.id}") or s.name).strip()
+                s.url = (request.form.get(f"sponsor_url_{s.id}") or "").strip() or None
+                try:
+                    s.display_order = int(request.form.get(f"sponsor_order_{s.id}") or s.display_order)
+                except ValueError:
+                    pass
+
+            # Add new sponsors under this tier
+            for i in range(50):
+                sname = (request.form.get(f"new_sponsor_name_{st.id}_{i}") or "").strip()
+                if not sname:
+                    continue
+                ns = Sponsor(
+                    tier_id=st.id,
+                    name=sname,
+                    url=(request.form.get(f"new_sponsor_url_{st.id}_{i}") or "").strip() or None,
+                    display_order=0,
+                )
+                try:
+                    ns.display_order = int(request.form.get(f"new_sponsor_order_{st.id}_{i}") or 0)
+                except ValueError:
+                    pass
+                logo = request.files.get(f"new_sponsor_logo_{st.id}_{i}")
+                if logo and logo.filename:
+                    try:
+                        rel = save_image(
+                            logo, upload_folder=current_app.config["UPLOAD_FOLDER"],
+                            subdir="sponsors", prefix=f"sponsor-{c.id}",
+                            max_bytes=current_app.config["MAX_HERO_BYTES"],
+                            target_size=400,
+                        )
+                        ns.logo_filename = rel.split("/", 1)[-1]
+                    except UploadError as e:
+                        flash(f"Sponsor logo error: {e}", "error")
+                db.session.add(ns)
+
+        # Add new sponsor tiers
+        new_st_names = request.form.getlist("new_stier_name[]")
+        new_st_orders = request.form.getlist("new_stier_order[]")
+        for i, name in enumerate(new_st_names):
+            name = name.strip()
+            if not name:
+                continue
+            order = 0
+            try:
+                order = int(new_st_orders[i] or 0)
+            except (IndexError, ValueError):
+                pass
+            db.session.add(SponsorTier(
+                conference_id=c.id,
+                name=name,
+                display_order=order,
+            ))
+
+        db.session.commit()
+        audit.record("conference.updated",
+                     target_kind="conference", target_id=c.id,
+                     summary=f"Saved \"{c.title}\"")
+        flash("All changes saved.", "success")
+    except UploadError as e:
+        flash(str(e), "error")
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Could not save: {e}", "error")
+    return redirect(url_for("admin.conference_edit", cid=c.id))
 
 
 # ---------------------------------------------------------------------------

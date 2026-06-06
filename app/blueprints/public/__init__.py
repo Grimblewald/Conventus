@@ -198,3 +198,11 @@ def favicon():
     if s.favicon_filename:
         return redirect(url_for("public.site_upload", name=s.favicon_filename))
     abort(404)
+
+
+@public_bp.route("/dev/reload")
+def dev_reload():
+    if not current_app.debug:
+        abort(404)
+    Path(__file__).parent.parent.parent.parent.joinpath("wsgi.py").touch()
+    return "ok — reload triggered"

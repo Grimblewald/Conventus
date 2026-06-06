@@ -61,11 +61,113 @@
       });
     }
 
-    // Conference tiers: delete button sets tier_id
-    document.querySelectorAll("[data-tier-id]").forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        var field = btn.form.querySelector("[name=tier_id]");
-        if (field) field.value = btn.dataset.tierId;
+    // --- Dynamic row management for conference edit ---
+
+    function markRowDeleted(row) {
+      var hidden = row.querySelector('input[type="hidden"]');
+      if (hidden) hidden.value = "1";
+      row.style.display = "none";
+    }
+
+    function removeNewRow(row) {
+      row.parentNode.removeChild(row);
+    }
+
+    // --- Price tiers ---
+    var tierTmpl = document.getElementById("tier-row-tmpl");
+    var tiersTbody = document.getElementById("tiers-tbody");
+    var addTierBtn = document.getElementById("add-tier-btn");
+
+    if (addTierBtn && tierTmpl && tiersTbody) {
+      addTierBtn.addEventListener("click", function () {
+        var clone = tierTmpl.content.firstElementChild.cloneNode(true);
+        tiersTbody.appendChild(clone);
+      });
+    }
+
+    if (tiersTbody) {
+      tiersTbody.addEventListener("click", function (e) {
+        var btn = e.target.closest("button");
+        if (!btn) return;
+        if (btn.classList.contains("js-remove-tier")) {
+          var row = btn.closest("tr");
+          if (row && row.dataset.tierId) {
+            markRowDeleted(row);
+          }
+        } else if (btn.classList.contains("js-remove-row")) {
+          removeNewRow(btn.closest("tr"));
+        }
+      });
+    }
+
+    // --- Sponsor tiers ---
+    var stierTmpl = document.getElementById("stier-row-tmpl");
+    var stiersTbody = document.getElementById("sponsor-tiers-tbody");
+    var addStierBtn = document.getElementById("add-stier-btn");
+    var noTiersMsg = document.getElementById("no-sponsor-tiers-msg");
+
+    if (addStierBtn && stierTmpl) {
+      addStierBtn.addEventListener("click", function () {
+        var clone = stierTmpl.content.firstElementChild.cloneNode(true);
+        if (stiersTbody) {
+          stiersTbody.appendChild(clone);
+        } else {
+          var table = document.createElement("table");
+          table.className = "table";
+          table.innerHTML = '<thead><tr><th style="width:64px">Order</th><th>Name</th><th>Sponsors</th><th style="width:70px"></th></tr></thead><tbody id="sponsor-tiers-tbody"></tbody>';
+          var tbody = table.querySelector("tbody");
+          tbody.appendChild(clone);
+          stiersTbody = tbody;
+          addStierBtn.parentNode.insertBefore(table, addStierBtn);
+          if (noTiersMsg) noTiersMsg.style.display = "none";
+        }
+      });
+    }
+
+    var spTierContainer = stiersTbody || document.getElementById("sponsor-tiers-tbody");
+    if (spTierContainer) {
+      spTierContainer.addEventListener("click", function (e) {
+        var btn = e.target.closest("button");
+        if (!btn) return;
+        if (btn.classList.contains("js-remove-stier")) {
+          var row = btn.closest("tr");
+          if (row && row.dataset.tierId) {
+            markRowDeleted(row);
+          }
+        } else if (btn.classList.contains("js-remove-row")) {
+          removeNewRow(btn.closest("tr"));
+        } else if (btn.classList.contains("js-add-sponsor")) {
+          var tierId = btn.dataset.tierId;
+          var sponsTmpl = document.getElementById("sponsor-row-tmpl");
+          var sponsorList = btn.parentNode.querySelector(".sponsor-list");
+          if (!sponsTmpl || !sponsorList || !tierId) return;
+          var existingNew = sponsorList.querySelectorAll(".sponsor-row--new");
+          var idx = existingNew.length;
+          var clone = sponsTmpl.content.firstElementChild.cloneNode(true);
+          clone.querySelectorAll("input").forEach(function (inp) {
+            inp.name = inp.name.replace("PLACEHOLDER", tierId + "_" + idx);
+            if (inp.id) inp.id = inp.id.replace("PLACEHOLDER", tierId + "_" + idx);
+          });
+          clone.querySelectorAll("label").forEach(function (lbl) {
+            if (lbl.htmlFor) lbl.htmlFor = lbl.htmlFor.replace("PLACEHOLDER", tierId + "_" + idx);
+          });
+          sponsorList.appendChild(clone);
+        }
+      });
+    }
+
+    document.querySelectorAll(".sponsor-list").forEach(function (list) {
+      list.addEventListener("click", function (e) {
+        var btn = e.target.closest("button");
+        if (!btn) return;
+        if (btn.classList.contains("js-remove-sponsor")) {
+          var row = btn.closest(".sponsor-row");
+          if (row && row.dataset.sponsorId) {
+            markRowDeleted(row);
+          }
+        } else if (btn.classList.contains("js-remove-row")) {
+          removeNewRow(btn.closest(".sponsor-row--new"));
+        }
       });
     });
 

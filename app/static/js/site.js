@@ -206,8 +206,35 @@
             sel.value = original;
             sel.classList.add("flash-err");
             setTimeout(function () { sel.classList.remove("flash-err"); }, 1500);
-          });
       });
+    });
+
+    // --- Organising committee ---
+    var ocTmpl = document.getElementById("oc-row-tmpl");
+    var ocTbody = document.getElementById("oc-tbody");
+    var addOcBtn = document.getElementById("add-oc-btn");
+
+    if (addOcBtn && ocTmpl && ocTbody) {
+      addOcBtn.addEventListener("click", function () {
+        var clone = ocTmpl.content.firstElementChild.cloneNode(true);
+        ocTbody.appendChild(clone);
+      });
+    }
+
+    if (ocTbody) {
+      ocTbody.addEventListener("click", function (e) {
+        var btn = e.target.closest("button");
+        if (!btn) return;
+        if (btn.classList.contains("js-remove-oc")) {
+          var row = btn.closest("tr");
+          if (row && row.dataset.ocId) {
+            markRowDeleted(row);
+          }
+        } else if (btn.classList.contains("js-remove-row")) {
+          removeNewRow(btn.closest("tr"));
+        }
+      });
+    }
     });
 
     // ---- OTP digit box ----

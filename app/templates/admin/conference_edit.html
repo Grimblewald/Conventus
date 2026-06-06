@@ -268,6 +268,44 @@
   </details>
 
   <!-- ============================================================ -->
+  <!-- Organising Committee                                          -->
+  <!-- ============================================================ -->
+  <details class="edit-section">
+    <summary class="edit-section-summary">Organising Committee</summary>
+    <div class="edit-section-body">
+      <table class="table">
+        <thead><tr><th style="width:64px">Order</th><th>Name</th><th>Role</th><th>Affiliation</th><th>Email</th><th style="width:70px"></th></tr></thead>
+        <tbody id="oc-tbody">
+          {% for oc in c.organising_committee %}
+          <tr class="oc-row" data-oc-id="{{ oc.id }}">
+            <td><input class="input" name="oc_order_{{ oc.id }}" value="{{ oc.display_order }}" style="width:64px;"></td>
+            <td><input class="input" name="oc_name_{{ oc.id }}" value="{{ oc.full_name }}"></td>
+            <td><input class="input" name="oc_role_{{ oc.id }}" value="{{ oc.role }}"></td>
+            <td><input class="input" name="oc_affil_{{ oc.id }}" value="{{ oc.affiliation }}"></td>
+            <td><input class="input" name="oc_email_{{ oc.id }}" value="{{ oc.email }}"></td>
+            <td>
+              <input type="hidden" name="oc_delete_{{ oc.id }}" value="">
+              <button type="button" class="btn btn-quiet btn-sm js-remove-oc">Remove</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <template id="oc-row-tmpl">
+        <tr class="oc-row oc-row--new">
+          <td><input class="input" name="new_oc_order[]" value="" style="width:64px;"></td>
+          <td><input class="input" name="new_oc_name[]" value=""></td>
+          <td><input class="input" name="new_oc_role[]" value=""></td>
+          <td><input class="input" name="new_oc_affil[]" value=""></td>
+          <td><input class="input" name="new_oc_email[]" value=""></td>
+          <td><button type="button" class="btn btn-quiet btn-sm js-remove-row">Remove</button></td>
+        </tr>
+      </template>
+      <button type="button" class="btn btn-ghost btn-sm" id="add-oc-btn" style="margin-top:8px;">+ Add member</button>
+    </div>
+  </details>
+
+  <!-- ============================================================ -->
   <!-- Save                                                          -->
   <!-- ============================================================ -->
   <div class="save-bar">

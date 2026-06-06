@@ -11,7 +11,7 @@ from flask_login import current_user
 
 from . import admin_bp
 from ...extensions import db
-from ...models import Abstract, Conference, OTPCode, Registration, Sponsor, SponsorTier
+from ...models import Abstract, Conference, OTPCode, OrganisingCommitteeMember, Registration, Sponsor, SponsorTier
 from ...models.conference import PriceTier
 from ...security import requires_permission, audit
 from ...services.mail import send_mail
@@ -301,6 +301,38 @@ def conference_save(cid):
                 conference_id=c.id,
                 name=name,
                 display_order=order,
+            ))
+
+        # -- Organising committee --
+        for oc in list(c.organising_committee):
+            if request.form.get(f"oc_delete_{oc.id}"):
+                db.session.delete(oc)
+                continue
+            oc.full_name = (request.form.get(f"oc_name_{oc.id}") or oc.full_name).strip()
+            oc.role = (request.form.get(f"oc_role_{oc.id}") or "").strip()
+            oc.affiliation = (request.form.get(f"oc_affil_{oc.id}") or "").strip()
+            oc.email = (request.form.get(f"oc_email_{oc.id}") or "").strip()
+            try:
+                oc.display_order = int(request.form.get(f"oc_order_{oc.id}") or 0)
+            except ValueError:
+                pass
+
+        new_oc_names = request.form.getlist("new_oc_name[]")
+        new_oc_roles = request.form.getlist("new_oc_role[]")
+        new_oc_affils = request.form.getlist("new_oc_affil[]")
+        new_oc_emails = request.form.getlist("new_oc_email[]")
+        new_oc_orders = request.form.getlist("new_oc_order[]")
+        for i, name in enumerate(new_oc_names):
+            name = name.strip()
+            if not name:
+                continue
+            db.session.add(OrganisingCommitteeMember(
+                conference_id=c.id,
+                full_name=name,
+                role=(new_oc_roles[i] if i < len(new_oc_roles) else "").strip(),
+                affiliation=(new_oc_affils[i] if i < len(new_oc_affils) else "").strip(),
+                email=(new_oc_emails[i] if i < len(new_oc_emails) else "").strip(),
+                display_order=int(new_oc_orders[i] or 0) if i < len(new_oc_orders) else 0,
             ))
 
         db.session.commit()

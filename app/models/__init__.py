@@ -19,6 +19,7 @@ from .sponsor import Sponsor, SponsorTier
 from .announcement import Announcement
 from .registration import Registration
 from .abstract import Abstract
+from .organising_committee import OrganisingCommitteeMember
 from .audit import AuditLog
 
 __all__ = [
@@ -33,5 +34,6 @@ __all__ = [
     "Announcement",
     "Registration",
     "Abstract",
+    "OrganisingCommitteeMember",
     "AuditLog",
 ]

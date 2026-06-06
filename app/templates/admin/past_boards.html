@@ -1,0 +1,40 @@
+{% extends "admin/_base.html" %}
+{% block title %}Past Boards · Admin{% endblock %}
+{% block admin %}
+<div class="section-head">
+  <div><div class="eyebrow">Committee</div><h2>Past Boards</h2></div>
+</div>
+
+{% if boards %}
+<table class="table">
+  <thead><tr><th>Label</th><th>Term</th><th>Members</th><th>Archived</th><th></th></tr></thead>
+  <tbody>
+    {% for b in boards %}
+    <tr>
+      <td><a href="{{ url_for('admin.past_board_edit', bid=b.id) }}">{{ b.label }}</a></td>
+      <td>{% if b.term_start %}{{ b.term_start.strftime('%-d %b %Y') }}{% endif %}{% if b.term_end %} – {{ b.term_end.strftime('%-d %b %Y') }}{% endif %}</td>
+      <td>{{ b.members|length }}</td>
+      <td>{{ b.created_at.strftime('%-d %b %Y') }}</td>
+      <td>
+        <form method="post" action="{{ url_for('admin.past_board_delete', bid=b.id) }}"
+              data-confirm="Delete this past board and all its members?" style="display:inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-quiet btn-sm" type="submit">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">No past boards yet.</p>
+{% endif %}
+
+{% if can('committee.edit_any') %}
+<form method="post" action="{{ url_for('admin.past_boards_archive') }}" style="margin-top:20px;"
+      data-confirm="Snapshot the current committee into a new past board? This does not remove anyone from the current committee.">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button class="btn btn-primary" type="submit">Archive current committee</button>
+</form>
+{% endif %}
+{% endblock %}

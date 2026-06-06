@@ -16,6 +16,9 @@
     {% if can('committee.edit_self') or can('committee.edit_any') %}
       <li><a href="{{ url_for('admin.committee_index') }}">Committee</a></li>
     {% endif %}
+    {% if can('committee.edit_any') %}
+      <li><a href="{{ url_for('admin.past_boards_index') }}">Past Boards</a></li>
+    {% endif %}
     {% if can('pages.edit') %}
       <li><a href="{{ url_for('admin.pages') }}">Pages</a></li>
     {% endif %}

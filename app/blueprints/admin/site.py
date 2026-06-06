@@ -5,6 +5,8 @@ gated by its own permission.
 """
 from __future__ import annotations
 
+from datetime import date
+
 from flask import current_app, flash, jsonify, redirect, render_template, request, url_for
 
 from . import admin_bp
@@ -46,6 +48,10 @@ def site_identity():
             if val:
                 setattr(s, fld, val)
         s.payment_portal_enabled = request.form.get("payment_portal_enabled") == "1"
+        raw_start = (request.form.get("board_term_start") or "").strip()
+        s.board_term_start = date.fromisoformat(raw_start) if raw_start else None
+        raw_int = (request.form.get("board_term_interval_months") or "").strip()
+        s.board_term_interval_months = int(raw_int) if raw_int else None
         db.session.commit()
         audit.record("site.identity_updated",
                      target_kind="site_settings", target_id=s.id,

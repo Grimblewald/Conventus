@@ -20,6 +20,7 @@ from .announcement import Announcement
 from .registration import Registration
 from .abstract import Abstract
 from .organising_committee import OrganisingCommitteeMember
+from .past_board import PastBoard, PastBoardMember
 from .audit import AuditLog
 
 __all__ = [
@@ -35,5 +36,6 @@ __all__ = [
     "Registration",
     "Abstract",
     "OrganisingCommitteeMember",
+    "PastBoard", "PastBoardMember",
     "AuditLog",
 ]

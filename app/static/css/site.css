@@ -834,6 +834,41 @@ section.block.ink .table td {
 }
 .oc-modal-close:hover { color: var(--c-page-text); }
 
+/* --- Past boards (collapsible, smaller cards) --- */
+.past-board {
+  border: 1px solid var(--c-card-border);
+  border-radius: var(--rad);
+  margin-bottom: 10px;
+  background: var(--c-card-bg);
+}
+.past-board-summary {
+  padding: 14px 20px;
+  cursor: pointer;
+  font-family: var(--f-ui);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--c-page-text);
+  display: flex; align-items: center; gap: 14px;
+  list-style: none;
+  user-select: none;
+}
+.past-board-summary::-webkit-details-marker { display: none; }
+.past-board-summary::marker { display: none; content: ""; }
+.past-board-summary::before {
+  content: "▸";
+  display: inline-block; width: 14px; font-size: 12px;
+  color: var(--c-muted-text); transition: transform .15s;
+}
+.past-board[open] > .past-board-summary::before { transform: rotate(90deg); }
+.past-board-summary small {
+  font-weight: 400; font-size: 12px; color: var(--c-muted-text);
+}
+.past-board-summary:hover { background: color-mix(in oklab, var(--c-accent) 4%, transparent); }
+.past-board-body {
+  padding: 0 20px 20px;
+  border-top: 1px solid var(--c-card-border);
+}
+
 /* ---------------- Conference body + sponsors sidebar ---------------- */
 .conf-body-grid {
   display: grid;

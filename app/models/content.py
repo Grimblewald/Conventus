@@ -68,6 +68,11 @@ class SiteSettings(db.Model):
     favicon_filename = db.Column(db.String(255))
     og_image_filename = db.Column(db.String(255))
 
+    # --- Board / committee terms -------------------------------------------
+    board_term_start = db.Column(db.Date, nullable=True)
+    board_term_interval_months = db.Column(db.Integer, nullable=True)
+    board_last_archived_at = db.Column(db.DateTime, nullable=True)
+
     # --- Misc --------------------------------------------------------------
     updated_at = db.Column(db.DateTime, default=datetime.utcnow,
                            onupdate=datetime.utcnow, nullable=False)

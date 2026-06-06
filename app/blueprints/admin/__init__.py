@@ -136,3 +136,4 @@ from . import permissions   # noqa: F401, E402
 from . import audit         # noqa: F401, E402
 from . import api           # noqa: F401, E402
 from . import sponsors      # noqa: F401, E402
+from . import past_boards   # noqa: F401, E402

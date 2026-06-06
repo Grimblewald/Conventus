@@ -14,7 +14,7 @@ from flask_login import current_user
 
 from ...extensions import db, limiter
 from ...models import (
-    Announcement, CommitteeMember, Conference, Page, User,
+    Announcement, CommitteeMember, Conference, Page, PastBoard, User,
 )
 from ...services.mail import send_mail
 
@@ -98,7 +98,12 @@ def conference_detail(slug):
 @public_bp.route("/committee")
 def committee():
     items = CommitteeMember.visible_in_order()
-    return render_template("public/committee.html", items=items)
+    past_boards = (
+        PastBoard.query
+        .order_by(PastBoard.display_order.desc())
+        .all()
+    )
+    return render_template("public/committee.html", items=items, past_boards=past_boards)
 
 
 # ---------------------------------------------------------------------------

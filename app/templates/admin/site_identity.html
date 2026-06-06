@@ -41,6 +41,22 @@
   <div class="field"><label for="copyright_line">Copyright line ({year} is replaced live)</label>
     <input class="input" id="copyright_line" name="copyright_line" value="{{ s.copyright_line }}"></div>
   <div class="field" style="margin-top:18px; padding-top:18px; border-top:1px solid var(--c-card-border);">
+    <label>Board / committee term</label>
+    <div class="row-2">
+      <div class="field">
+        <label for="board_term_start">Term start date</label>
+        <input class="input" id="board_term_start" name="board_term_start" type="date"
+               value="{{ s.board_term_start.isoformat() if s.board_term_start else '' }}">
+      </div>
+      <div class="field">
+        <label for="board_term_interval_months">Interval (months)</label>
+        <input class="input" id="board_term_interval_months" name="board_term_interval_months" type="number" min="1"
+               value="{{ s.board_term_interval_months or '' }}" placeholder="12">
+        <div class="help">How often to auto-advance the term. Typically 12 or 24 months.</div>
+      </div>
+    </div>
+  </div>
+  <div class="field" style="margin-top:18px; padding-top:18px; border-top:1px solid var(--c-card-border);">
     <label style="display:flex; align-items:center; gap:10px;">
       <input type="hidden" name="payment_portal_enabled" value="0">
       <input type="checkbox" id="payment_portal_enabled" name="payment_portal_enabled" value="1" {% if s.payment_portal_enabled %}checked{% endif %}>

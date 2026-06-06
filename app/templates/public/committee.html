@@ -45,4 +45,44 @@
     {% endif %}
   </div>
 </section>
+
+{% if past_boards %}
+<section class="block alt">
+  <div class="container">
+    <div class="section-head">
+      <div>
+        <div class="eyebrow">History</div>
+        <h2>Past Boards</h2>
+      </div>
+    </div>
+    {% for b in past_boards %}
+    <details class="past-board" {% if loop.first %}open{% endif %}>
+      <summary class="past-board-summary">
+        <span>{{ b.label }}</span>
+        {% if b.term_start %}<small>{{ b.term_start.strftime('%b %Y') }}{% if b.term_end %} – {{ b.term_end.strftime('%b %Y') }}{% endif %}</small>{% endif %}
+      </summary>
+      <div class="past-board-body">
+        <div class="grid cols-3 committee-grid" style="margin-top:16px;">
+          {% for m in b.members %}
+          <article class="committee-card">
+            <div class="portrait">
+              {% if m.portrait_filename %}
+                <img loading="lazy" src="{{ url_for('public.committee_upload', name=m.portrait_filename) }}"
+                     alt="{{ m.portrait_alt_text or m.display_name }}">
+              {% else %}
+                <div class="ph" data-label="PORTRAIT"></div>
+              {% endif %}
+            </div>
+            <h4>{{ m.display_name }}</h4>
+            {% if m.role %}<div class="role">{{ m.role }}</div>{% endif %}
+            {% if m.affiliation %}<div class="aff">{{ m.affiliation }}</div>{% endif %}
+          </article>
+          {% endfor %}
+        </div>
+      </div>
+    </details>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
 {% endblock %}

@@ -1,0 +1,98 @@
+{% extends "admin/_base.html" %}
+{% block title %}Edit past board · Admin{% endblock %}
+{% block admin %}
+<div class="section-head">
+  <div><div class="eyebrow">Past Boards</div><h2>{{ board.label }}</h2></div>
+  <a class="link" href="{{ url_for('admin.past_boards_index') }}">← back</a>
+</div>
+
+<form method="post" class="form form-wide" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <div class="row-2">
+    <div class="field"><label for="label">Label</label>
+      <input class="input" id="label" name="label" value="{{ board.label }}"></div>
+    <div class="field"><label for="display_order">Display order</label>
+      <input class="input" id="display_order" name="display_order" value="{{ board.display_order }}"></div>
+  </div>
+  <div class="row-2">
+    <div class="field"><label for="term_start">Term start</label>
+      <input class="input" id="term_start" name="term_start" type="date"
+             value="{{ board.term_start.isoformat() if board.term_start else '' }}"></div>
+    <div class="field"><label for="term_end">Term end</label>
+      <input class="input" id="term_end" name="term_end" type="date"
+             value="{{ board.term_end.isoformat() if board.term_end else '' }}"></div>
+  </div>
+
+  <h3 style="margin-top:28px;">Members</h3>
+  <table class="table">
+    <thead><tr><th style="width:64px">Order</th><th>Name</th><th>Title</th><th>Role</th><th>Affiliation</th><th>Portrait</th><th></th></tr></thead>
+    <tbody id="past-members-tbody">
+      {% for m in board.members %}
+      <tr class="pm-row" data-pm-id="{{ m.id }}">
+        <td><input class="input input-sm" name="pm_order_{{ m.id }}" value="{{ m.display_order }}" style="width:56px;"></td>
+        <td><input class="input input-sm" name="pm_name_{{ m.id }}" value="{{ m.full_name }}"></td>
+        <td><input class="input input-sm" name="pm_title_{{ m.id }}" value="{{ m.title }}" style="width:70px;"></td>
+        <td><input class="input input-sm" name="pm_role_{{ m.id }}" value="{{ m.role }}"></td>
+        <td><input class="input input-sm" name="pm_affil_{{ m.id }}" value="{{ m.affiliation }}"></td>
+        <td>
+          {% if m.portrait_filename %}
+            <img src="{{ url_for('public.committee_upload', name=m.portrait_filename) }}" class="sponsor-thumb" alt="">
+          {% endif %}
+          <input class="input input-sm" name="pm_portrait_{{ m.id }}" type="file" accept=".png,.jpg,.jpeg,.webp" style="width:120px;">
+        </td>
+        <td>
+          <input type="hidden" name="pm_delete_{{ m.id }}" value="">
+          <button type="button" class="btn btn-quiet btn-sm js-remove-pm">Remove</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <template id="pm-row-tmpl">
+    <tr class="pm-row pm-row--new">
+      <td><input class="input input-sm" name="new_pm_order[]" value="" style="width:56px;"></td>
+      <td><input class="input input-sm" name="new_pm_name[]" value=""></td>
+      <td><input class="input input-sm" name="new_pm_title[]" value="" style="width:70px;"></td>
+      <td><input class="input input-sm" name="new_pm_role[]" value=""></td>
+      <td><input class="input input-sm" name="new_pm_affil[]" value=""></td>
+      <td></td>
+      <td><button type="button" class="btn btn-quiet btn-sm js-remove-row">Remove</button></td>
+    </tr>
+  </template>
+  <button type="button" class="btn btn-ghost btn-sm" id="add-pm-btn" style="margin-top:8px;">+ Add member</button>
+
+  <div style="margin-top:24px;">
+    <button class="btn btn-primary" type="submit">Save</button>
+  </div>
+</form>
+
+<script>
+document.addEventListener("DOMContentLoaded", function(){
+  var tmpl = document.getElementById("pm-row-tmpl");
+  var tbody = document.getElementById("past-members-tbody");
+  var addBtn = document.getElementById("add-pm-btn");
+  if (addBtn && tmpl && tbody) {
+    addBtn.addEventListener("click", function(){
+      tbody.appendChild(tmpl.content.firstElementChild.cloneNode(true));
+    });
+  }
+  if (tbody) {
+    tbody.addEventListener("click", function(e){
+      var btn = e.target.closest("button");
+      if (!btn) return;
+      if (btn.classList.contains("js-remove-pm")) {
+        var row = btn.closest("tr");
+        if (row && row.dataset.pmId) {
+          var h = row.querySelector('input[type="hidden"]');
+          if (h) h.value = "1";
+          row.style.display = "none";
+        }
+      } else if (btn.classList.contains("js-remove-row")) {
+        btn.closest("tr").parentNode.removeChild(btn.closest("tr"));
+      }
+    });
+  }
+});
+</script>
+{% endblock %}

@@ -42,6 +42,7 @@ class Conference(db.Model):
     venue = db.Column(db.String(200), default="")
     hero_caption = db.Column(db.String(200), default="")
     hero_image_filename = db.Column(db.String(255))
+    hero_image_mode = db.Column(db.String(16), default="cover", nullable=False)
     booklet_filename = db.Column(db.String(255))
     is_featured = db.Column(db.Boolean, default=False, nullable=False)
     is_draft = db.Column(db.Boolean, default=False, nullable=False)

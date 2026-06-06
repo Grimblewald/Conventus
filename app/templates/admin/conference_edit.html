@@ -135,6 +135,15 @@
           {% if c.hero_image_filename %}
             <label class="check-label" style="margin-top:8px;"><input type="checkbox" name="remove_hero_image"> Remove current</label>
           {% endif %}
+          <div style="margin-top:12px;">
+            <span class="label">Hero image display</span>
+            <label class="check-label" style="margin-top:4px;">
+              <input type="radio" name="hero_image_mode" value="cover" {% if c.hero_image_mode != 'contain' %}checked{% endif %}> Cover (fill area, crop edges)
+            </label>
+            <label class="check-label">
+              <input type="radio" name="hero_image_mode" value="contain" {% if c.hero_image_mode == 'contain' %}checked{% endif %}> Contain (show full image)
+            </label>
+          </div>
         </div>
         <div class="field">
           <label for="booklet">Booklet (PDF)</label>

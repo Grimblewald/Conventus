@@ -128,7 +128,7 @@
       <div class="hero-visual">
         {% if featured.hero_image_filename %}
           <img src="{{ url_for('public.conference_upload', name=featured.hero_image_filename) }}"
-               alt="{{ featured.hero_caption or featured.title }}">
+               alt="{{ featured.hero_caption or featured.title }}" style="object-fit: {{ featured.hero_image_mode or 'cover' }};">
         {% elif site.hero_image_filename %}
           <img src="{{ url_for('public.site_upload', name=site.hero_image_filename) }}"
                alt="{{ site.site_name }} hero">
@@ -161,7 +161,7 @@
         <div class="art">
           {% if c.hero_image_filename %}
             <img src="{{ url_for('public.conference_upload', name=c.hero_image_filename) }}"
-                 alt="{{ c.hero_caption or c.title }}">
+                 alt="{{ c.hero_caption or c.title }}" style="object-fit: {{ c.hero_image_mode or 'cover' }};">
           {% else %}
             {# Two extra placeholder skins for visual rhythm in the grid. #}
             <div class="ph {% if loop.index == 2 %}ph-warm{% elif loop.index == 3 %}ph-dark{% endif %}"

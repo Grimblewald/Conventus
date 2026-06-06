@@ -60,7 +60,7 @@
     </div>
     <div class="hero-visual">
       {% if c.hero_image_filename %}
-        <img src="{{ url_for('public.conference_upload', name=c.hero_image_filename) }}" alt="{{ c.hero_caption or c.title }}">
+        <img src="{{ url_for('public.conference_upload', name=c.hero_image_filename) }}" alt="{{ c.hero_caption or c.title }}" style="object-fit: {{ c.hero_image_mode or 'cover' }};">
       {% else %}
         <div class="ph" data-label="EVENT IMAGE"></div>
       {% endif %}

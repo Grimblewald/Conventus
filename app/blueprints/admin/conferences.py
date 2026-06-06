@@ -132,6 +132,7 @@ def conference_save(cid):
         c.venue = (request.form.get("venue") or "").strip()
         c.tracks = request.form.get("tracks", "")
         c.hero_caption = (request.form.get("hero_caption") or "").strip()
+        c.hero_image_mode = request.form.get("hero_image_mode", "cover").strip() or "cover"
         c.is_featured = bool(request.form.get("is_featured"))
         if c.is_featured:
             _unfeature_others(c.id)

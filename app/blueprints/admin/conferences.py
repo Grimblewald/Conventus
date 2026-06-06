@@ -5,8 +5,11 @@ from __future__ import annotations
 
 import secrets
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
-from flask import current_app, flash, redirect, render_template, request, url_for
+from flask import (
+    current_app, flash, redirect, render_template, request, send_file, url_for,
+)
 from flask_login import current_user
 
 from . import admin_bp
@@ -522,3 +525,156 @@ def _unfeature_others(exclude_id: int | None = None) -> None:
     if exclude_id is not None:
         q = q.filter(Conference.id != exclude_id)
     q.update({Conference.is_featured: False}, synchronize_session=False)
+
+
+# ---------------------------------------------------------------------------
+# Compile abstract booklet (LaTeX source zip)
+# ---------------------------------------------------------------------------
+
+@admin_bp.route("/conferences/<int:cid>/compile-booklet", methods=["POST"])
+@requires_permission("abs.compile_booklet")
+def conference_compile_booklet(cid):
+    import hashlib
+    import shutil
+    import tempfile
+    import zipfile
+
+    from ...models import Abstract
+
+    c = Conference.query.get_or_404(cid)
+    abstracts = (
+        Abstract.query
+        .filter_by(conference_id=c.id)
+        .filter(Abstract.status == "accepted")
+        .filter(Abstract.deleted_at.is_(None))
+        .order_by(Abstract.created_at.asc())
+        .all()
+    )
+    if not abstracts:
+        flash("No accepted abstracts to compile.", "error")
+        return redirect(url_for("admin.abstracts"))
+
+    # Build a cache key from abstract IDs + statuses so we only rebuild
+    # when something changes.
+    cache_key = hashlib.sha256(
+        ",".join(f"{a.id}:{a.status}" for a in abstracts).encode()
+    ).hexdigest()
+
+    cache_dir = Path(current_app.config["UPLOAD_FOLDER"]) / "abstracts" / ".booklet-cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_file = cache_dir / f"{c.slug}-{cache_key[:12]}.zip"
+
+    # Check for stale cached zips and clean them
+    for old in cache_dir.glob(f"{c.slug}-*.zip"):
+        if old != cache_file:
+            old.unlink(missing_ok=True)
+
+    if cache_file.exists():
+        return send_file(cache_file, as_attachment=True,
+                         download_name=f"abstracts-{c.slug}.zip")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp)
+
+        # Write LaTeX preamble
+        preamble = _booklet_preamble(c)
+        (src / "booklet.tex").write_text(preamble, encoding="utf-8")
+
+        # Write each abstract as a .tex fragment
+        for i, a in enumerate(abstracts, 1):
+            frag = _abstract_fragment(i, a)
+            (src / f"abstract_{i:03d}.tex").write_text(frag, encoding="utf-8")
+
+            # Copy figure if present
+            if a.figure_filename:
+                fig_src = (Path(current_app.config["UPLOAD_FOLDER"]) /
+                           "abstracts" / a.figure_filename.split("/", 1)[-1])
+                if fig_src.exists():
+                    ext = fig_src.suffix
+                    shutil.copy2(fig_src, src / f"fig_{i:03d}{ext}")
+
+            # Copy profile picture if present
+            if a.profile_picture_filename:
+                pic_src = (Path(current_app.config["UPLOAD_FOLDER"]) /
+                           "abstracts" / a.profile_picture_filename.split("/", 1)[-1])
+                if pic_src.exists():
+                    ext = pic_src.suffix
+                    shutil.copy2(pic_src, src / f"profile_{i:03d}{ext}")
+
+        # Zip everything
+        zip_path = cache_file
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+            for f in sorted(src.iterdir()):
+                zf.write(f, f.name)
+
+    return send_file(zip_path, as_attachment=True,
+                     download_name=f"abstracts-{c.slug}.zip")
+
+
+def _booklet_preamble(conference) -> str:
+    title = conference.title.replace("&", r"\&").replace("#", r"\#")
+    return r"""\documentclass[11pt,a4paper]{article}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{parskip}
+\usepackage{fancyhdr}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{""" + title + r"""}
+\rhead{Abstract Booklet}
+\cfoot{\thepage}
+
+\title{""" + title + r"""}
+\author{Abstract Booklet}
+\date{""" + conference.date_range + r"""}
+
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+"""
+
+
+def _abstract_fragment(index: int, abstract) -> str:
+    title = abstract.title.replace("&", r"\&").replace("#", r"\#").replace("_", r"\_")
+    authors = abstract.authors.replace("&", r"\&").replace("#", r"\#").replace("_", r"\_")
+    body = abstract.body
+    # Escape LaTeX specials in body text
+    body = body.replace("\\", r"\textbackslash{}")
+    body = body.replace("&", r"\&").replace("#", r"\#")
+    body = body.replace("$", r"\$").replace("%", r"\%")
+    body = body.replace("{", r"\{").replace("}", r"\}")
+    body = body.replace("~", r"\textasciitilde{}").replace("^", r"\^{}")
+
+    fig = ""
+    if abstract.figure_filename:
+        ext = Path(abstract.figure_filename).suffix
+        fig = (
+            r"\begin{figure}[htbp]" "\n"
+            r"\centering" "\n"
+            rf"\includegraphics[width=0.8\textwidth]{{fig_{index:03d}{ext}}}" "\n"
+            r"\caption{Figure}" "\n"
+            r"\end{figure}" "\n"
+        )
+
+    profile = ""
+    if abstract.profile_picture_filename:
+        ext = Path(abstract.profile_picture_filename).suffix
+        profile = (
+            r"\begin{center}" "\n"
+            rf"\includegraphics[height=3cm]{{profile_{index:03d}{ext}}}" "\n"
+            r"\end{center}" "\n"
+        )
+
+    return (
+        r"\section{" + title + "}\n"
+        r"\textbf{" + authors + r"}\n\n"
+        + (profile if profile else "") +
+        (rf"\textbf{{Track:}} {abstract.track}" + r"\n\n" if abstract.track else "") +
+        (rf"\textbf{{Keywords:}} {abstract.keywords}" + r"\n\n" if abstract.keywords else "") +
+        body + "\n\n" +
+        fig +
+        r"\newpage\n"
+    )

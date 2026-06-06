@@ -43,6 +43,8 @@ BUILT_IN_PERMISSIONS: tuple[tuple[str, str, str, str], ...] = (
      "Read, decide on, and add reviewer notes to submitted abstracts."),
     ("abs.export",          "Abstracts",     "Export abstracts",
      "Download abstract bundles as ZIP/CSV."),
+    ("abs.compile_booklet", "Abstracts",     "Compile abstract booklet",
+     "Generate a LaTeX booklet zip of all accepted abstracts for a conference."),
 
     # Announcements
     ("ann.publish",         "Announcements", "Publish announcements",

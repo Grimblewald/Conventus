@@ -38,6 +38,7 @@ class CommitteeMember(db.Model):
 
     # Order on /committee
     display_order = db.Column(db.Integer, default=100, nullable=False, index=True)
+    is_contactable = db.Column(db.Boolean, default=False, nullable=False)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow,

@@ -69,6 +69,8 @@ def _committee_form(m: CommitteeMember | None):
         except ValueError:
             m.display_order = 100
 
+        m.is_contactable = bool(request.form.get("is_contactable"))
+
         # Optional user linkage
         try:
             uid = int(request.form.get("user_id") or "")

@@ -121,15 +121,28 @@ def page(slug):
 @public_bp.route("/contact", methods=["GET", "POST"])
 @limiter.limit("5 per hour;2 per minute", methods=["POST"])
 def contact():
-    recipients = (
+    from ...models.committee import CommitteeMember
+
+    admins = (
         User.query
-        .filter(User.role_name.in_(("admin", "committee")),
+        .filter(User.role_name == "admin",
                 User.deleted_at.is_(None),
                 User.full_name.isnot(None),
                 User.full_name != "")
         .order_by(User.full_name)
         .all()
     )
+    contactable_committee = (
+        User.query
+        .join(CommitteeMember, CommitteeMember.user_id == User.id)
+        .filter(User.role_name == "committee",
+                User.deleted_at.is_(None),
+                CommitteeMember.is_contactable.is_(True))
+        .options(db.joinedload(User.committee_profile))
+        .order_by(User.full_name)
+        .all()
+    )
+    recipients = admins + contactable_committee
     if request.method == "POST":
         # Honeypot — if a bot fills `website`, silently no-op success.
         if request.form.get("confirm_human", "").strip():

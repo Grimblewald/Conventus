@@ -21,7 +21,7 @@
         <select class="select" id="recipient_id" name="recipient_id" required>
           <option value="">— Select —</option>
           {% for r in recipients %}
-            <option value="{{ r.id }}">{{ r.full_name }}</option>
+            <option value="{{ r.id }}">{{ r.full_name }}{% if r.committee_profile and r.committee_profile.role %} — {{ r.committee_profile.role }}{% endif %}</option>
           {% endfor %}
         </select>
       </div>

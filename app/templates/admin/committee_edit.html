@@ -77,6 +77,13 @@
         </select>
         <div class="help">Linking lets that user edit their own profile if you grant them <code>committee.edit_self</code>.</div>
       </div>
+      <div class="field" style="margin-top:8px;">
+        <label class="check-label">
+          <input type="checkbox" name="is_contactable" value="1" {% if m and m.is_contactable %}checked{% endif %}>
+          Visible on contact form as "{{ m.full_name or '(name)' }} — {{ m.role or '(role)' }}"
+        </label>
+        <div class="help">When checked, site visitors can select this member from the contact-form recipient list.</div>
+      </div>
     </div>
   </div>
   <div style="display:flex; justify-content:space-between; margin-top:24px;">

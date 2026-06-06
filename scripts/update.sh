@@ -80,7 +80,12 @@ if ! git pull; then
 fi
 ok "Pull succeeded."
 
-# 3. Restart
+# 3. Migrate database
+info "Applying database migrations…"
+uv run flask db upgrade
+ok "Migrations applied."
+
+# 4. Restart
 info "Restarting service…"
 fuser -k "$PORT/tcp" 2>/dev/null || true
 sleep 1

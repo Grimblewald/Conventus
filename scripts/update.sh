@@ -85,6 +85,13 @@ chmod +x scripts/*.sh 2>/dev/null || true
 
 # 3. Migrate database
 info "Applying database migrations…"
+# If the DB was restored from a raw backup, stamp the baseline so that
+# only incremental migrations run (avoids the initial db.create_all()
+# migration from creating columns that later migrations would duplicate).
+if ! uv run flask db current 2>/dev/null | grep -q '^[0-9a-f]'; then
+    uv run flask db stamp 4a1b2c3d4e5f
+    ok "Stamped baseline migration."
+fi
 uv run flask db upgrade
 ok "Migrations applied."
 

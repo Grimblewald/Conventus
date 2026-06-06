@@ -17,23 +17,24 @@ depends_on = None
 
 
 def upgrade():
-    op.create_table(
-        'organising_committee_members',
-        sa.Column('id', sa.Integer(), nullable=False),
-        sa.Column('conference_id', sa.Integer(), nullable=False),
-        sa.Column('full_name', sa.String(length=200), nullable=False),
-        sa.Column('role', sa.String(length=120), nullable=True),
-        sa.Column('affiliation', sa.String(length=200), nullable=True),
-        sa.Column('email', sa.String(length=200), nullable=True),
-        sa.Column('portrait_filename', sa.String(length=255), nullable=True),
-        sa.Column('display_order', sa.Integer(), nullable=False),
-        sa.ForeignKeyConstraint(['conference_id'], ['conferences.id'], ondelete='CASCADE'),
-        sa.PrimaryKeyConstraint('id'),
-    )
-    op.create_index(
-        op.f('ix_organising_committee_members_conference_id'),
-        'organising_committee_members', ['conference_id'], unique=False,
-    )
+    op.execute("""
+        CREATE TABLE IF NOT EXISTS organising_committee_members (
+            id INTEGER NOT NULL,
+            conference_id INTEGER NOT NULL,
+            full_name VARCHAR(200) NOT NULL,
+            role VARCHAR(120),
+            affiliation VARCHAR(200),
+            email VARCHAR(200),
+            portrait_filename VARCHAR(255),
+            display_order INTEGER NOT NULL,
+            PRIMARY KEY (id),
+            FOREIGN KEY(conference_id) REFERENCES conferences (id) ON DELETE CASCADE
+        )
+    """)
+    op.execute("""
+        CREATE INDEX IF NOT EXISTS ix_organising_committee_members_conference_id
+        ON organising_committee_members (conference_id)
+    """)
 
 
 def downgrade():

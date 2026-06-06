@@ -19,65 +19,107 @@ SQLite.  Lightweight enough to deploy on a Pi or an old phone.
 - Hardened OTP login, CSRF on every form, CSP via Talisman, image
   validation, rate-limited OTP issuance, attempt counter + lockout
 - Postgres or SQLite via `DATABASE_URL`; Redis-backed rate limiting is opt-in
-- Designed to be updated with `git pull` — see `docs/UPDATING.md`
+- One-command updates: `uv run python -m app update` (backs up DB, pulls
+  latest code, runs migrations, restarts the service)
 
 There is **no** branding baked in — the placeholder content reads "Name
 Your Society" everywhere and is editable from the admin panel.
 
-## Quick start (Cloudflare Tunnel)
+## Setting up on a VPS
 
-The recommended path.  **No nginx, no certbot, no cert.pem, no port
-forwarding** — just a domain on Cloudflare and a scoped API token.
-Requires `cloudflared`, `curl`, `jq`, and `openssl`.
+The recommended host is a small Linux VPS.  **[Binary Lane][bl]** (Sydney
+or Melbourne) ships Ubuntu with `python3`, `git`, `curl`, `jq`, and
+`openssl` pre-installed.
 
-```bash
-git clone https://github.com/your-org/conventus.git
-cd conventus
-chmod +x scripts/launch_cloudflared.sh
-./scripts/launch_cloudflared.sh
-```
+1. **Install cloudflared**
 
-The script handles everything interactively on first run — copies the
-`.env` template, generates a `SECRET_KEY`, prompts for your domain,
-a [scoped Cloudflare API token][deploy], your Account ID if needed,
-and your SMTP settings so email works out of the box.  `cloudflared
-tunnel login` is never used.
+   Follow the official package repository setup at
+   **[pkg.cloudflare.com][cfpkg]**, then:
 
-Visit the setup URL printed in the terminal, paste the one-time setup
-password, and step through the wizard.  After that the admin panel is
-yours.
+   ```bash
+   sudo apt install cloudflared
+   ```
 
-Full walkthrough: [`docs/DEPLOY-CLOUDFLARE-SIMPLE.md`][deploy]
+2. **Install uv** (if not already present)
 
-[deploy]: docs/DEPLOY-CLOUDFLARE-SIMPLE.md
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+
+3. **Clone and set up**
+
+   ```bash
+   git clone https://github.com/your-org/conventus.git
+   cd conventus
+   chmod +x scripts/update.sh
+   ```
+
+4. **Launch the site**
+
+   ```bash
+   uv run python -m app launch
+   ```
+
+   On first run the script walks you through hostname, API token, and
+   mail settings.  It writes everything to `.env` and prints a
+   one-time setup password — visit your domain and step through the
+   wizard.  After that the admin panel is yours.
+
+5. **Register service** (so the site starts on boot)
+
+   ```bash
+   uv run python -m app register-service
+   ```
+
+[bl]: https://www.binarylane.com.au
+[cfpkg]: https://pkg.cloudflare.com
+
+### Commands
+
+| Command | What it does |
+|---|---|
+| `uv run python -m app launch` | Start gunicorn + Cloudflare tunnel |
+| `uv run python -m app update` | Backup DB → `git pull` → migrate → restart service |
+| `uv run python -m app revert` | Restore last backup → git reset → restart |
+| `uv run python -m app backup` | Manual database + uploads backup |
+| `uv run python -m app register-service` | Install systemd user units |
+| `uv run python -m app uninstall-service` | Remove systemd user units |
+
+The `update` command is designed to be run while the site is live.
+Backups are stored in `var/backups/`.  If an update goes sideways, `revert`
+restores the exact state from before the last `update`.
 
 ## Local development
 
 ```bash
 git clone https://github.com/your-org/conventus.git
 cd conventus
-
-# The launch script also works for local dev — just skip the Cloudflare
-# token prompt (press Enter) and choose "console" for email (OTP codes
-# print to the terminal).
-chmod +x scripts/launch_cloudflared.sh
-./scripts/launch_cloudflared.sh
-
-# Or skip the script entirely and run gunicorn directly:
 uv sync
 cp .env.example .env
 # Generate a SECRET_KEY and put it in .env, then:
-uv run gunicorn --bind 127.0.0.1:5005 wsgi:app
+uv run python wsgi.py
 ```
 
 Open http://127.0.0.1:5005. Every URL redirects to `/setup` until the
 first-run wizard is complete.
+
+For OTP testing, set `MAIL_BACKEND=console` in `.env` — codes print to
+the terminal.
+
+## Tests
+
+```bash
+uv sync --extra dev
+uv run python -m pytest
+uv run ruff check app/
+```
 
 ## Reading the codebase
 
 ```
 app/
 ├── __init__.py             # Flask app factory + setup-gate
+├── __main__.py             # CLI dispatcher (launch / update / revert / …)
 ├── config.py               # env-driven config (SQLite / Postgres)
 ├── extensions.py           # shared Flask-* singletons
 ├── models/                 # SQLAlchemy models, one file per domain
@@ -92,15 +134,13 @@ app/
 ├── templates/              # Jinja2 templates
 └── static/                 # site.css (vars-driven) + site.js
 deploy/                     # systemd units, nginx config
-scripts/                    # launch_cloudflared.sh, launch.sh, backup.py,
-                            # healthcheck.py, admin_cli.py
-docs/                       # install + deploy + security + updating
+scripts/                    # launch_cloudflared.sh, launch.sh, update.sh,
+                            # backup.py, healthcheck.py, admin_cli.py
 migrations/                 # Alembic/Flask-Migrate
 tests/                      # pytest suite
 placeholder.yaml            # seeded by the wizard on first run
 .env.example                # secrets template
 wsgi.py                     # gunicorn entry
-CHANGELOG.md                # release notes
 ```
 
 ## Documentation index

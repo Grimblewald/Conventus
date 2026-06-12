@@ -49,7 +49,7 @@ or Melbourne) ships Ubuntu with `python3`, `git`, `curl`, `jq`, and
 3. **Clone and set up**
 
    ```bash
-   git clone https://github.com/your-org/conventus.git
+   git clone https://github.com/Grimblewald/Conventus.git
    cd conventus
    chmod +x scripts/update.sh
    ```

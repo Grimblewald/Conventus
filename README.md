@@ -7,15 +7,21 @@ SQLite.  Lightweight enough to deploy on a Pi or an old phone.
 - Public pages, conferences, committee directory, announcements, contact form
 - Member accounts (OTP-only sign-in — no passwords stored, ever)
 - Per-conference registration & abstract submission + review
+- Abstract booklet compilation (LaTeX source zip with per-abstract folders,
+  header/footer/background images, portrait layout, dynamic figure sizing)
 - An admin panel covering **every** customisable surface of the site:
   - **Site → Identity / Palette / Fonts / Images** (no developer required)
   - **Pages** — Markdown-bodied CMS pages with stable slugs
   - **Navigation** & **Footer** editors
   - **Committee** — portraits, ORCID/Scholar links, drag-style reorder
-  - **Conferences** — incl. per-conference price tiers
+  - **Conferences** — incl. per-conference price tiers, sponsor tiers,
+    booklet imagery, organising committee
   - **Announcements**
   - **Members** + per-role **Permissions** matrix
   - **Audit log**
+  - **System → Backup** — full-site zip download & OTP-gated restore
+    with chunked transfer for large files
+  - **System → Update** — OTP-gated git pull + migration from the admin panel
 - Hardened OTP login, CSRF on every form, CSP via Talisman, image
   validation, rate-limited OTP issuance, attempt counter + lockout
 - Postgres or SQLite via `DATABASE_URL`; Redis-backed rate limiting is opt-in
@@ -27,8 +33,7 @@ Your Society" everywhere and is editable from the admin panel.
 
 ## Setting up on a VPS
 
-The recommended host is a small Linux VPS.  **[Binary Lane][bl]** (Sydney
-or Melbourne) ships Ubuntu with `python3`, `git`, `curl`, `jq`, and
+The recommended host is a small Linux VPS rented from **[Binary Lane][bl]** as its VPS instances ship Ubuntu with `python3`, `git`, `curl`, `jq`, and
 `openssl` pre-installed.
 
 1. **Install cloudflared**
@@ -50,7 +55,7 @@ or Melbourne) ships Ubuntu with `python3`, `git`, `curl`, `jq`, and
 
    ```bash
    git clone https://github.com/Grimblewald/Conventus.git
-   cd conventus
+   cd Conventus
    chmod +x scripts/update.sh
    ```
 
@@ -71,7 +76,7 @@ or Melbourne) ships Ubuntu with `python3`, `git`, `curl`, `jq`, and
    uv run python -m app register-service
    ```
 
-[bl]: https://www.binarylane.com.au
+[bl]: https://www.binarylane.com.au/vps-hosting/linux-vps
 [cfpkg]: https://pkg.cloudflare.com
 
 ### Commands
@@ -93,11 +98,11 @@ restores the exact state from before the last `update`.
 
 ```bash
 git clone https://github.com/your-org/conventus.git
-cd conventus
+cd Conventus
 uv sync
 cp .env.example .env
 # Generate a SECRET_KEY and put it in .env, then:
-uv run python wsgi.py
+    python wsgi.py
 ```
 
 Open http://127.0.0.1:5005. Every URL redirects to `/setup` until the
@@ -110,7 +115,7 @@ the terminal.
 
 ```bash
 uv sync --extra dev
-uv run python -m pytest
+uv run pytest
 uv run ruff check app/
 ```
 

@@ -442,9 +442,15 @@ def backup_restore_confirm(token: str):
 
         try:
             _perform_restore(restore_path)
-            audit.record("backup.restored",
-                         target_kind="system", target_id=0,
-                         summary="Site restored from backup")
+            # Dispose engine — the DB file was replaced, so existing
+            # connections point to the old (unlinked) file.
+            db.engine.dispose()
+            try:
+                audit.record("backup.restored",
+                             target_kind="system", target_id=0,
+                             summary="Site restored from backup")
+            except Exception:
+                pass
             flash("Site restored successfully. You may need to restart the app.",
                   "success")
             return redirect(url_for("admin.index"))

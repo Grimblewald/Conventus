@@ -7,7 +7,7 @@
   <a class="link" href="{{ url_for('admin.committee_index') }}">← back</a>
 </div>
 
-<form method="post" class="form form-wide" enctype="multipart/form-data">
+<form method="post" class="form form-wide" enctype="multipart/form-data" id="committee-edit-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="grid cols-2" style="gap:36px;">
     <div>
@@ -113,14 +113,14 @@
       </div>
     </div>
   </div>
-  <div style="display:flex; justify-content:space-between; margin-top:24px;">
-    <button class="btn btn-primary" type="submit">Save member</button>
+</form>
+<div style="display:flex; justify-content:space-between; margin-top:24px;">
+    <button class="btn btn-primary" type="submit" form="committee-edit-form">Save member</button>
     {% if m and can('committee.edit_any') %}
       <form method="post" action="{{ url_for('admin.committee_delete', mid=m.id) }}" data-confirm="Remove this member?">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="btn btn-quiet" type="submit">Delete</button>
       </form>
     {% endif %}
-  </div>
-</form>
+</div>
 {% endblock %}

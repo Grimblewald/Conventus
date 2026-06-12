@@ -79,7 +79,9 @@ class BaseConfig:
         Path(os.environ.get("UPLOAD_FOLDER") or DEFAULT_UPLOAD_DIR).resolve()
     )
     # App-wide hard cap. Per-route caps (smaller) live in the upload helpers.
-    MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16 MB
+    # Backup restores can legitimately exceed the old 16 MB cap, so we set a
+    # generous ceiling here — every other upload is gated by save_image/save_pdf.
+    MAX_CONTENT_LENGTH = 256 * 1024 * 1024  # 256 MB
     MAX_HERO_BYTES = 4 * 1024 * 1024       # 4 MB hero/logo/favicon
     MAX_FIGURE_BYTES = 8 * 1024 * 1024     # 8 MB abstract figure
     MAX_BOOKLET_BYTES = 12 * 1024 * 1024   # 12 MB conference booklet PDF

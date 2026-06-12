@@ -89,6 +89,10 @@ BUILT_IN_PERMISSIONS: tuple[tuple[str, str, str, str], ...] = (
      "Compose and send an email to a filtered list of members."),
     ("users.export",        "Members",       "Export member directory",
      "Download a CSV of registered members."),
+
+    # System
+    ("system.backup",       "System",        "Backup & restore",
+     "Create and restore full-site backup archives."),
 )
 
 

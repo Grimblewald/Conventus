@@ -725,7 +725,7 @@ section.block.ink .table td {
   background: var(--c-card-bg);
   overflow: hidden;
 }
-.edit-section[open] { border-color: color-mix(in oklab, var(--c-accent) 30%, var(--c-card-border)); }
+.edit-section[open] { border-color: color-mix(in oklab, var(--c-accent) 30%, var(--c-card-border)); overflow: visible; }
 
 .edit-section-summary {
   padding: 14px 20px;

@@ -264,7 +264,36 @@
         }
       });
     }
+
     });
+
+  // ---- Organising Committee modal (runs immediately — script at end of body) ----
+  var ocModal = document.getElementById("oc-modal-overlay");
+  var ocTrigger = document.getElementById("oc-trigger-btn");
+  var ocClose = document.getElementById("oc-modal-close");
+
+  function openOcModal() { if (ocModal) { ocModal.style.display = "flex"; document.body.style.overflow = "hidden"; } }
+  function closeOcModal() { if (ocModal) { ocModal.style.display = "none"; document.body.style.overflow = ""; } }
+
+  if (ocTrigger) {
+    ocTrigger.addEventListener("click", openOcModal);
+  }
+
+  if (ocClose) {
+    ocClose.addEventListener("click", closeOcModal);
+  }
+
+  if (ocModal) {
+    ocModal.addEventListener("click", function (e) {
+      if (e.target === ocModal) closeOcModal();
+    });
+  }
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && ocModal && ocModal.style.display === "flex") {
+      closeOcModal();
+    }
+  });
 
     // ---- OTP digit box ----
     var box = document.querySelector(".otp-box");

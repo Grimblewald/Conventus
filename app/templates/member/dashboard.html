@@ -48,11 +48,11 @@
             <td>
               {{ a.created_at.strftime('%-d %b %Y') }}
               {% if a.status in ('submitted', 'accepted') %}
-                <form method="post" action="{{ url_for('member.retract_abstract', aid=a.id) }}"
-                      data-confirm="Retract this abstract? This cannot be undone."
+                <form method="post" action="{{ url_for('member.delete_abstract_request', aid=a.id) }}"
+                      data-confirm="Request a confirmation code to delete this abstract?"
                       style="display:inline; margin-left:8px;">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                  <button class="btn btn-quiet btn-sm" type="submit">Retract</button>
+                  <button class="btn btn-quiet btn-sm" type="submit">Delete</button>
                 </form>
               {% endif %}
             </td>

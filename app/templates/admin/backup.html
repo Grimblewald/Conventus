@@ -1,0 +1,40 @@
+{% extends "admin/_base.html" %}
+{% block title %}Backup & Restore · Admin{% endblock %}
+{% block admin %}
+<div class="section-head">
+  <div><div class="eyebrow">System</div><h2>Backup &amp; Restore</h2></div>
+</div>
+
+<div class="grid cols-2" style="gap:36px;">
+
+  <!-- ============================================================ -->
+  <!-- Create Backup                                                  -->
+  <!-- ============================================================ -->
+  <div>
+    <h3>Create Backup</h3>
+    <p class="muted">Download a complete snapshot of the site — database, all uploaded images and files, plus instance configuration. Everything needed to replicate this site elsewhere or recover from a problem.</p>
+    <form method="post" action="{{ url_for('admin.backup_create') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-primary" type="submit">Download backup</button>
+    </form>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- Restore Backup                                                 -->
+  <!-- ============================================================ -->
+  <div>
+    <h3>Restore Backup</h3>
+    <p class="muted">Upload a previously-downloaded backup zip. This will <strong>overwrite</strong> the current database, all uploaded files, and instance flags. A safety backup is taken automatically before the restore begins.</p>
+    <p class="muted" style="color:var(--c-page-text);">You'll be emailed a confirmation code before changes are applied.</p>
+    <form method="post" action="{{ url_for('admin.backup_restore_upload') }}" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="field">
+        <label for="backup_file">Backup zip</label>
+        <input class="input" id="backup_file" name="backup_file" type="file" accept=".zip" required>
+      </div>
+      <button class="btn btn-primary" type="submit">Upload and verify</button>
+    </form>
+  </div>
+
+</div>
+{% endblock %}

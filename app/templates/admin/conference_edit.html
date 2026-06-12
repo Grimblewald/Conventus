@@ -162,6 +162,40 @@
   </details>
 
   <!-- ============================================================ -->
+  <!-- Booklet Design                                                -->
+  <!-- ============================================================ -->
+  <details class="edit-section">
+    <summary class="edit-section-summary">Booklet Design</summary>
+    <div class="edit-section-body">
+      <p class="muted" style="margin-top:0;">Optional images applied to every page when the abstract booklet is compiled into a PDF.</p>
+      <div class="row-2">
+        <div class="field">
+          <label for="booklet_header">Header image</label>
+          <input class="input" id="booklet_header" name="booklet_header" type="file" accept=".png,.jpg,.jpeg,.webp">
+          {% if c.booklet_header_filename %}
+            <label class="check-label" style="margin-top:8px;"><input type="checkbox" name="remove_booklet_header"> Remove current</label>
+          {% endif %}
+        </div>
+        <div class="field">
+          <label for="booklet_footer">Footer image</label>
+          <input class="input" id="booklet_footer" name="booklet_footer" type="file" accept=".png,.jpg,.jpeg,.webp">
+          {% if c.booklet_footer_filename %}
+            <label class="check-label" style="margin-top:8px;"><input type="checkbox" name="remove_booklet_footer"> Remove current</label>
+          {% endif %}
+        </div>
+      </div>
+      <div class="field">
+        <label for="booklet_background">Page background</label>
+        <input class="input" id="booklet_background" name="booklet_background" type="file" accept=".png,.jpg,.jpeg,.webp" style="max-width:400px;">
+        {% if c.booklet_background_filename %}
+          <label class="check-label" style="margin-top:8px;"><input type="checkbox" name="remove_booklet_background"> Remove current</label>
+        {% endif %}
+        <div class="help">A faint, full-page watermark behind every abstract.</div>
+      </div>
+    </div>
+  </details>
+
+  <!-- ============================================================ -->
   <!-- Price Tiers                                                   -->
   <!-- ============================================================ -->
   <details class="edit-section">
@@ -268,11 +302,24 @@
   </details>
 
   <!-- ============================================================ -->
-  <!-- Organising Committee                                          -->
+  <!-- Organising Committee — trigger button                         -->
   <!-- ============================================================ -->
-  <details class="edit-section">
-    <summary class="edit-section-summary">Organising Committee</summary>
-    <div class="edit-section-body">
+  <div class="edit-section">
+    <button type="button" class="edit-section-summary" id="oc-trigger-btn" style="width:100%; border:none; background:transparent; text-align:left;">
+      Organising Committee
+      <small style="font-weight:400;color:var(--c-muted-text);margin-left:8px;">
+        ({{ c.organising_committee|length }} member{% if c.organising_committee|length != 1 %}s{% endif %})
+      </small>
+    </button>
+  </div>
+
+  <!-- ============================================================ -->
+  <!-- Organising Committee — modal (inside form, hidden by default) -->
+  <!-- ============================================================ -->
+  <div class="oc-modal-overlay" id="oc-modal-overlay" style="display:none;">
+    <div class="oc-modal">
+      <button type="button" class="oc-modal-close" id="oc-modal-close">&times;</button>
+      <h3>Organising Committee</h3>
       <table class="table">
         <thead><tr><th style="width:64px">Order</th><th>Name</th><th>Role</th><th>Affiliation</th><th>Email</th><th style="width:70px"></th></tr></thead>
         <tbody id="oc-tbody">
@@ -303,20 +350,7 @@
       </template>
       <button type="button" class="btn btn-ghost btn-sm" id="add-oc-btn" style="margin-top:8px;">+ Add member</button>
     </div>
-  </details>
-
-  {% if can('abs.compile_booklet') %}
-  <details class="edit-section">
-    <summary class="edit-section-summary">Abstract Booklet</summary>
-    <div class="edit-section-body">
-      <form method="post" action="{{ url_for('admin.conference_compile_booklet', cid=c.id) }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <p class="muted">Generates a LaTeX source zip containing all accepted abstracts for this conference. If nothing has changed, the same file is served from cache.</p>
-        <button class="btn btn-primary" type="submit">Compile abstract booklet</button>
-      </form>
-    </div>
-  </details>
-  {% endif %}
+  </div>
 
   <!-- ============================================================ -->
   <!-- Save                                                          -->
@@ -326,6 +360,21 @@
     <span class="save-bar-status">Review your changes above, then save.</span>
   </div>
 </form>
+
+{% if can('abs.compile_booklet') %}
+<div class="edit-section">
+  <div class="edit-section-summary" style="cursor:default; border-bottom:1px solid var(--c-card-border); padding-bottom:12px; margin-bottom:12px;">
+    Abstract Booklet
+  </div>
+  <div class="edit-section-body" style="padding:0;">
+    <form method="post" action="{{ url_for('admin.conference_compile_booklet', cid=c.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <p class="muted">Generates a LaTeX source zip containing all accepted abstracts for this conference. If nothing has changed, the same file is served from cache.</p>
+      <button class="btn btn-primary" type="submit">Compile abstract booklet</button>
+    </form>
+  </div>
+</div>
+{% endif %}
 
 {% if can('conf.delete') %}
 <div class="danger-zone">

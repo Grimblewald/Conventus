@@ -54,7 +54,7 @@
           <a class="btn btn-primary" href="{{ url_for('auth.login') }}">Sign in to register</a>
         {% endif %}
         {% if c.booklet_filename %}
-          <a class="btn btn-quiet" href="{{ url_for('public.conference_upload', name=c.booklet_filename) }}">Programme booklet (PDF)</a>
+          <a class="btn btn-ghost" href="{{ url_for('public.conference_upload', name=c.booklet_filename) }}">Programme booklet (PDF)</a>
         {% endif %}
         {% if c.organising_committee %}
           <button class="btn btn-ghost" id="oc-toggle-btn" type="button">Organising Committee</button>

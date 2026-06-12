@@ -394,7 +394,11 @@ section.block.ink .table td {
   text-transform: uppercase; letter-spacing: 0.14em; color: var(--c-accent);
   margin-bottom: 6px;
 }
-.committee-card .aff { font-size: 14px; color: var(--c-muted-text); margin-bottom: 8px; }
+.committee-card .aff { font-size: 14px; color: var(--c-muted-text); margin-bottom: 8px; line-height: 1.5; }
+.committee-card .interests {
+  font-size: 12px; color: var(--c-muted-text); font-style: italic;
+  margin-bottom: 0; line-height: 1.6;
+}
 .committee-card ul.links {
   list-style: none; padding: 0; margin: 12px 0 0; display: flex; gap: 12px;
   font-family: var(--f-ui); font-size: 13px;

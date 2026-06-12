@@ -22,16 +22,18 @@
               {% endif %}
             </div>
             <h3>{{ m.display_name }}</h3>
-            {% if m.role %}<div class="role">{{ m.role }}</div>{% endif %}
-            {% if m.dynamic_roles %}
-              {% for entry in m.dynamic_roles %}
-                <div class="aff" style="margin-top:2px;">{% if entry.role %}{{ entry.role }}{% endif %}{% if entry.role and entry.affiliation %} · {% endif %}{{ entry.affiliation }}</div>
-              {% endfor %}
+            {% set affil_parts = [] %}
+            {% if m.role %}{{ affil_parts.append(m.role) or '' }}{% endif %}
+            {% if m.position %}{{ affil_parts.append(m.position) or '' }}{% endif %}
+            {% if m.affiliation %}{{ affil_parts.append(m.affiliation) or '' }}{% endif %}
+            {% for entry in m.dynamic_roles %}
+              {% if entry.role %}{{ affil_parts.append(entry.role) or '' }}{% endif %}
+              {% if entry.affiliation %}{{ affil_parts.append(entry.affiliation) or '' }}{% endif %}
+            {% endfor %}
+            {% if affil_parts %}
+              <div class="aff">{{ affil_parts | join(' · ') }}</div>
             {% endif %}
-            {% if m.position or m.affiliation %}
-              <div class="aff">{{ m.position }}{% if m.position and m.affiliation %} · {% endif %}{{ m.affiliation }}</div>
-            {% endif %}
-            {% if m.interests %}<p>{{ m.interests }}</p>{% endif %}
+            {% if m.interests %}<p class="interests">{{ m.interests }}</p>{% endif %}
             <ul class="links">
               {% if m.orcid %}<li><a href="https://orcid.org/{{ m.orcid }}" target="_blank" rel="noopener">ORCID</a></li>{% endif %}
               {% if m.scholar_url %}<li><a href="{{ m.scholar_url }}" target="_blank" rel="noopener">Scholar</a></li>{% endif %}

@@ -1,0 +1,45 @@
+{% extends "admin/_base.html" %}
+{% block title %}Update · Admin{% endblock %}
+{% block admin %}
+<div class="section-head">
+  <div><div class="eyebrow">System</div><h2>Update Site</h2></div>
+</div>
+
+{% if status.enabled %}
+  <div style="margin-bottom:24px; padding:14px 18px; border:1px solid var(--c-card-border); border-radius:var(--rad-sm); background:var(--c-card-bg);">
+    <div style="font-family:var(--f-ui); font-size:13px; color:var(--c-muted-text); margin-bottom:6px;">Current status</div>
+    <div style="font-size:15px;">
+      {% if status.behind %}
+        <span style="color:var(--c-accent); font-weight:600;">Update available</span>
+      {% else %}
+        <span style="color:var(--c-page-text);">Up to date</span>
+      {% endif %}
+    </div>
+    <div style="font-family:var(--f-ui); font-size:12px; color:var(--c-muted-text); margin-top:4px;">
+      Branch: <code>{{ status.branch }}</code>
+      {% if status.local_sha %} &middot; Local: <code>{{ status.local_sha[:7] }}</code>{% endif %}
+      {% if status.remote_sha %} &middot; Remote: <code>{{ status.remote_sha[:7] }}</code>{% endif %}
+    </div>
+    <div style="font-family:var(--f-ui); font-size:12px; color:var(--c-muted-text); margin-top:2px;">
+      Checked: {{ status.checked_at.strftime('%-d %b %Y %H:%M') }}
+    </div>
+  </div>
+{% else %}
+  <div style="margin-bottom:24px; padding:14px 18px; border:1px solid var(--c-card-border); border-radius:var(--rad-sm);">
+    <p class="muted">Update checks are disabled. Set <code>UPDATE_REMOTE_URL</code> in your <code>.env</code> to enable.</p>
+  </div>
+{% endif %}
+
+<div style="display:flex; gap:12px; flex-wrap:wrap;">
+  <form method="get" action="{{ url_for('admin.update_page') }}">
+    <button class="btn btn-ghost btn-sm" type="submit">Check again</button>
+  </form>
+  <form method="post" action="{{ url_for('admin.update_request') }}"
+        data-confirm="Send a confirmation code to run git pull and apply migrations?">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn-primary" type="submit">Update now</button>
+  </form>
+</div>
+
+<p class="muted" style="margin-top:18px;">Runs <code>git pull</code> followed by <code>flask db upgrade</code>. A restart may be required to apply code changes.</p>
+{% endblock %}

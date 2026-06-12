@@ -51,6 +51,7 @@
       <li><a href="{{ url_for('admin.audit_log') }}">Audit log</a></li>
       {% if can('system.backup') %}
         <li><a href="{{ url_for('admin.backup') }}">Backup</a></li>
+        <li><a href="{{ url_for('admin.update_page') }}">Update</a></li>
       {% endif %}
     {% endif %}
   </ul>

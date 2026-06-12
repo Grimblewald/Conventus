@@ -369,7 +369,6 @@ def backup_restore_finalize():
     """Called after all chunks are uploaded.  Validates the recombined zip,
     generates an OTP, and redirects to the confirm page."""
     upload_id = (request.form.get("upload_id") or "").strip()
-    total_hash = (request.form.get("total_hash") or "").strip().lower()
 
     if not upload_id:
         flash("Missing upload session.", "error")
@@ -380,12 +379,6 @@ def backup_restore_finalize():
 
     if not restore_path.exists():
         flash("Upload session not found. The chunks may not all have arrived.",
-              "error")
-        return redirect(url_for("admin.backup"))
-
-    if total_hash and _sha256_file(restore_path) != total_hash:
-        restore_path.unlink(missing_ok=True)
-        flash("Total checksum mismatch. The uploaded file may be corrupted.",
               "error")
         return redirect(url_for("admin.backup"))
 

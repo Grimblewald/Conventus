@@ -147,15 +147,12 @@
                                 function (b) { return b.toString(16).padStart(2, "0"); }).join("");
       var totalChunks = Math.ceil(file.size / CHUNK_BYTES);
       var chunkIndex = 0;
-      var lastHash = "";
 
       function sendNext() {
         if (chunkIndex >= totalChunks) {
-          // Finalize — trigger OTP flow
           restoreProg.textContent = "Validating...";
           var finalForm = new FormData();
           finalForm.append("upload_id", uploadId);
-          finalForm.append("total_hash", lastHash);
           fetch("{{ url_for('admin.backup_restore_finalize') }}", {
             method: "POST",
             headers: { "X-CSRFToken": csrfToken },
@@ -183,7 +180,6 @@
         }).then(function (hashBuf) {
           var hashArr = Array.from(new Uint8Array(hashBuf));
           var hashHex = hashArr.map(function (b) { return b.toString(16).padStart(2, "0"); }).join("");
-          lastHash = hashHex;
 
           var formData = new FormData();
           formData.append("upload_id", uploadId);

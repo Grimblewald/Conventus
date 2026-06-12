@@ -75,33 +75,15 @@
         headers: { "X-CSRFToken": csrfToken, "Accept": "application/json" },
       })
         .then(function (r) {
-          // If it's a direct file download (small backup), the content-type
-          // is application/zip.  If chunked, it's application/json.
-          var ct = r.headers.get("Content-Type") || "";
-          if (ct.indexOf("application/json") !== -1) return r.json().then(function (js) { return { json: js, blob: null }; });
-          return r.blob().then(function (b) { return { json: null, blob: b, filename: r.headers.get("X-Filename") || "backup.zip" }; });
+          if (!r.ok) throw new Error("Server returned " + r.status);
+          return r.json();
         })
-        .then(function (result) {
-          if (result && result.blob) {
-            // Small backup — save directly
-            var a = document.createElement("a");
-            a.href = URL.createObjectURL(result.blob);
-            a.download = result.filename;
-            a.click();
-            downloadBtn.disabled = false;
-            downloadBtn.textContent = "Download backup";
-            return;
-          }
-          if (!result || !result.json) {
-            throw new Error("Unexpected response");
-          }
-          var info = result.json;
+        .then(function (info) {
           if (info.error) throw new Error(info.error);
 
           downloadProg.style.display = "";
           downloadBtn.textContent = "Downloading...";
 
-          // Fetch each chunk
           var chunks = [];
           var fetched = 0;
           function fetchNext() {

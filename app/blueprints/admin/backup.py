@@ -301,16 +301,7 @@ def backup_create():
                  target_kind="system", target_id=0,
                  summary=f"Backup created: {zip_path.name}")
 
-    file_size = zip_path.stat().st_size
-    if file_size <= CHUNK_BYTES:
-        # Serve whole file directly
-        return send_file(
-            zip_path, as_attachment=True,
-            download_name=zip_path.name,
-            mimetype="application/zip",
-        )
-
-    # Split into chunks, delete original zip
+    # Always split into chunks — avoids client-side JSON-vs-binary sniffing.
     upload_id = secrets.token_hex(12)
     chunk_count, total_hash = _split_file(zip_path, upload_id)
     zip_path.unlink(missing_ok=True)

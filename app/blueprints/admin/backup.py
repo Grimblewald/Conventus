@@ -29,7 +29,7 @@ from ...services.mail import send_mail
 # Chunk size — keep under Flask's MAX_CONTENT_LENGTH (16 MB) and under
 # Cloudflare's free-tier request limit (100 MB).
 # ---------------------------------------------------------------------------
-CHUNK_BYTES = 16 * 1024 * 1024  # 16 MB
+CHUNK_BYTES = 15 * 1024 * 1024  # 15 MB (leaves room for multipart overhead)
 
 # ---------------------------------------------------------------------------
 # Generic helpers

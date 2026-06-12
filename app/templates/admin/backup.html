@@ -46,7 +46,7 @@
 (function () {
   "use strict";
 
-  var CHUNK_BYTES = 16 * 1024 * 1024;  // 16 MB
+  var CHUNK_BYTES = 15 * 1024 * 1024;  // 15 MB (room for multipart overhead)
 
   var csrfMeta = document.querySelector('meta[name="csrf-token"]');
   var csrfToken = csrfMeta ? csrfMeta.getAttribute("content") : "";

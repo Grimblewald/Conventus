@@ -49,6 +49,9 @@
     {% if current_user.is_admin %}
       <li><a href="{{ url_for('admin.permissions') }}">Permissions</a></li>
       <li><a href="{{ url_for('admin.audit_log') }}">Audit log</a></li>
+      {% if can('system.backup') %}
+        <li><a href="{{ url_for('admin.backup') }}">Backup</a></li>
+      {% endif %}
     {% endif %}
   </ul>
   {% endif %}

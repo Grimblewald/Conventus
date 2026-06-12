@@ -187,6 +187,32 @@ def conference_save(cid):
                               f"conferences/{c.booklet_filename}")
             c.booklet_filename = None
 
+        # Booklet decoration images (header, footer, background)
+        _BOOKLET_IMG_FIELDS = (
+            ("booklet_header", "booklet_header_filename", "booklet-header"),
+            ("booklet_footer", "booklet_footer_filename", "booklet-footer"),
+            ("booklet_background", "booklet_background_filename", "booklet-bg"),
+        )
+        for form_name, col_name, prefix in _BOOKLET_IMG_FIELDS:
+            uf = request.files.get(form_name)
+            if uf and uf.filename:
+                rel = save_image(
+                    uf, upload_folder=current_app.config["UPLOAD_FOLDER"],
+                    subdir="conferences", prefix=f"{prefix}-c{c.id}",
+                    max_bytes=current_app.config["MAX_HERO_BYTES"],
+                )
+                old_val = getattr(c, col_name, None)
+                if old_val:
+                    remove_upload(current_app.config["UPLOAD_FOLDER"],
+                                  f"conferences/{old_val}")
+                setattr(c, col_name, rel.split("/", 1)[-1])
+            elif request.form.get(f"remove_{form_name}"):
+                old_val = getattr(c, col_name, None)
+                if old_val:
+                    remove_upload(current_app.config["UPLOAD_FOLDER"],
+                                  f"conferences/{old_val}")
+                setattr(c, col_name, None)
+
         # -- Price tiers --
         for t in list(c.price_tiers):
             if request.form.get(f"tier_delete_{t.id}"):
@@ -507,6 +533,70 @@ def abstract_detail(aid):
 
 
 # ---------------------------------------------------------------------------
+# Abstract soft-delete (OTP-confirmed, admin)
+# ---------------------------------------------------------------------------
+
+@admin_bp.route("/abstracts/<int:aid>/delete-request", methods=["POST"])
+@requires_permission("abs.review")
+def abstract_delete_request(aid):
+    a = Abstract.query.get_or_404(aid)
+    if a.deleted_at is not None:
+        flash("This abstract has already been deleted.", "error")
+        return redirect(url_for("admin.abstracts"))
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    ttl = current_app.config["OTP_TTL_SECONDS"]
+    db.session.add(OTPCode(
+        email=current_user.email.lower(),
+        code=code,
+        purpose="abstract_delete",
+        expires_at=datetime.utcnow() + timedelta(seconds=ttl),
+        ip=request.remote_addr,
+    ))
+    db.session.commit()
+    send_mail(
+        to=current_user.email,
+        subject="Confirm abstract deletion",
+        body=(f"You requested to delete the abstract \"{a.title}\".\n\n"
+              f"Confirmation code: {code}\n\n"
+              f"This code expires in {ttl // 60} minutes. "
+              f"If you didn't request this, ignore the email."),
+    )
+    flash("A confirmation code has been sent to your email.", "success")
+    return redirect(url_for("admin.abstract_delete_confirm", aid=a.id))
+
+
+@admin_bp.route("/abstracts/<int:aid>/delete-confirm", methods=["GET", "POST"])
+@requires_permission("abs.review")
+def abstract_delete_confirm(aid):
+    a = Abstract.query.get_or_404(aid)
+    if a.deleted_at is not None:
+        flash("This abstract has already been deleted.", "error")
+        return redirect(url_for("admin.abstracts"))
+    if request.method == "POST":
+        entered = (request.form.get("code") or "").strip().replace(" ", "")
+        otp = (OTPCode.query
+               .filter_by(email=current_user.email.lower(),
+                          code=entered,
+                          purpose="abstract_delete",
+                          consumed_at=None)
+               .order_by(OTPCode.id.desc())
+               .first())
+        if not (otp and otp.is_valid()):
+            flash("That code didn't match, or it has expired.", "error")
+            return render_template("admin/abstract_delete_confirm.html", a=a)
+        otp.consumed_at = datetime.utcnow()
+        title = a.title
+        a.deleted_at = datetime.utcnow()
+        db.session.commit()
+        audit.record("abstract.deleted",
+                     target_kind="abstract", target_id=a.id,
+                     summary=f"Deleted \"{title}\"")
+        flash(f"Deleted abstract \"{title}\".", "success")
+        return redirect(url_for("admin.abstracts"))
+    return render_template("admin/abstract_delete_confirm.html", a=a)
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -531,15 +621,43 @@ def _unfeature_others(exclude_id: int | None = None) -> None:
 # Compile abstract booklet (LaTeX source zip)
 # ---------------------------------------------------------------------------
 
+_KNOWN_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff"}
+
+
+def _convert_for_latex(src: Path, dst: Path) -> Path:
+    """Ensure *src* is a LaTeX-compatible image, writing to *dst* as needed.
+
+    pdfLaTeX supports PNG, JPG, and PDF natively.  WEBP and TIFF are *not*
+    supported, so we transcode them to PNG.  If the source is already
+    compatible we just copy the bytes.  Returns the destination path
+    (may differ from *dst* if the suffix was changed).
+    """
+    from PIL import Image
+
+    ext = src.suffix.lower()
+    if ext in {".png", ".jpg", ".jpeg"}:
+        dst.write_bytes(src.read_bytes())
+        return dst
+    if ext == ".pdf":
+        dst.write_bytes(src.read_bytes())
+        return dst
+    try:
+        img = Image.open(src)
+        img = img.convert("RGB")
+        png_dst = dst.with_suffix(".png")
+        img.save(png_dst, "PNG", optimize=True)
+        return png_dst
+    except Exception:
+        dst.write_bytes(src.read_bytes())
+        return dst
+
+
 @admin_bp.route("/conferences/<int:cid>/compile-booklet", methods=["POST"])
 @requires_permission("abs.compile_booklet")
 def conference_compile_booklet(cid):
     import hashlib
-    import shutil
     import tempfile
     import zipfile
-
-    from ...models import Abstract
 
     c = Conference.query.get_or_404(cid)
     abstracts = (
@@ -554,17 +672,21 @@ def conference_compile_booklet(cid):
         flash("No accepted abstracts to compile.", "error")
         return redirect(url_for("admin.abstracts"))
 
-    # Build a cache key from abstract IDs + statuses so we only rebuild
-    # when something changes.
     cache_key = hashlib.sha256(
-        ",".join(f"{a.id}:{a.status}" for a in abstracts).encode()
+        ",".join(
+            [f"{a.id}:{a.status}" for a in abstracts]
+            + [
+                c.booklet_header_filename or "",
+                c.booklet_footer_filename or "",
+                c.booklet_background_filename or "",
+            ]
+        ).encode()
     ).hexdigest()
 
     cache_dir = Path(current_app.config["UPLOAD_FOLDER"]) / "abstracts" / ".booklet-cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache_file = cache_dir / f"{c.slug}-{cache_key[:12]}.zip"
 
-    # Check for stale cached zips and clean them
     for old in cache_dir.glob(f"{c.slug}-*.zip"):
         if old != cache_file:
             old.unlink(missing_ok=True)
@@ -573,108 +695,308 @@ def conference_compile_booklet(cid):
         return send_file(cache_file, as_attachment=True,
                          download_name=f"abstracts-{c.slug}.zip")
 
+    uploads_root = Path(current_app.config["UPLOAD_FOLDER"])
+
     with tempfile.TemporaryDirectory() as tmp:
         src = Path(tmp)
 
-        # Write LaTeX preamble
-        preamble = _booklet_preamble(c)
+        # --- Booklet decoration images (header / footer / background) ---
+        def _copy_booklet_image(col_name: str, label: str) -> str | None:
+            filename = getattr(c, col_name, None)
+            if not filename:
+                return None
+            img_src = uploads_root / "conferences" / filename
+            if not img_src.exists():
+                return None
+            dst = src / f"{label}{img_src.suffix}"
+            result = _convert_for_latex(img_src, dst)
+            return result.name
+
+        header_rel = _copy_booklet_image("booklet_header_filename", "header")
+        footer_rel = _copy_booklet_image("booklet_footer_filename", "footer")
+        bg_rel = _copy_booklet_image("booklet_background_filename", "background")
+
+        # --- Abstract subfolders ---
+        inputs: list[str] = []
+        for i, a in enumerate(abstracts, 1):
+            label = f"{i:03d}"
+            sub = src / f"abstract_{label}"
+            sub.mkdir(parents=True, exist_ok=True)
+
+            frag = _abstract_fragment(label, a, has_header=header_rel is not None,
+                                      has_background=bg_rel is not None)
+            (sub / f"abstract_{label}.tex").write_text(frag, encoding="utf-8")
+            inputs.append(f"\\input{{abstract_{label}/abstract_{label}.tex}}")
+
+            if a.figure_filename:
+                bare = a.figure_filename.split("/", 1)[-1]
+                fig_src = uploads_root / "abstracts" / bare
+                if fig_src.exists():
+                    _convert_for_latex(fig_src, sub / f"figure{fig_src.suffix}")
+
+            if a.profile_picture_filename:
+                bare = a.profile_picture_filename.split("/", 1)[-1]
+                pic_src = uploads_root / "abstracts" / bare
+                if pic_src.exists():
+                    _convert_for_latex(pic_src, sub / f"profile{pic_src.suffix}")
+
+        preamble = _booklet_preamble(c, inputs, header_rel, footer_rel, bg_rel)
         (src / "booklet.tex").write_text(preamble, encoding="utf-8")
 
-        # Write each abstract as a .tex fragment
-        for i, a in enumerate(abstracts, 1):
-            frag = _abstract_fragment(i, a)
-            (src / f"abstract_{i:03d}.tex").write_text(frag, encoding="utf-8")
-
-            # Copy figure if present
-            if a.figure_filename:
-                fig_src = (Path(current_app.config["UPLOAD_FOLDER"]) /
-                           "abstracts" / a.figure_filename.split("/", 1)[-1])
-                if fig_src.exists():
-                    ext = fig_src.suffix
-                    shutil.copy2(fig_src, src / f"fig_{i:03d}{ext}")
-
-            # Copy profile picture if present
-            if a.profile_picture_filename:
-                pic_src = (Path(current_app.config["UPLOAD_FOLDER"]) /
-                           "abstracts" / a.profile_picture_filename.split("/", 1)[-1])
-                if pic_src.exists():
-                    ext = pic_src.suffix
-                    shutil.copy2(pic_src, src / f"profile_{i:03d}{ext}")
-
-        # Zip everything
         zip_path = cache_file
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            for f in sorted(src.iterdir()):
-                zf.write(f, f.name)
+            for f in sorted(src.rglob("*")):
+                if f.is_file():
+                    zf.write(f, str(f.relative_to(src)))
 
     return send_file(zip_path, as_attachment=True,
                      download_name=f"abstracts-{c.slug}.zip")
 
 
-def _booklet_preamble(conference) -> str:
-    title = conference.title.replace("&", r"\&").replace("#", r"\#")
-    return r"""\documentclass[11pt,a4paper]{article}
-\usepackage[margin=2.5cm]{geometry}
-\usepackage{graphicx}
-\usepackage{hyperref}
-\usepackage{parskip}
-\usepackage{fancyhdr}
+# ---------------------------------------------------------------------------
+# LaTeX template helpers
+# ---------------------------------------------------------------------------
 
-\pagestyle{fancy}
-\fancyhf{}
-\lhead{""" + title + r"""}
-\rhead{Abstract Booklet}
-\cfoot{\thepage}
+def _booklet_preamble(conference, inputs: list[str],
+                      header_rel: str | None,
+                      footer_rel: str | None,
+                      bg_rel: str | None) -> str:
+    title_esc = conference.title.replace("&", "\\&").replace("#", "\\#")
+    date_esc = conference.date_range
 
-\title{""" + title + r"""}
-\author{Abstract Booklet}
-\date{""" + conference.date_range + r"""}
+    pkgs = [
+        "\\documentclass[11pt,a4paper]{article}",
+        "\\usepackage[margin=2.2cm,headheight=2.2cm,footskip=1.2cm]{geometry}",
+        "\\usepackage{graphicx}",
+        "\\usepackage{hyperref}",
+        "\\usepackage{parskip}",
+        "\\usepackage{fancyhdr}",
+    ]
+    if bg_rel:
+        pkgs.append("\\usepackage[pages=all]{background}")
 
-\begin{document}
-\maketitle
-\tableofcontents
-\newpage
-"""
+    pkgs.append("")
+    pkgs.append("\\pagestyle{fancy}")
+    pkgs.append("\\fancyhf{}")
+    pkgs.append("\\renewcommand{\\headrulewidth}{0.4pt}")
+
+    # Header
+    if header_rel:
+        pkgs.append(
+            "\\fancyhead[L]{\\includegraphics[height=1.3cm,keepaspectratio]"
+            f"{{{header_rel}}}}}"
+        )
+    else:
+        pkgs.append(f"\\fancyhead[L]{{\\small\\itshape {title_esc}}}")
+    pkgs.append("\\fancyhead[R]{\\small\\thepage}")
+
+    # Footer (only page-number when no footer image — avoids double numbers)
+    if footer_rel:
+        pkgs.append(
+            "\\fancyfoot[R]{\\includegraphics[height=0.9cm,keepaspectratio]"
+            f"{{{footer_rel}}}}}"
+        )
+    else:
+        pkgs.append("\\fancyfoot[C]{}")
+
+    if bg_rel:
+        pkgs.append("\\backgroundsetup{")
+        pkgs.append(f"  contents={{\\includegraphics[width=\\paperwidth,height=\\paperheight]{{{bg_rel}}}}},")
+        pkgs.append("  opacity=0.06,")
+        pkgs.append("  scale=1,")
+        pkgs.append("}")
+
+    pkgs.append("")
+    pkgs.append(f"\\title{{{title_esc}}}")
+    pkgs.append("\\author{Abstract Booklet}")
+    pkgs.append(f"\\date{{{date_esc}}}")
+    pkgs.append("")
+    pkgs.append("\\begin{document}")
+    pkgs.append("\\thispagestyle{empty}")
+    if bg_rel:
+        pkgs.append("\\NoBgThispage")
+    pkgs.append("\\maketitle")
+    pkgs.append("\\tableofcontents")
+    pkgs.append("\\newpage")
+    pkgs.append("")
+    pkgs.extend(inputs)
+    pkgs.append("")
+    pkgs.append("\\end{document}")
+
+    return "\n".join(pkgs)
 
 
-def _abstract_fragment(index: int, abstract) -> str:
-    title = abstract.title.replace("&", r"\&").replace("#", r"\#").replace("_", r"\_")
-    authors = abstract.authors.replace("&", r"\&").replace("#", r"\#").replace("_", r"\_")
+def _abstract_fragment(label: str, abstract,
+                       has_header: bool = False,
+                       has_background: bool = False) -> str:
+    """Return the LaTeX fragment for one abstract.
+
+    Layout::
+
+        ┌──────────────────────────┬──────────┐
+        │  title                   │ portrait │
+        │  authors (superscripts)  │  3 cm    │
+        │  affiliations            │          │
+        │  track · keywords        │          │
+        ├──────────────────────────┴──────────┤
+        │  abstract body                      │
+        ├─────────────────────────────────────┤
+        │           figure (fill)             │
+        └─────────────────────────────────────┘
+
+    The fragment is designed to occupy one page.
+    """
+    folder = f"abstract_{label}"
+    title = abstract.title.replace("&", "\\&").replace("#", "\\#").replace("_", "\\_")
+
     body = abstract.body
-    # Escape LaTeX specials in body text
-    body = body.replace("\\", r"\textbackslash{}")
-    body = body.replace("&", r"\&").replace("#", r"\#")
-    body = body.replace("$", r"\$").replace("%", r"\%")
-    body = body.replace("{", r"\{").replace("}", r"\}")
-    body = body.replace("~", r"\textasciitilde{}").replace("^", r"\^{}")
+    _BSL = "\x00BSL\x00"
+    body = body.replace("\\", _BSL)
+    body = body.replace("&", "\\&").replace("#", "\\#")
+    body = body.replace("$", "\\$").replace("%", "\\%")
+    body = body.replace("{", "\\{").replace("}", "\\}")
+    body = body.replace("~", "\\textasciitilde{}").replace("^", "\\^{}")
+    body = body.replace(_BSL, "\\textbackslash{}")
 
-    fig = ""
+    def _out_ext(filename: str | None) -> str:
+        if not filename:
+            return ""
+        ext = Path(filename).suffix.lower()
+        if ext in _KNOWN_IMAGE_EXTS:
+            return ".png" if ext in {".webp", ".tif", ".tiff"} else ext
+        return ext
+
+    author_line, affil_line = _parse_authors(abstract.authors)
+
+    lines: list[str] = []
+
+    # --- TOC entry (invisible \section for table of contents) ---
+    lines.append(f"\\addcontentsline{{toc}}{{section}}{{{title}}}")
+
+    # --- Per-page setup ---
+    if has_background:
+        lines.append("\\BgThispage")
+
+    # --- Top row: info (left) + portrait (right) ---
+    has_portrait = bool(abstract.profile_picture_filename)
+    left_width = "0.72" if has_portrait else "1.0"
+
+    lines.append("\\noindent")
+    lines.append(f"\\begin{{minipage}}[t]{{{left_width}\\textwidth}}")
+    lines.append("  \\vspace{0pt}%")
+    lines.append("  \\raggedright")
+
+    # Line 1 — title
+    lines.append(f"  {{\\LARGE\\bfseries {title}}}\\newline")
+
+    # Line 2 — authors with superscripts
+    if author_line:
+        lines.append(f"  {{\\large {author_line}}}\\newline")
+
+    # Line 3 — affiliations
+    if affil_line:
+        lines.append(f"  {{\\footnotesize {affil_line}}}\\newline")
+
+    # Line 4 — track + keywords (compact: "Track --- \\textit{kw1, kw2}")
+    if abstract.track or abstract.keywords:
+        meta_parts: list[str] = []
+        if abstract.track:
+            meta_parts.append(abstract.track)
+        if abstract.keywords:
+            meta_parts.append(f"\\textit{{{abstract.keywords}}}")
+        kv = " --- ".join(meta_parts) if len(meta_parts) > 1 else meta_parts[0]
+        lines.append(f"  {{\\footnotesize\\itshape {kv}}}")
+
+    lines.append("\\end{minipage}%")
+
+    if has_portrait:
+        lines.append("\\hfill")
+        out = _out_ext(abstract.profile_picture_filename)
+        lines.append("\\begin{minipage}[t]{0.24\\textwidth}")
+        lines.append("  \\vspace{0pt}%")
+        lines.append("  \\raggedleft")
+        lines.append(f"  \\includegraphics[height=3cm,keepaspectratio]{{{folder}/profile{out}}}")
+        lines.append("\\end{minipage}")
+
+    # --- Divider ---
+    lines.append("")
+    lines.append("\\vspace{6pt}")
+    lines.append("{\\noindent\\rule{\\textwidth}{0.4pt}}")
+    lines.append("\\vspace{8pt}")
+
+    # --- Middle row: abstract body ---
+    lines.append(body)
+
+    # --- Bottom row: figure, scaled to fill remaining vertical space ---
     if abstract.figure_filename:
-        ext = Path(abstract.figure_filename).suffix
-        fig = (
-            r"\begin{figure}[htbp]" "\n"
-            r"\centering" "\n"
-            rf"\includegraphics[width=0.8\textwidth]{{fig_{index:03d}{ext}}}" "\n"
-            r"\caption{Figure}" "\n"
-            r"\end{figure}" "\n"
+        out = _out_ext(abstract.figure_filename)
+        lines.append("")
+        lines.append("\\vspace*{\\fill}")
+        lines.append("\\begin{center}")
+        lines.append(
+            "\\includegraphics[\n"
+            "    width=\\textwidth,\n"
+            "    height=\\dimexpr\\textheight-\\pagetotal-2ex\\relax,\n"
+            "    keepaspectratio\n"
+            f"  ]{{{folder}/figure{out}}}"
         )
+        lines.append("\\end{center}")
 
-    profile = ""
-    if abstract.profile_picture_filename:
-        ext = Path(abstract.profile_picture_filename).suffix
-        profile = (
-            r"\begin{center}" "\n"
-            rf"\includegraphics[height=3cm]{{profile_{index:03d}{ext}}}" "\n"
-            r"\end{center}" "\n"
-        )
+    lines.append("")
+    lines.append("\\newpage")
+    return "\n".join(lines)
 
-    return (
-        r"\section{" + title + "}\n"
-        r"\textbf{" + authors + r"}\n\n"
-        + (profile if profile else "") +
-        (rf"\textbf{{Track:}} {abstract.track}" + r"\n\n" if abstract.track else "") +
-        (rf"\textbf{{Keywords:}} {abstract.keywords}" + r"\n\n" if abstract.keywords else "") +
-        body + "\n\n" +
-        fig +
-        r"\newpage\n"
-    )
+
+def _parse_authors(raw: str) -> tuple[str, str]:
+    """Parse pipe-delimited author rows into LaTeX-formatted lines.
+
+    Input format (one author per line)::
+
+        Full Name|affil_index|Affiliation Name
+
+    Returns ``(author_line, affil_line)`` where *author_line* contains
+    names with ``\\textsuperscript{…}`` markers and *affil_line*
+    lists the unique affiliations with their superscripts.
+    """
+    if not raw or not raw.strip():
+        return ("", "")
+
+    authors: list[tuple[str, str, str]] = []  # (name, idx, affil)
+    affil_map: dict[str, str] = {}            # idx → affil name
+    seen_affils: set[str] = set()
+
+    for line in raw.strip().split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        parts = line.split("|")
+        name = parts[0].strip() if len(parts) > 0 else ""
+        idx = parts[1].strip() if len(parts) > 1 else ""
+        affil = parts[2].strip() if len(parts) > 2 else ""
+        if name:
+            authors.append((name, idx, affil))
+            if idx and affil and affil not in seen_affils:
+                seen_affils.add(affil)
+                affil_map[idx] = affil
+
+    if not authors:
+        return ("", "")
+
+    # Build author line: Name\textsuperscript{1}, Name\textsuperscript{2}, ...
+    author_names: list[str] = []
+    for name, idx, _affil in authors:
+        name_esc = name.replace("&", "\\&").replace("#", "\\#").replace("_", "\\_")
+        if idx:
+            author_names.append(f"{name_esc}\\textsuperscript{{{idx}}}")
+        else:
+            author_names.append(name_esc)
+    author_line = ", ".join(author_names)
+
+    # Build affiliation line: \textsuperscript{1}Affil\quad\textsuperscript{2}Affil
+    affil_parts: list[str] = []
+    for idx in sorted(affil_map.keys(), key=int):
+        affil_esc = affil_map[idx].replace("&", "\\&").replace("#", "\\#").replace("_", "\\_")
+        affil_parts.append(f"\\textsuperscript{{{idx}}}{affil_esc}")
+    affil_line = "\\quad ".join(affil_parts)
+
+    return (author_line, affil_line)

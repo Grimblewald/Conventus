@@ -102,7 +102,8 @@ def _init_extensions(app: Flask) -> None:
     csp = {
         "default-src": "'self'",
         "img-src": ["'self'", "data:"],
-        "script-src": "'self'",
+        "media-src": ["'self'", "data:"],
+        "script-src": ["'self'", "'unsafe-inline'"],
         "style-src": ["'self'", "'unsafe-inline'"],   # inline CSS vars only
         "font-src": "'self'",
         "connect-src": "'self'",
@@ -206,6 +207,35 @@ def _register_template_globals(app: Flask) -> None:
         # Minimal Markdown-ish: bold/italic/links/lists/headings, escaped first.
         from .services.markdown import render
         return render(text or "")
+
+    @app.template_filter("fmt_authors")
+    def format_authors(text: str) -> str:
+        """Render pipe-delimited author rows as HTML."""
+        from markupsafe import Markup
+        if not text or not text.strip():
+            return Markup("&mdash;")
+        lines_out: list[str] = []
+        affils: dict[str, str] = {}
+        for raw_line in text.strip().split("\n"):
+            line = raw_line.strip()
+            if not line:
+                continue
+            parts = line.split("|")
+            name = parts[0].strip() if len(parts) > 0 else ""
+            idx = parts[1].strip() if len(parts) > 1 else ""
+            affil = parts[2].strip() if len(parts) > 2 else ""
+            if not name:
+                continue
+            sup = f"<sup>{idx}</sup>" if idx else ""
+            lines_out.append(f"{name}{sup}")
+            if idx and affil and idx not in affils:
+                affils[idx] = affil
+        result = ", ".join(lines_out)
+        if affils:
+            sorted_affils = [f"<sup>{k}</sup>{v}" for k, v in
+                             sorted(affils.items(), key=lambda x: int(x[0]))]
+            result += "<br>" + " &emsp; ".join(sorted_affils)
+        return Markup(result)
 
     from .services.jinja_filters import target_url
     app.add_template_filter(target_url, "target_url")

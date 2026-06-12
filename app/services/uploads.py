@@ -53,6 +53,7 @@ def save_image(
     max_bytes: int,
     square_crop: bool = False,
     target_size: int | None = None,
+    force_webp: bool = False,
 ) -> str:
     """Validate, optionally crop, and save an uploaded image.
 
@@ -95,8 +96,10 @@ def save_image(
         ratio = target_size / img.width
         img = img.resize((target_size, int(img.height * ratio)), Image.LANCZOS)
 
-    # Always re-encode (don't trust the input bytes) and normalise to webp/png.
-    out_ext = ".webp" if ext != ".png" else ".png"
+    # Always re-encode (don't trust the input bytes) and normalise.
+    # Default: PNG originals stay as PNG (lossless), everything else becomes WEBP.
+    # When force_webp is True, everything becomes WEBP regardless of original format.
+    out_ext = ".webp" if force_webp or ext != ".png" else ".png"
     safe = _safe_name(prefix, (fs.filename or "image") + out_ext)
     if not safe.endswith(out_ext):
         safe += out_ext

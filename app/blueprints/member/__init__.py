@@ -3,8 +3,9 @@ submission. All require login.
 """
 from __future__ import annotations
 
+import secrets
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask import (
     Blueprint, abort, current_app, flash, redirect, render_template,
@@ -13,9 +14,10 @@ from flask import (
 from flask_login import current_user, login_required
 
 from ...extensions import db
-from ...models import Abstract, Conference, Registration
+from ...models import Abstract, Conference, OTPCode, Registration
 from ...models.content import get_site_settings
 from ...security import audit
+from ...services.mail import send_mail
 from ...services.payments import payment_url_for, send_payment_email
 from ...services.uploads import UploadError, save_figure, save_image
 
@@ -153,7 +155,6 @@ def submit_abstract(slug):
         existing = (
             Abstract.query
             .filter_by(user_id=current_user.id, conference_id=c.id)
-            .filter(Abstract.status != "retracted")
             .filter(Abstract.deleted_at.is_(None))
             .count()
         )
@@ -212,6 +213,7 @@ def submit_abstract(slug):
                         prefix="profile-",
                         max_bytes=current_app.config["MAX_HERO_BYTES"],
                         target_size=400,
+                        force_webp=True,
                     )
                     a.profile_picture_filename = rel.split("/", 1)[-1]
                 except UploadError as e:
@@ -232,25 +234,77 @@ def submit_abstract(slug):
 
 
 # ---------------------------------------------------------------------------
-# Retract an abstract
+# Abstract soft-delete (OTP-confirmed, member)
 # ---------------------------------------------------------------------------
 
-@member_bp.route("/abstracts/<int:aid>/retract", methods=["POST"])
+@member_bp.route("/abstracts/<int:aid>/delete-request", methods=["POST"])
 @login_required
-def retract_abstract(aid):
+def delete_abstract_request(aid):
     a = Abstract.query.get_or_404(aid)
     if a.user_id != current_user.id:
         abort(403)
-    if a.status not in ("submitted", "accepted"):
-        flash("This abstract can no longer be retracted.", "error")
+    if a.deleted_at is not None:
+        flash("This abstract has already been deleted.", "error")
         return redirect(url_for("member.dashboard"))
-    a.status = "retracted"
+    if a.status not in ("submitted", "accepted"):
+        flash("This abstract can no longer be deleted.", "error")
+        return redirect(url_for("member.dashboard"))
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    ttl = current_app.config["OTP_TTL_SECONDS"]
+    db.session.add(OTPCode(
+        email=current_user.email.lower(),
+        code=code,
+        purpose="abstract_delete",
+        expires_at=datetime.utcnow() + timedelta(seconds=ttl),
+        ip=request.remote_addr,
+    ))
     db.session.commit()
-    audit.record("abstract.retracted",
-                 target_kind="abstract", target_id=a.id,
-                 summary=f"{current_user.email} retracted '{a.title}'")
-    flash("Abstract retracted.", "success")
-    return redirect(url_for("member.dashboard"))
+    send_mail(
+        to=current_user.email,
+        subject="Confirm abstract deletion",
+        body=(f"You requested to delete the abstract \"{a.title}\".\n\n"
+              f"Confirmation code: {code}\n\n"
+              f"This code expires in {ttl // 60} minutes. "
+              f"If you didn't request this, ignore the email."),
+    )
+    flash("A confirmation code has been sent to your email.", "success")
+    return redirect(url_for("member.delete_abstract_confirm", aid=a.id))
+
+
+@member_bp.route("/abstracts/<int:aid>/delete-confirm", methods=["GET", "POST"])
+@login_required
+def delete_abstract_confirm(aid):
+    a = Abstract.query.get_or_404(aid)
+    if a.user_id != current_user.id:
+        abort(403)
+    if a.deleted_at is not None:
+        flash("This abstract has already been deleted.", "error")
+        return redirect(url_for("member.dashboard"))
+    if a.status not in ("submitted", "accepted"):
+        flash("This abstract can no longer be deleted.", "error")
+        return redirect(url_for("member.dashboard"))
+    if request.method == "POST":
+        entered = (request.form.get("code") or "").strip().replace(" ", "")
+        otp = (OTPCode.query
+               .filter_by(email=current_user.email.lower(),
+                          code=entered,
+                          purpose="abstract_delete",
+                          consumed_at=None)
+               .order_by(OTPCode.id.desc())
+               .first())
+        if not (otp and otp.is_valid()):
+            flash("That code didn't match, or it has expired.", "error")
+            return render_template("member/abstract_delete_confirm.html", a=a)
+        otp.consumed_at = datetime.utcnow()
+        title = a.title
+        a.deleted_at = datetime.utcnow()
+        db.session.commit()
+        audit.record("abstract.deleted",
+                     target_kind="abstract", target_id=a.id,
+                     summary=f"{current_user.email} deleted \"{title}\"")
+        flash(f"Deleted abstract \"{title}\".", "success")
+        return redirect(url_for("member.dashboard"))
+    return render_template("member/abstract_delete_confirm.html", a=a)
 
 
 # ---------------------------------------------------------------------------

@@ -13,9 +13,10 @@
   <div>
     <h3>Create Backup</h3>
     <p class="muted">Download a complete snapshot of the site — database, all uploaded images and files, plus instance configuration. Everything needed to replicate this site elsewhere or recover from a problem.</p>
-    <form method="post" action="{{ url_for('admin.backup_create') }}">
+    <form id="backup-create-form" method="post" action="{{ url_for('admin.backup_create') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <button class="btn btn-primary" type="submit">Download backup</button>
+      <button class="btn btn-primary" type="submit" id="backup-btn">Download backup</button>
+      <span id="backup-progress" style="display:none; margin-left:10px; font-size:13px; color:var(--c-muted-text);"></span>
     </form>
   </div>
 
@@ -26,15 +27,207 @@
     <h3>Restore Backup</h3>
     <p class="muted">Upload a previously-downloaded backup zip. This will <strong>overwrite</strong> the current database, all uploaded files, and instance flags. A safety backup is taken automatically before the restore begins.</p>
     <p class="muted" style="color:var(--c-page-text);">You'll be emailed a confirmation code before changes are applied.</p>
-    <form method="post" action="{{ url_for('admin.backup_restore_upload') }}" enctype="multipart/form-data">
+    <form id="backup-restore-form" method="post" enctype="multipart/form-data">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="field">
         <label for="backup_file">Backup zip</label>
         <input class="input" id="backup_file" name="backup_file" type="file" accept=".zip" required>
       </div>
-      <button class="btn btn-primary" type="submit">Upload and verify</button>
+      <button class="btn btn-primary" type="submit" id="restore-btn">Upload and verify</button>
+      <span id="restore-progress" style="display:none; margin-left:10px; font-size:13px; color:var(--c-muted-text);"></span>
     </form>
   </div>
 
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  "use strict";
+
+  var CHUNK_BYTES = 16 * 1024 * 1024;  // 16 MB
+
+  var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+  var csrfToken = csrfMeta ? csrfMeta.getAttribute("content") : "";
+
+  // ---- Helper: POST a single chunk ----
+  function uploadChunk(formData, url) {
+    return fetch(url, { method: "POST", headers: { "X-CSRFToken": csrfToken }, body: formData });
+  }
+
+  // ==================================================================
+  // Download (chunked)
+  // ==================================================================
+  var downloadForm = document.getElementById("backup-create-form");
+  var downloadBtn = document.getElementById("backup-btn");
+  var downloadProg = document.getElementById("backup-progress");
+
+  if (downloadForm && downloadBtn) {
+    downloadForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      downloadBtn.disabled = true;
+      downloadBtn.textContent = "Building backup...";
+      downloadProg.style.display = "none";
+
+      fetch(downloadForm.action, {
+        method: "POST",
+        headers: { "X-CSRFToken": csrfToken, "Accept": "application/json" },
+      })
+        .then(function (r) {
+          // If it's a direct file download (small backup), the content-type
+          // is application/zip.  If chunked, it's application/json.
+          var ct = r.headers.get("Content-Type") || "";
+          if (ct.indexOf("application/json") !== -1) return r.json().then(function (js) { return { json: js, blob: null }; });
+          return r.blob().then(function (b) { return { json: null, blob: b, filename: r.headers.get("X-Filename") || "backup.zip" }; });
+        })
+        .then(function (result) {
+          if (result && result.blob) {
+            // Small backup — save directly
+            var a = document.createElement("a");
+            a.href = URL.createObjectURL(result.blob);
+            a.download = result.filename;
+            a.click();
+            downloadBtn.disabled = false;
+            downloadBtn.textContent = "Download backup";
+            return;
+          }
+          if (!result || !result.json) {
+            throw new Error("Unexpected response");
+          }
+          var info = result.json;
+          if (info.error) throw new Error(info.error);
+
+          downloadProg.style.display = "";
+          downloadBtn.textContent = "Downloading...";
+
+          // Fetch each chunk
+          var chunks = [];
+          var fetched = 0;
+          function fetchNext() {
+            if (fetched >= info.chunk_count) {
+              var blob = new Blob(chunks);
+              var a = document.createElement("a");
+              a.href = URL.createObjectURL(blob);
+              a.download = info.filename;
+              a.click();
+              downloadBtn.disabled = false;
+              downloadBtn.textContent = "Download backup";
+              downloadProg.style.display = "none";
+              return;
+            }
+            downloadProg.textContent = "Chunk " + (fetched + 1) + "/" + info.chunk_count;
+            var url = "{{ url_for('admin.backup_download_chunk', upload_id='UID', index=0) }}"
+              .replace("UID", info.upload_id).replace("/0", "/" + fetched);
+            fetch(url).then(function (r) {
+              if (!r.ok) throw new Error("Chunk " + fetched + " failed");
+              return r.blob();
+            }).then(function (b) {
+              chunks.push(b);
+              fetched++;
+              fetchNext();
+            }).catch(function (err) {
+              downloadBtn.disabled = false;
+              downloadBtn.textContent = "Download backup";
+              downloadProg.textContent = "Error: " + err.message;
+            });
+          }
+          fetchNext();
+        })
+        .catch(function (err) {
+          downloadBtn.disabled = false;
+          downloadBtn.textContent = "Download backup";
+          alert("Download failed: " + (err.message || err));
+        });
+    });
+  }
+
+  // ==================================================================
+  // Upload (chunked)
+  // ==================================================================
+  var restoreForm = document.getElementById("backup-restore-form");
+  var restoreBtn = document.getElementById("restore-btn");
+  var restoreProg = document.getElementById("restore-prog");
+  var fileInput = document.getElementById("backup_file");
+
+  if (restoreForm && restoreBtn && fileInput) {
+    restoreForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      var file = fileInput.files[0];
+      if (!file) { alert("Select a backup zip file."); return; }
+
+      restoreBtn.disabled = true;
+      restoreBtn.textContent = "Uploading...";
+      restoreProg = restoreProg || document.getElementById("restore-progress");
+      restoreProg.style.display = "";
+
+      var uploadId = Array.from(crypto.getRandomValues(new Uint8Array(12)),
+                                function (b) { return b.toString(16).padStart(2, "0"); }).join("");
+      var totalChunks = Math.ceil(file.size / CHUNK_BYTES);
+      var chunkIndex = 0;
+      var lastHash = "";
+
+      function sendNext() {
+        if (chunkIndex >= totalChunks) {
+          // Finalize — trigger OTP flow
+          restoreProg.textContent = "Validating...";
+          var finalForm = new FormData();
+          finalForm.append("upload_id", uploadId);
+          finalForm.append("total_hash", lastHash);
+          fetch("{{ url_for('admin.backup_restore_finalize') }}", {
+            method: "POST",
+            headers: { "X-CSRFToken": csrfToken },
+            body: finalForm,
+          }).then(function (r) {
+            if (r.redirected) { window.location.href = r.url; return; }
+            return r.text().then(function (t) { document.body.innerHTML = t; });
+          }).catch(function (err) {
+            restoreBtn.disabled = false;
+            restoreBtn.textContent = "Upload and verify";
+            restoreProg.textContent = "Error: " + (err.message || err);
+          });
+          return;
+        }
+
+        restoreProg.textContent = "Chunk " + (chunkIndex + 1) + "/" + totalChunks;
+        var start = chunkIndex * CHUNK_BYTES;
+        var end = Math.min(start + CHUNK_BYTES, file.size);
+        var blob = file.slice(start, end);
+
+        // Compute checksum in browser
+        blob.arrayBuffer().then(function (buf) {
+          var hashBytes = new Uint8Array(buf);
+          return crypto.subtle.digest("SHA-256", hashBytes);
+        }).then(function (hashBuf) {
+          var hashArr = Array.from(new Uint8Array(hashBuf));
+          var hashHex = hashArr.map(function (b) { return b.toString(16).padStart(2, "0"); }).join("");
+          lastHash = hashHex;
+
+          var formData = new FormData();
+          formData.append("upload_id", uploadId);
+          formData.append("chunk_index", chunkIndex);
+          formData.append("total_chunks", totalChunks);
+          formData.append("checksum", hashHex);
+          formData.append("chunk", blob, "chunk_" + chunkIndex);
+
+          return uploadChunk(formData, "{{ url_for('admin.backup_restore_chunk') }}");
+        }).then(function (r) {
+          if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || "Chunk failed"); });
+          return r.json();
+        }).then(function (resp) {
+          if (resp.error) throw new Error(resp.error);
+          chunkIndex++;
+          sendNext();
+        }).catch(function (err) {
+          restoreBtn.disabled = false;
+          restoreBtn.textContent = "Upload and verify";
+          restoreProg.textContent = "Error: " + (err.message || err);
+        });
+      }
+
+      sendNext();
+    });
+  }
+})();
+</script>
 {% endblock %}

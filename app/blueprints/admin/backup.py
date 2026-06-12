@@ -1,6 +1,7 @@
-"""Admin → Backup & restore (full-site archives)."""
+"""Admin → Backup & restore (full-site archives, chunked transfers)."""
 from __future__ import annotations
 
+import hashlib
 import os
 import secrets
 import shutil
@@ -12,7 +13,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 from flask import (
-    current_app, flash, redirect, render_template, request, send_file, url_for,
+    abort, current_app, flash, jsonify, redirect, render_template,
+    request, send_file, url_for,
 )
 from flask_login import current_user
 
@@ -24,7 +26,34 @@ from ...services.mail import send_mail
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Chunk size — keep under Flask's MAX_CONTENT_LENGTH (16 MB) and under
+# Cloudflare's free-tier request limit (100 MB).
+# ---------------------------------------------------------------------------
+CHUNK_BYTES = 16 * 1024 * 1024  # 16 MB
+
+# ---------------------------------------------------------------------------
+# Generic helpers
+# ---------------------------------------------------------------------------
+
+def _sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _ensure_dir(path: Path) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+# ---------------------------------------------------------------------------
+# Database helpers
 # ---------------------------------------------------------------------------
 
 def _database_url() -> str:
@@ -55,7 +84,6 @@ def _sqlite_copy(src: Path, dst: Path) -> None:
 
 def _pg_dump(url: str, dest: Path) -> None:
     from urllib.parse import unquote, urlparse
-
     url = url.replace("postgresql+psycopg://", "postgresql://")
     env = os.environ.copy()
     parsed = urlparse(url)
@@ -69,7 +97,6 @@ def _pg_dump(url: str, dest: Path) -> None:
 
 def _pg_restore(dump_path: Path, url: str) -> None:
     from urllib.parse import unquote, urlparse
-
     url = url.replace("postgresql+psycopg://", "postgresql://")
     env = os.environ.copy()
     parsed = urlparse(url)
@@ -87,21 +114,70 @@ def _current_alembic_head() -> str:
     return row[0] if row else "unknown"
 
 
+# ---------------------------------------------------------------------------
+# Chunking helpers
+# ---------------------------------------------------------------------------
+
+def _chunk_dir(upload_id: str) -> Path:
+    return _ensure_dir(
+        Path(current_app.root_path).parent / "backups" / ".chunks" / upload_id)
+
+
+def _split_file(src: Path, upload_id: str) -> tuple[int, str]:
+    """Split *src* into CHUNK_BYTES chunks under the chunk directory.
+    Returns (chunk_count, total_sha256)."""
+    d = _chunk_dir(upload_id)
+    h = hashlib.sha256()
+    idx = 0
+    with open(src, "rb") as f:
+        while True:
+            data = f.read(CHUNK_BYTES)
+            if not data:
+                break
+            h.update(data)
+            (d / f"{idx:04d}").write_bytes(data)
+            idx += 1
+    return (idx, h.hexdigest())
+
+
+def _recombine_chunks(upload_id: str, dest: Path) -> str:
+    """Concatenate all chunks for *upload_id* into *dest*.
+    Returns the SHA-256 of the recombined file."""
+    d = _chunk_dir(upload_id)
+    h = hashlib.sha256()
+    with open(dest, "wb") as out:
+        for i in range(100_000):  # safety cap
+            chunk_path = d / f"{i:04d}"
+            if not chunk_path.exists():
+                break
+            data = chunk_path.read_bytes()
+            h.update(data)
+            out.write(data)
+    return h.hexdigest()
+
+
+def _cleanup_chunks(upload_id: str) -> None:
+    d = _chunk_dir(upload_id)
+    if d.exists():
+        shutil.rmtree(d)
+
+
+# ---------------------------------------------------------------------------
+# Backup zip builder
+# ---------------------------------------------------------------------------
+
 def _build_backup_zip() -> Path:
     uploads_root = Path(current_app.config["UPLOAD_FOLDER"])
     instance_dir = Path(current_app.instance_path)
-    backup_dir = Path(current_app.root_path).parent / "backups"
-    backup_dir.mkdir(parents=True, exist_ok=True)
+    backup_dir = _ensure_dir(Path(current_app.root_path).parent / "backups")
 
     stamp = datetime.utcnow().strftime("%Y-%m-%d-%H%M%S")
     zip_path = backup_dir / f"backup-{stamp}.zip"
-
     url = _database_url()
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp)
 
-        # Database
         if _is_sqlite(url):
             db_src = _sqlite_path(url)
             if not db_src.exists():
@@ -112,48 +188,41 @@ def _build_backup_zip() -> Path:
             db_dest = tmp_path / "app.sql"
             _pg_dump(url, db_dest)
 
-        # Migration head stamp
         (tmp_path / "migration_head.txt").write_text(_current_alembic_head())
 
-        # Instance flags
         setup_flag = instance_dir / ".setup-complete"
         if setup_flag.exists():
             shutil.copy2(setup_flag, tmp_path / ".setup-complete")
 
-        # Build zip
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
             zf.write(db_dest, db_dest.name)
-
             flag_path = tmp_path / ".setup-complete"
             if flag_path.exists():
                 zf.write(flag_path, "instance/.setup-complete")
-
-            mh_path = tmp_path / "migration_head.txt"
-            zf.write(mh_path, "migration_head.txt")
-
+            zf.write(tmp_path / "migration_head.txt", "migration_head.txt")
             if uploads_root.exists():
                 for f in sorted(uploads_root.rglob("*")):
                     if f.is_file():
-                        arcname = f"uploads/{f.relative_to(uploads_root)}"
-                        zf.write(f, arcname)
+                        zf.write(f, f"uploads/{f.relative_to(uploads_root)}")
 
     return zip_path
 
 
+# ---------------------------------------------------------------------------
+# Validation & restore
+# ---------------------------------------------------------------------------
+
 def _validate_backup_zip(zip_path: Path) -> str | None:
-    """Return an error message if the zip is invalid, or None if ok."""
     if not zipfile.is_zipfile(zip_path):
         return "Not a valid zip archive."
     with zipfile.ZipFile(zip_path, "r") as zf:
-        names = zf.namelist()
-        has_db = any(n == "app.db" or n == "app.sql" for n in names)
+        has_db = any(n in ("app.db", "app.sql") for n in zf.namelist())
         if not has_db:
             return "Backup does not contain a database file (app.db or app.sql)."
     return None
 
 
 def _perform_restore(zip_path: Path) -> None:
-    """Replace DB, uploads, and instance flags from a validated backup zip."""
     url = _database_url()
     uploads_root = Path(current_app.config["UPLOAD_FOLDER"])
     instance_dir = Path(current_app.instance_path)
@@ -162,7 +231,6 @@ def _perform_restore(zip_path: Path) -> None:
     with zipfile.ZipFile(zip_path, "r") as zf:
         names = set(zf.namelist())
 
-        # --- Database ---
         if "app.db" in names and _is_sqlite(url):
             db_dest = _sqlite_path(url)
             db_dest.parent.mkdir(parents=True, exist_ok=True)
@@ -175,7 +243,6 @@ def _perform_restore(zip_path: Path) -> None:
             _pg_restore(Path(tmp.name), url)
             Path(tmp.name).unlink(missing_ok=True)
 
-        # --- Uploads ---
         upload_entries = [n for n in names if n.startswith("uploads/") and not n.endswith("/")]
         if upload_entries:
             if uploads_root.exists():
@@ -186,16 +253,12 @@ def _perform_restore(zip_path: Path) -> None:
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_bytes(zf.read(entry))
 
-        # --- Instance flags ---
         if "instance/.setup-complete" in names:
             flag_dest = instance_dir / ".setup-complete"
             flag_dest.parent.mkdir(parents=True, exist_ok=True)
             flag_dest.write_bytes(zf.read("instance/.setup-complete"))
 
-    # --- Run pending migrations ---
     _run_migrations()
-
-    # --- Clear booklets cache (zips reference old abstracts) ---
     _clear_booklet_cache()
 
 
@@ -224,46 +287,115 @@ def backup():
     return render_template("admin/backup.html")
 
 
+# -- Download -----------------------------------------------------------------
+
 @admin_bp.route("/backup/create", methods=["POST"])
 @requires_permission("system.backup")
 def backup_create():
     try:
         zip_path = _build_backup_zip()
-        audit.record("backup.created",
-                     target_kind="system", target_id=0,
-                     summary=f"Backup created: {zip_path.name}")
-        flash("Backup created.", "success")
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    audit.record("backup.created",
+                 target_kind="system", target_id=0,
+                 summary=f"Backup created: {zip_path.name}")
+
+    file_size = zip_path.stat().st_size
+    if file_size <= CHUNK_BYTES:
+        # Serve whole file directly
         return send_file(
             zip_path, as_attachment=True,
             download_name=zip_path.name,
             mimetype="application/zip",
         )
-    except Exception as e:
-        flash(f"Backup failed: {e}", "error")
-        return redirect(url_for("admin.backup"))
+
+    # Split into chunks, delete original zip
+    upload_id = secrets.token_hex(12)
+    chunk_count, total_hash = _split_file(zip_path, upload_id)
+    zip_path.unlink(missing_ok=True)
+
+    return jsonify({
+        "upload_id": upload_id,
+        "chunk_count": chunk_count,
+        "total_hash": total_hash,
+        "filename": zip_path.name,
+    })
 
 
-@admin_bp.route("/backup/restore-upload", methods=["POST"])
+@admin_bp.route("/backup/download-chunk/<upload_id>/<int:index>")
 @requires_permission("system.backup")
-def backup_restore_upload():
-    f = request.files.get("backup_file")
-    if not f or not f.filename:
-        flash("No file uploaded.", "error")
+def backup_download_chunk(upload_id: str, index: int):
+    chunk_path = _chunk_dir(upload_id) / f"{index:04d}"
+    if not chunk_path.exists():
+        abort(404)
+    return send_file(chunk_path, mimetype="application/octet-stream")
+
+
+# -- Restore ------------------------------------------------------------------
+
+@admin_bp.route("/backup/restore-chunk", methods=["POST"])
+@requires_permission("system.backup")
+def backup_restore_chunk():
+    upload_id = (request.form.get("upload_id") or "").strip()
+    chunk_index = request.form.get("chunk_index", type=int)
+    total_chunks = request.form.get("total_chunks", type=int)
+    client_hash = (request.form.get("checksum") or "").strip().lower()
+
+    f = request.files.get("chunk")
+    if not upload_id or chunk_index is None or not f:
+        return jsonify({"error": "Missing upload_id, chunk_index, or chunk file."}), 400
+
+    data = f.stream.read()
+    if _sha256(data) != client_hash:
+        return jsonify({"error": f"Checksum mismatch on chunk {chunk_index}."}), 400
+
+    d = _chunk_dir(upload_id)
+    (d / f"{chunk_index:04d}").write_bytes(data)
+
+    if chunk_index == total_chunks - 1:
+        # Recombine into full zip
+        backup_dir = _ensure_dir(Path(current_app.root_path).parent / "backups")
+        final_path = backup_dir / f".restore-{upload_id}.zip"
+        recombined_hash = _recombine_chunks(upload_id, final_path)
+        err = _validate_backup_zip(final_path)
+        _cleanup_chunks(upload_id)
+        if err:
+            final_path.unlink(missing_ok=True)
+            return jsonify({"error": err}), 400
+        return jsonify({
+            "complete": True,
+            "upload_id": upload_id,
+            "total_hash": recombined_hash,
+        })
+
+    return jsonify({"complete": False, "chunk_index": chunk_index})
+
+
+@admin_bp.route("/backup/restore-finalize", methods=["POST"])
+@requires_permission("system.backup")
+def backup_restore_finalize():
+    """Called after all chunks are uploaded.  Validates the recombined zip,
+    generates an OTP, and redirects to the confirm page."""
+    upload_id = (request.form.get("upload_id") or "").strip()
+    total_hash = (request.form.get("total_hash") or "").strip().lower()
+
+    if not upload_id:
+        flash("Missing upload session.", "error")
         return redirect(url_for("admin.backup"))
 
-    # Save upload to a temp location for OTP confirmation
-    backup_dir = Path(current_app.root_path).parent / "backups"
-    backup_dir.mkdir(parents=True, exist_ok=True)
-    token = secrets.token_hex(12)
-    restore_path = backup_dir / f".restore-{token}.zip"
+    backup_dir = _ensure_dir(Path(current_app.root_path).parent / "backups")
+    restore_path = backup_dir / f".restore-{upload_id}.zip"
 
-    raw = f.stream.read()
-    restore_path.write_bytes(raw)
+    if not restore_path.exists():
+        flash("Upload session not found. The chunks may not all have arrived.",
+              "error")
+        return redirect(url_for("admin.backup"))
 
-    err = _validate_backup_zip(restore_path)
-    if err:
+    if total_hash and _sha256_file(restore_path) != total_hash:
         restore_path.unlink(missing_ok=True)
-        flash(err, "error")
+        flash("Total checksum mismatch. The uploaded file may be corrupted.",
+              "error")
         return redirect(url_for("admin.backup"))
 
     code = f"{secrets.randbelow(1_000_000):06d}"
@@ -288,13 +420,13 @@ def backup_restore_upload():
     )
     flash("Backup validated. A confirmation code has been sent to your email.",
           "success")
-    return redirect(url_for("admin.backup_restore_confirm", token=token))
+    return redirect(url_for("admin.backup_restore_confirm", token=upload_id))
 
 
 @admin_bp.route("/backup/restore-confirm/<token>", methods=["GET", "POST"])
 @requires_permission("system.backup")
 def backup_restore_confirm(token: str):
-    backup_dir = Path(current_app.root_path).parent / "backups"
+    backup_dir = _ensure_dir(Path(current_app.root_path).parent / "backups")
     restore_path = backup_dir / f".restore-{token}.zip"
 
     if not restore_path.exists():
@@ -316,14 +448,13 @@ def backup_restore_confirm(token: str):
 
         otp.consumed_at = datetime.utcnow()
 
-        # Safety backup before destructive restore
         try:
             safety_zip = _build_backup_zip()
             audit.record("backup.safety_created",
                          target_kind="system", target_id=0,
                          summary=f"Pre-restore safety backup: {safety_zip.name}")
         except Exception:
-            pass  # best-effort; don't block restore
+            pass
 
         try:
             _perform_restore(restore_path)

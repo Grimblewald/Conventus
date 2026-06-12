@@ -13,6 +13,7 @@
       <div class="grid cols-3 committee-grid">
         {% for m in items %}
           <article class="committee-card">
+            {% if m.role %}<div class="role">{{ m.role }}</div>{% endif %}
             <div class="portrait">
               {% if m.portrait_filename %}
                 <img src="{{ url_for('public.committee_upload', name=m.portrait_filename) }}"
@@ -22,16 +23,31 @@
               {% endif %}
             </div>
             <h3>{{ m.display_name }}</h3>
-            {% set affil_parts = [] %}
-            {% if m.role %}{{ affil_parts.append(m.role) or '' }}{% endif %}
-            {% if m.position %}{{ affil_parts.append(m.position) or '' }}{% endif %}
-            {% if m.affiliation %}{{ affil_parts.append(m.affiliation) or '' }}{% endif %}
-            {% for entry in m.dynamic_roles %}
-              {% if entry.role %}{{ affil_parts.append(entry.role) or '' }}{% endif %}
-              {% if entry.affiliation %}{{ affil_parts.append(entry.affiliation) or '' }}{% endif %}
-            {% endfor %}
-            {% if affil_parts %}
-              <div class="aff">{{ affil_parts | join(' · ') }}</div>
+            {% set affil_items = [] %}
+            {% if m.position or m.affiliation %}
+              {% if m.position and m.affiliation %}
+                {{ affil_items.append(m.position ~ ' · ' ~ m.affiliation) or '' }}
+              {% else %}
+                {{ affil_items.append(m.position or m.affiliation) or '' }}
+              {% endif %}
+            {% endif %}
+            {% if m.dynamic_roles %}
+              {% for entry in m.dynamic_roles %}
+                {% if entry.role and entry.affiliation %}
+                  {{ affil_items.append(entry.role ~ ' · ' ~ entry.affiliation) or '' }}
+                {% elif entry.role or entry.affiliation %}
+                  {{ affil_items.append(entry.role or entry.affiliation) or '' }}
+                {% endif %}
+              {% endfor %}
+            {% endif %}
+            {% if affil_items %}
+              <div class="aff">
+                {{ affil_items[0] }}
+                {% if affil_items|length > 1 %}
+                  <span class="aff-more" style="display:none"> · {{ affil_items[1:] | join(' · ') }}</span>
+                  <span class="aff-toggle" onclick="var m=this.parentElement.querySelector('.aff-more');var o=m.style.display==='none';m.style.display=o?'':'none';this.textContent=o?' ▴':' ▾'" style="cursor:pointer;color:var(--c-accent);font-size:11px;"> ▾</span>
+                {% endif %}
+              </div>
             {% endif %}
             {% if m.interests %}<p class="interests">{{ m.interests }}</p>{% endif %}
             <ul class="links">

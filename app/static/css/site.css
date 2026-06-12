@@ -392,9 +392,12 @@ section.block.ink .table td {
 .committee-card .role {
   font-family: var(--f-ui); font-size: 12px; font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.14em; color: var(--c-accent);
-  margin-bottom: 6px;
+  margin-bottom: 10px;
 }
-.committee-card .aff { font-size: 14px; color: var(--c-muted-text); margin-bottom: 8px; line-height: 1.5; }
+.committee-card h3 {
+  font-family: var(--f-heading); font-size: 18px; margin: 12px 0 4px;
+}
+.committee-card .aff { font-size: 14px; color: var(--c-muted-text); margin-bottom: 6px; line-height: 1.5; }
 .committee-card .interests {
   font-size: 12px; color: var(--c-muted-text); font-style: italic;
   margin-bottom: 0; line-height: 1.6;

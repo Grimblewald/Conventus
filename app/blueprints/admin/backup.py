@@ -236,7 +236,7 @@ def _perform_restore(zip_path: Path) -> None:
             db_dest.parent.mkdir(parents=True, exist_ok=True)
             with tempfile.NamedTemporaryFile(delete=False) as tmp:
                 tmp.write(zf.read("app.db"))
-            Path(tmp.name).replace(db_dest)
+            shutil.move(tmp.name, str(db_dest))
         elif "app.sql" in names and not _is_sqlite(url):
             with tempfile.NamedTemporaryFile(suffix=".sql", delete=False) as tmp:
                 tmp.write(zf.read("app.sql"))

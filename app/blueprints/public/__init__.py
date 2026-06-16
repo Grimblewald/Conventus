@@ -171,8 +171,11 @@ def contact():
 
         body = (f"From: {sender_name} <{sender_email}>\n"
                 f"Sent via the contact form.\n\n{message}\n")
-        send_mail(target.email, f"[Contact] {subject}", body)
-        flash(f"Message sent to {target.full_name}.", "success")
+        ok = send_mail(target.email, f"[Contact] {subject}", body)
+        if ok:
+            flash(f"Message sent to {target.full_name}.", "success")
+        else:
+            flash("Message could not be sent. Please try again later.", "error")
         return redirect(url_for("public.contact"))
 
     return render_template("public/contact.html", recipients=recipients, form={})

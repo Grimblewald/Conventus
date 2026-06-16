@@ -35,16 +35,30 @@ auth_bp = Blueprint("auth", __name__, template_folder="../../templates/auth")
 # OTP issuance helper
 # ---------------------------------------------------------------------------
 
-def issue_login_otp(email: str) -> None:
+def issue_login_otp(email: str) -> bool:
     email = email.lower().strip()
 
-    # Invalidate prior unconsumed login codes for this email.
     (OTPCode.query
         .filter_by(email=email, purpose="login", consumed_at=None)
         .update({"consumed_at": datetime.utcnow()}))
 
     code = f"{secrets.randbelow(1_000_000):06d}"
     ttl = current_app.config["OTP_TTL_SECONDS"]
+
+    from ...models.content import get_site_settings
+    site_name = get_site_settings().site_name
+    ok = send_mail(
+        to=email,
+        subject=f"Your {site_name} sign-in code",
+        body=(
+            f"Your one-time sign-in code is: {code}\n\n"
+            f"It expires in {ttl // 60} minutes. "
+            f"If you didn't request it, you can safely ignore this email."
+        ),
+    )
+    if not ok:
+        return False
+
     otp = OTPCode(
         email=email,
         code=code,
@@ -54,18 +68,7 @@ def issue_login_otp(email: str) -> None:
     )
     db.session.add(otp)
     db.session.commit()
-
-    from ...models.content import get_site_settings
-    site_name = get_site_settings().site_name
-    send_mail(
-        to=email,
-        subject=f"Your {site_name} sign-in code",
-        body=(
-            f"Your one-time sign-in code is: {code}\n\n"
-            f"It expires in {ttl // 60} minutes. "
-            f"If you didn't request it, you can safely ignore this email."
-        ),
-    )
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -95,7 +98,9 @@ def login():
             )
             return render_template("auth/login.html", email=email)
 
-        issue_login_otp(email)
+        if not issue_login_otp(email):
+            flash("Failed to send login code. Please try again.", "error")
+            return render_template("auth/login.html", email=email)
         session["pending_email"] = email
         return redirect(url_for("auth.verify"))
 

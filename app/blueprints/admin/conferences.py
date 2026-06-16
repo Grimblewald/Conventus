@@ -451,6 +451,17 @@ def conference_delete_request(cid):
 
     code = f"{secrets.randbelow(1_000_000):06d}"
     ttl = current_app.config["OTP_TTL_SECONDS"]
+    ok = send_mail(
+        to=current_user.email,
+        subject="Confirm conference deletion",
+        body=(f"You requested to delete the conference “{c.title}”.\n\n"
+              f"Confirmation code: {code}\n\n"
+              f"This code expires in {ttl // 60} minutes. "
+              f"If you didn't request this, ignore the email."),
+    )
+    if not ok:
+        flash("Failed to send confirmation email. Please try again.", "error")
+        return redirect(url_for("admin.conference_edit", cid=c.id))
     db.session.add(OTPCode(
         email=current_user.email.lower(),
         code=code,
@@ -459,14 +470,6 @@ def conference_delete_request(cid):
         ip=request.remote_addr,
     ))
     db.session.commit()
-    send_mail(
-        to=current_user.email,
-        subject="Confirm conference deletion",
-        body=(f"You requested to delete the conference “{c.title}”.\n\n"
-              f"Confirmation code: {code}\n\n"
-              f"This code expires in {ttl // 60} minutes. "
-              f"If you didn't request this, ignore the email."),
-    )
     flash("A confirmation code has been sent to your email.", "success")
     return redirect(url_for("admin.conference_delete_confirm", cid=c.id))
 
@@ -545,6 +548,17 @@ def abstract_delete_request(aid):
         return redirect(url_for("admin.abstracts"))
     code = f"{secrets.randbelow(1_000_000):06d}"
     ttl = current_app.config["OTP_TTL_SECONDS"]
+    ok = send_mail(
+        to=current_user.email,
+        subject="Confirm abstract deletion",
+        body=(f"You requested to delete the abstract \"{a.title}\".\n\n"
+              f"Confirmation code: {code}\n\n"
+              f"This code expires in {ttl // 60} minutes. "
+              f"If you didn't request this, ignore the email."),
+    )
+    if not ok:
+        flash("Failed to send confirmation email. Please try again.", "error")
+        return redirect(url_for("admin.abstracts"))
     db.session.add(OTPCode(
         email=current_user.email.lower(),
         code=code,
@@ -553,14 +567,6 @@ def abstract_delete_request(aid):
         ip=request.remote_addr,
     ))
     db.session.commit()
-    send_mail(
-        to=current_user.email,
-        subject="Confirm abstract deletion",
-        body=(f"You requested to delete the abstract \"{a.title}\".\n\n"
-              f"Confirmation code: {code}\n\n"
-              f"This code expires in {ttl // 60} minutes. "
-              f"If you didn't request this, ignore the email."),
-    )
     flash("A confirmation code has been sent to your email.", "success")
     return redirect(url_for("admin.abstract_delete_confirm", aid=a.id))
 

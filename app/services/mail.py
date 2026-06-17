@@ -16,7 +16,7 @@ import os
 import smtplib
 import threading
 from email.message import EmailMessage
-from email.utils import formatdate, make_msgid
+from email.utils import formataddr, formatdate, make_msgid, parseaddr
 
 
 log = logging.getLogger(__name__)
@@ -38,29 +38,45 @@ def connect_mailer() -> None:
                     exc_info=True)
 
 
-def send_mail(to: str, subject: str, body: str) -> bool:
-    """Returns True on success, False on failure. Never raises."""
+def send_mail(to: str, subject: str, body: str, sender_name: str | None = None,
+              reply_to: str | None = None) -> bool:
+    """Returns True on success, False on failure. Never raises.
+
+    If *sender_name* is given, it replaces the display-name portion of
+    MAIL_FROM (e.g. "Contact Form" <noreply@example.org>).
+    """
     backend = os.environ.get("MAIL_BACKEND", "console").strip().lower()
     try:
         if backend == "smtp":
-            _send_smtp(to, subject, body)
+            _send_smtp(to, subject, body, sender_name, reply_to)
         else:
-            _send_console(to, subject, body)
+            _send_console(to, subject, body, sender_name, reply_to)
         return True
     except Exception:
         log.exception("send_mail(%r) failed", to)
         return False
 
 
-def _send_console(to: str, subject: str, body: str) -> None:
+def _send_console(to: str, subject: str, body: str,
+                  sender_name: str | None = None,
+                  reply_to: str | None = None) -> None:
     bar = "=" * 72
-    print(f"\n{bar}\n[mail:console] to={to}\n[mail:console] subject={subject}\n"
+    from_label = f" (from: {sender_name})" if sender_name else ""
+    reply_label = f" (reply-to: {reply_to})" if reply_to else ""
+    print(f"\n{bar}\n[mail:console] to={to}{from_label}{reply_label}\n[mail:console] subject={subject}\n"
           f"{'-' * 72}\n{body}\n{bar}\n", flush=True)
 
 
-def _send_smtp(to: str, subject: str, body: str) -> None:
+def _send_smtp(to: str, subject: str, body: str,
+               sender_name: str | None = None,
+               reply_to: str | None = None) -> None:
     from flask import current_app
-    sender = current_app.config.get("MAIL_FROM", "").strip() or "noreply@example.org"
+    raw_from = current_app.config.get("MAIL_FROM", "").strip() or "noreply@example.org"
+    if sender_name:
+        _display, addr = parseaddr(raw_from)
+        sender = formataddr((sender_name, addr)) if addr else raw_from
+    else:
+        sender = raw_from
 
     msg = EmailMessage()
     msg["From"] = sender
@@ -68,6 +84,8 @@ def _send_smtp(to: str, subject: str, body: str) -> None:
     msg["Subject"] = subject
     msg["Message-ID"] = make_msgid()
     msg["Date"] = formatdate(localtime=True)
+    if reply_to:
+        msg["Reply-To"] = reply_to
     msg.set_content(body)
 
     conn = _get_smtp_connection()

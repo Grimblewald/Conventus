@@ -175,7 +175,9 @@ def contact():
                 f"From: {sender_name} <{sender_email}>\n"
                 f"Sent via the contact form.\n\n{message}\n")
         site_name = get_site_settings().site_name
-        ok = send_mail(target.email, f"{site_name} Contact Form — {sender_name}", body)
+        ok = send_mail(target.email, f"{site_name} Contact Form — {sender_name}", body,
+                       sender_name=f"{site_name} Contact Form",
+                       reply_to=f"{sender_name} <{sender_email}>")
         if ok:
             flash(f"Message sent to {target.full_name}.", "success")
         else:

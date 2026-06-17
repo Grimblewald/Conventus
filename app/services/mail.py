@@ -70,7 +70,23 @@ def _send_smtp(to: str, subject: str, body: str) -> None:
     msg["Date"] = formatdate(localtime=True)
     msg.set_content(body)
 
-    _get_smtp_connection().send_message(msg)
+    conn = _get_smtp_connection()
+    try:
+        conn.send_message(msg)
+    except smtplib.SMTPException:
+        _reset_smtp_connection()
+        _get_smtp_connection().send_message(msg)
+
+
+def _reset_smtp_connection() -> None:
+    global _smtp_conn
+    with _smtp_lock:
+        if _smtp_conn is not None:
+            try:
+                _smtp_conn.quit()
+            except Exception:
+                pass
+            _smtp_conn = None
 
 
 def _get_smtp_connection() -> smtplib.SMTP:

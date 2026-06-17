@@ -384,15 +384,7 @@ def backup_restore_finalize():
 
     code = f"{secrets.randbelow(1_000_000):06d}"
     ttl = current_app.config["OTP_TTL_SECONDS"]
-    db.session.add(OTPCode(
-        email=current_user.email.lower(),
-        code=code,
-        purpose="backup_restore",
-        expires_at=datetime.utcnow() + timedelta(seconds=ttl),
-        ip=request.remote_addr,
-    ))
-    db.session.commit()
-    send_mail(
+    ok = send_mail(
         to=current_user.email,
         subject="Confirm site restore",
         body=(f"You requested to restore the site from a backup.\n\n"
@@ -402,6 +394,17 @@ def backup_restore_finalize():
               f"WARNING: This will replace the current database and all "
               f"uploaded files."),
     )
+    if not ok:
+        flash("Failed to send confirmation email. Please try again.", "error")
+        return redirect(url_for("admin.backup"))
+    db.session.add(OTPCode(
+        email=current_user.email.lower(),
+        code=code,
+        purpose="backup_restore",
+        expires_at=datetime.utcnow() + timedelta(seconds=ttl),
+        ip=request.remote_addr,
+    ))
+    db.session.commit()
     flash("Backup validated. A confirmation code has been sent to your email.",
           "success")
     return redirect(url_for("admin.backup_restore_confirm", token=upload_id))

@@ -175,8 +175,11 @@ def contact():
                 f"From: {sender_name} <{sender_email}>\n"
                 f"Sent via the contact form.\n\n{message}\n")
         site_name = get_site_settings().site_name
-        send_mail(target.email, f"{site_name} Contact Form — {sender_name}", body)
-        flash(f"Message sent to {target.full_name}.", "success")
+        ok = send_mail(target.email, f"{site_name} Contact Form — {sender_name}", body)
+        if ok:
+            flash(f"Message sent to {target.full_name}.", "success")
+        else:
+            flash("Message could not be sent. Please try again later.", "error")
         return redirect(url_for("public.contact"))
 
     return render_template("public/contact.html", recipients=recipients, form={})

@@ -251,6 +251,17 @@ def delete_abstract_request(aid):
         return redirect(url_for("member.dashboard"))
     code = f"{secrets.randbelow(1_000_000):06d}"
     ttl = current_app.config["OTP_TTL_SECONDS"]
+    ok = send_mail(
+        to=current_user.email,
+        subject="Confirm abstract deletion",
+        body=(f"You requested to delete the abstract \"{a.title}\".\n\n"
+              f"Confirmation code: {code}\n\n"
+              f"This code expires in {ttl // 60} minutes. "
+              f"If you didn't request this, ignore the email."),
+    )
+    if not ok:
+        flash("Failed to send confirmation email. Please try again.", "error")
+        return redirect(url_for("member.dashboard"))
     db.session.add(OTPCode(
         email=current_user.email.lower(),
         code=code,
@@ -259,14 +270,6 @@ def delete_abstract_request(aid):
         ip=request.remote_addr,
     ))
     db.session.commit()
-    send_mail(
-        to=current_user.email,
-        subject="Confirm abstract deletion",
-        body=(f"You requested to delete the abstract \"{a.title}\".\n\n"
-              f"Confirmation code: {code}\n\n"
-              f"This code expires in {ttl // 60} minutes. "
-              f"If you didn't request this, ignore the email."),
-    )
     flash("A confirmation code has been sent to your email.", "success")
     return redirect(url_for("member.delete_abstract_confirm", aid=a.id))
 

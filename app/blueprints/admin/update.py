@@ -53,15 +53,7 @@ def update_page():
 def update_request():
     code = f"{secrets.randbelow(1_000_000):06d}"
     ttl = current_app.config["OTP_TTL_SECONDS"]
-    db.session.add(OTPCode(
-        email=current_user.email.lower(),
-        code=code,
-        purpose="site_update",
-        expires_at=datetime.utcnow() + timedelta(seconds=ttl),
-        ip=request.remote_addr,
-    ))
-    db.session.commit()
-    send_mail(
+    ok = send_mail(
         to=current_user.email,
         subject="Confirm site update",
         body=(f"You requested to update the site from git.\n\n"
@@ -70,6 +62,17 @@ def update_request():
               f"If you didn't request this, ignore the email.\n\n"
               f"This will run git pull and apply database migrations."),
     )
+    if not ok:
+        flash("Failed to send confirmation email. Please try again.", "error")
+        return redirect(url_for("admin.update_page"))
+    db.session.add(OTPCode(
+        email=current_user.email.lower(),
+        code=code,
+        purpose="site_update",
+        expires_at=datetime.utcnow() + timedelta(seconds=ttl),
+        ip=request.remote_addr,
+    ))
+    db.session.commit()
     flash("A confirmation code has been sent to your email.", "success")
     return redirect(url_for("admin.update_confirm"))
 

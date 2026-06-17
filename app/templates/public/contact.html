@@ -44,6 +44,7 @@
         <textarea class="textarea" id="message" name="message" required>{{ form.message or '' }}</textarea>
       </div>
       <button class="btn btn-primary" type="submit">Send</button>
+      <div class="help" style="margin-top: 10px;">A verification code will be emailed to the address you provide before your message is sent.</div>
     </form>
     {% else %}
       <p class="muted">No contact recipients are configured yet.</p>

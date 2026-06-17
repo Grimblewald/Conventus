@@ -3,18 +3,19 @@ custom pages, served uploads.
 """
 from __future__ import annotations
 
-from datetime import date
+import secrets
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from flask import (
     Blueprint, abort, current_app, flash, redirect, render_template, request,
-    send_from_directory, url_for,
+    send_from_directory, session, url_for,
 )
 from flask_login import current_user
 
 from ...extensions import db, limiter
 from ...models import (
-    Announcement, CommitteeMember, Conference, Page, PastBoard, User,
+    Announcement, CommitteeMember, Conference, OTPCode, Page, PastBoard, User,
     get_site_settings,
 )
 from ...services.mail import send_mail
@@ -156,35 +157,153 @@ def contact():
             return redirect(url_for("public.contact"))
 
         try:
-            rid = int(request.form.get("recipient_id", ""))
+            rid = int(request.form.get("recipient_id") or "")
         except ValueError:
             rid = 0
         target = next((u for u in recipients if u.id == rid), None)
-        sender_name = (request.form.get("name", "") or "").strip()
-        sender_email = (request.form.get("email", "") or "").strip()
-        user_subject = (request.form.get("subject", "") or "").strip()
-        message = (request.form.get("message", "") or "").strip()
+        sender_name = (request.form.get("name") or "").strip()
+        sender_email = (request.form.get("email") or "").strip()
+        user_subject = (request.form.get("subject") or "").strip()
+        message = (request.form.get("message") or "").strip()
 
         if not (target and sender_name and sender_email and message):
             flash("Please fill in every field.", "error")
             return render_template("public/contact.html",
                                    recipients=recipients, form=request.form)
 
+        # Store form data in session and issue OTP to verify email ownership.
+        session["contact_form"] = {
+            "name": sender_name,
+            "email": sender_email,
+            "subject": user_subject,
+            "message": message,
+            "recipient_id": rid,
+        }
+        code = f"{secrets.randbelow(1_000_000):06d}"
+        ttl = current_app.config["OTP_TTL_SECONDS"]
+        ok = send_mail(
+            to=sender_email,
+            subject="Verify your contact form submission",
+            body=(f"Someone (hopefully you) used this address to send a "
+                  f"message via the contact form.\n\n"
+                  f"Your verification code: {code}\n\n"
+                  f"It expires in {ttl // 60} minutes. "
+                  f"If you didn't request this, ignore the email."),
+        )
+        if not ok:
+            session.pop("contact_form", None)
+            flash("Failed to send verification code. Please try again.", "error")
+            return render_template("public/contact.html",
+                                   recipients=recipients, form=request.form)
+        db.session.add(OTPCode(
+            email=sender_email.lower(),
+            code=code,
+            purpose="contact_form",
+            expires_at=datetime.utcnow() + timedelta(seconds=ttl),
+            ip=request.remote_addr,
+        ))
+        db.session.commit()
+        flash("A verification code has been sent to your email.", "success")
+        return redirect(url_for("public.contact_verify"))
+
+    return render_template("public/contact.html", recipients=recipients, form={})
+
+
+@public_bp.route("/contact/verify", methods=["GET", "POST"])
+@limiter.limit("10 per hour;4 per minute", methods=["POST"])
+def contact_verify():
+    data = session.get("contact_form")
+    if not data:
+        return redirect(url_for("public.contact"))
+
+    recipient = User.query.get(data.get("recipient_id"))
+    if not recipient or recipient.deleted_at:
+        session.pop("contact_form", None)
+        return redirect(url_for("public.contact"))
+
+    if request.method == "POST":
+        entered = (request.form.get("code") or "").strip().replace(" ", "")
+        otp = (OTPCode.query
+               .filter_by(email=data["email"].lower(),
+                          code=entered,
+                          purpose="contact_form",
+                          consumed_at=None)
+               .order_by(OTPCode.id.desc())
+               .first())
+        if not (otp and otp.is_valid()):
+            flash("That code didn't match, or it has expired.", "error")
+            return render_template("public/contact_verify.html", data=data,
+                                   recipient=recipient)
+
+        otp.consumed_at = datetime.utcnow()
+        db.session.commit()
+
+        sender_name = data["name"]
+        sender_email = data["email"]
+        user_subject = data.get("subject") or ""
+        message = data["message"]
+
         body = (f"From: {sender_name} <{sender_email}>\n"
                 f"Subject: {user_subject}\n\n{message}\n") if user_subject else (
                 f"From: {sender_name} <{sender_email}>\n"
                 f"Sent via the contact form.\n\n{message}\n")
         site_name = get_site_settings().site_name
-        ok = send_mail(target.email, f"{site_name} Contact Form — {sender_name}", body,
+        ok = send_mail(recipient.email,
+                       f"{site_name} Contact Form — {sender_name}", body,
                        sender_name=f"{site_name} Contact Form",
                        reply_to=f"{sender_name} <{sender_email}>")
+
+        # Send confirmation copy to submitter.
+        copy_body = (
+            f"Thank you for contacting {site_name}. "
+            f"Your message was sent to {recipient.full_name}.\n\n"
+            f"Here is a copy for your records:\n\n"
+            f"---\n\n{message}"
+        )
+        send_mail(sender_email, f"{site_name} — we received your message", copy_body,
+                  sender_name=f"{site_name} Contact Form")
+
+        session.pop("contact_form", None)
+
         if ok:
-            flash(f"Message sent to {target.full_name}.", "success")
+            flash(f"Message sent to {recipient.full_name}.", "success")
         else:
             flash("Message could not be sent. Please try again later.", "error")
         return redirect(url_for("public.contact"))
 
-    return render_template("public/contact.html", recipients=recipients, form={})
+    return render_template("public/contact_verify.html", data=data,
+                           recipient=recipient)
+
+
+@public_bp.route("/contact/resend", methods=["POST"])
+@limiter.limit("4 per hour;2 per minute")
+def contact_resend():
+    data = session.get("contact_form")
+    if not data:
+        return redirect(url_for("public.contact"))
+
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    ttl = current_app.config["OTP_TTL_SECONDS"]
+    ok = send_mail(
+        to=data["email"],
+        subject="Verify your contact form submission",
+        body=(f"A new verification code has been requested.\n\n"
+              f"Your code: {code}\n\n"
+              f"It expires in {ttl // 60} minutes."),
+    )
+    if not ok:
+        flash("Failed to send verification code. Please try again.", "error")
+        return redirect(url_for("public.contact_verify"))
+    db.session.add(OTPCode(
+        email=data["email"].lower(),
+        code=code,
+        purpose="contact_form",
+        expires_at=datetime.utcnow() + timedelta(seconds=ttl),
+        ip=request.remote_addr,
+    ))
+    db.session.commit()
+    flash("A new code has been sent to your email.", "success")
+    return redirect(url_for("public.contact_verify"))
 
 
 # ---------------------------------------------------------------------------

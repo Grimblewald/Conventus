@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Verify · {{ site.site_name }}{% endblock %}
+{% block content %}
+
+<section class="block">
+  <div class="container container-narrow" style="text-align: center;">
+    <div class="eyebrow step" style="justify-content: center;">Step 2 of 2</div>
+    <h1 style="font-size: 2.2rem; margin-top: 6px;">Review &amp; verify</h1>
+    <p class="lede">
+      We sent a 6-digit code to <strong>{{ data.email }}</strong>.
+      Enter it below to send your message.
+    </p>
+  </div>
+</section>
+
+<section class="block" style="padding-top: 0;">
+  <div class="container container-narrow">
+    <div class="card" style="text-align: left; padding: 24px 28px; margin-bottom: 28px;">
+      <h3 style="margin: 0 0 14px; font-size: 1.05rem;">Your message</h3>
+      <div style="display: grid; grid-template-columns: 120px 1fr; gap: 6px 16px; font-size: 14px;">
+        <div style="color: var(--c-muted-text);">To:</div>
+        <div>{{ recipient.full_name }}{% if recipient.committee_profile and recipient.committee_profile.role %} — {{ recipient.committee_profile.role }}{% endif %}</div>
+        <div style="color: var(--c-muted-text);">Your name:</div>
+        <div>{{ data.name }}</div>
+        <div style="color: var(--c-muted-text);">Your email:</div>
+        <div>{{ data.email }}</div>
+        <div style="color: var(--c-muted-text);">Subject:</div>
+        <div>{{ data.subject or '—' }}</div>
+      </div>
+      <div style="margin-top: 14px; background: var(--c-bg, #f8f8f8); padding: 12px 16px; border-radius: 6px; font-size: 14px; white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto;">
+        {{ data.message }}
+      </div>
+    </div>
+
+    <form method="post" class="form" autocomplete="off" id="verify-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="otp-box">
+        {% for i in range(6) %}
+          <input class="otp-digit" inputmode="numeric" pattern="[0-9]*"
+                 maxlength="1" autocomplete="one-time-code"
+                 aria-label="Digit {{ loop.index }}">
+        {% endfor %}
+      </div>
+      <input type="hidden" id="otp-hidden" name="code" required>
+      <button class="btn btn-primary btn-lg" type="submit" id="verify-submit"
+              style="min-width: 200px;" disabled>Send message</button>
+    </form>
+
+    <div style="margin-top: 28px; font-family: var(--f-ui);
+                font-size: 13.5px; color: var(--c-muted-text);">
+      Wrong email?
+      <form method="post" action="{{ url_for('public.contact_resend') }}"
+            style="display: inline;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-quiet btn-sm" type="submit"
+                style="padding: 0;">Send a new code</button>
+      </form>
+      ·
+      <a href="{{ url_for('public.contact') }}">Edit message</a>
+    </div>
+  </div>
+</section>
+
+<script>
+(function() {
+  var hidden = document.getElementById("otp-hidden");
+  var submitBtn = document.getElementById("verify-submit");
+  var resendForms = document.querySelectorAll('form[action*="/resend"]');
+
+  function toggleSubmit() {
+    if (hidden.value.length >= 6) {
+      submitBtn.disabled = false;
+      submitBtn.style.opacity = "";
+    } else {
+      submitBtn.disabled = true;
+      submitBtn.style.opacity = "0.5";
+    }
+  }
+  submitBtn.style.opacity = "0.5";
+  toggleSubmit();
+
+  var box = document.querySelector(".otp-box");
+  if (box) {
+    box.addEventListener("input", function() {
+      setTimeout(toggleSubmit, 0);
+    });
+  }
+
+  resendForms.forEach(function(form) {
+    form.addEventListener("submit", function() {
+      var btn = form.querySelector("button[type=\"submit\"]");
+      if (!btn || btn.disabled) return;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>Sending code&hellip;';
+    });
+  });
+})();
+</script>
+
+{% endblock %}

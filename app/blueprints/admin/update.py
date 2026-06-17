@@ -105,7 +105,7 @@ def update_confirm():
         audit.record("site.updated",
                      target_kind="system", target_id=0,
                      summary="Site updated via admin panel")
-        flash("Site updated. You may need to restart the app.", "success")
+        flash("Site updated. Run 'systemctl --user restart cloudflared-launch' to restart.", "success")
         return redirect(url_for("admin.index"))
 
     return render_template("admin/update_confirm.html")

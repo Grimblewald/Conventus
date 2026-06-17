@@ -15,6 +15,7 @@ from flask_login import current_user
 from ...extensions import db, limiter
 from ...models import (
     Announcement, CommitteeMember, Conference, Page, PastBoard, User,
+    get_site_settings,
 )
 from ...services.mail import send_mail
 
@@ -161,7 +162,7 @@ def contact():
         target = next((u for u in recipients if u.id == rid), None)
         sender_name = (request.form.get("name", "") or "").strip()
         sender_email = (request.form.get("email", "") or "").strip()
-        subject = (request.form.get("subject", "") or "").strip() or "Contact form enquiry"
+        user_subject = (request.form.get("subject", "") or "").strip()
         message = (request.form.get("message", "") or "").strip()
 
         if not (target and sender_name and sender_email and message):
@@ -170,8 +171,11 @@ def contact():
                                    recipients=recipients, form=request.form)
 
         body = (f"From: {sender_name} <{sender_email}>\n"
+                f"Subject: {user_subject}\n\n{message}\n") if user_subject else (
+                f"From: {sender_name} <{sender_email}>\n"
                 f"Sent via the contact form.\n\n{message}\n")
-        send_mail(target.email, f"[Contact] {subject}", body)
+        site_name = get_site_settings().site_name
+        send_mail(target.email, f"{site_name} Contact Form — {sender_name}", body)
         flash(f"Message sent to {target.full_name}.", "success")
         return redirect(url_for("public.contact"))
 

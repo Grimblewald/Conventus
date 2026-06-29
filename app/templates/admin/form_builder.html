@@ -14,8 +14,8 @@
   <input type="hidden" name="action" value="save_schema">
 
   <div id="sections-container">
-    {% for si, section in enumerate(schema.sections | default([])) %}
-    <div class="edit-section schema-section" data-section-index="{{ si }}">
+    {% for section in schema.sections | default([]) %}
+    <div class="edit-section schema-section" data-section-index="{{ loop.index0 }}">
       <div class="schema-section-header">
         <div class="row-2" style="align-items:center;">
           <div class="field" style="margin:0;">
@@ -26,14 +26,16 @@
           </div>
         </div>
         <div style="display:flex; align-items:center; gap:12px; margin-top:8px;">
-          <label class="check-label"><input type="checkbox" name="section_toggleable[]" value="{{ si }}" {% if section.toggleable %}checked{% endif %}> Toggleable</label>
-          <label class="check-label"><input type="checkbox" name="section_collapsible[]" value="{{ si }}" {% if section.collapsible %}checked{% endif %}> Collapsible</label>
+          <label class="check-label"><input type="checkbox" name="section_toggleable[]" value="{{ loop.index0 }}" {% if section.toggleable %}checked{% endif %}> Toggleable</label>
+          <label class="check-label"><input type="checkbox" name="section_collapsible[]" value="{{ loop.index0 }}" {% if section.collapsible %}checked{% endif %}> Collapsible</label>
           <button type="button" class="btn btn-quiet btn-sm js-remove-section" style="margin-left:auto;">Remove section</button>
         </div>
       </div>
 
-      <div class="schema-fields" data-section="{{ si }}" style="margin-top:12px;">
-        {% for fi, field in enumerate(section.fields | default([])) %}
+      <div class="schema-fields" data-section="{{ loop.index0 }}" style="margin-top:12px;">
+        {% set si = loop.index0 %}
+        {% for field in section.fields | default([]) %}
+        {% set fi = loop.index0 %}
         <div class="schema-field-row" data-field="{{ fi }}">
           <div class="row-2" style="align-items:end;">
             <div class="field"><label>Key</label><input class="input input-sm" name="field_key_{{ si }}[]" value="{{ field.key }}" style="width:140px;"></div>

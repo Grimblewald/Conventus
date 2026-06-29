@@ -209,10 +209,6 @@ def _register_template_globals(app: Flask) -> None:
         from .services.markdown import render
         return render(text or "")
 
-    @app.template_filter("enumerate")
-    def _enumerate_filter(seq):
-        return enumerate(seq)
-
     @app.template_filter("fmt_authors")
     def format_authors(text: str) -> str:
         """Render pipe-delimited author rows as HTML."""

@@ -117,6 +117,51 @@
   </div>
 </section>
 
+{% if speakers %}
+<section class="block alt">
+  <div class="container">
+    <div class="section-head">
+      <div>
+        <div class="eyebrow">Programme</div>
+        <h2>Speakers</h2>
+      </div>
+    </div>
+    <div class="grid cols-3 committee-grid">
+      {% for a in speakers %}
+        {% set name, affil = a.presenting_author %}
+        <article class="speaker-card">
+          {% if a.status != 'accepted' %}<div class="role">{{ a.status }}</div>{% endif %}
+          <div class="speaker-row">
+            <div class="speaker-portrait">
+              {% if a.profile_picture_filename %}
+                <img src="{{ url_for('public.abstract_upload', name=a.profile_picture_filename) }}" alt="{{ name }}">
+              {% else %}
+                <div class="ph" data-label="{{ name[:2].upper() if name else 'SP' }}"></div>
+              {% endif %}
+            </div>
+            <div class="speaker-info">
+              <h4>{{ name or a.title }}</h4>
+              {% if affil %}<div class="aff">{{ affil }}</div>{% endif %}
+            </div>
+          </div>
+          {% if a.title %}
+            <div class="speaker-talk">
+              {% if a.title|length > 60 %}
+                <span class="speaker-talk-text">{{ a.title[:57] }}&hellip;</span>
+                <span class="speaker-talk-full" style="display:none">{{ a.title }}</span>
+                <span class="speaker-talk-toggle" style="cursor:pointer;color:var(--c-accent);font-size:11px;"> &#x25BE;</span>
+              {% else %}
+                <span class="speaker-talk-text">{{ a.title }}</span>
+              {% endif %}
+            </div>
+          {% endif %}
+        </article>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+
 {% if c.organising_committee %}
 <div class="oc-modal-overlay" id="oc-modal" style="display:none;">
   <div class="oc-modal">
@@ -145,16 +190,11 @@
     </div>
   </div>
 </div>
-<script>
-(function(){
-  var toggle = document.getElementById("oc-toggle-btn");
-  var modal = document.getElementById("oc-modal");
-  var close = document.getElementById("oc-modal-close");
-  if (!toggle || !modal) return;
-  toggle.addEventListener("click", function(){ modal.style.display = ""; });
-  close.addEventListener("click", function(){ modal.style.display = "none"; });
-  modal.addEventListener("click", function(e){ if (e.target === modal) modal.style.display = "none"; });
-})();
-</script>
 {% endif %}
 {% endblock %}
+
+{% if c.organising_committee or speakers %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/public/conference.js') }}"></script>
+{% endblock %}
+{% endif %}

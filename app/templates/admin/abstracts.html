@@ -3,7 +3,7 @@
 {% block admin %}
 <div class="section-head"><div><div class="eyebrow">Submissions</div><h2>Abstracts</h2></div></div>
 <div style="margin-bottom:14px; display:flex; gap:8px;">
-  {% for s in ['submitted', 'accepted', 'rejected', 'revise', 'all'] %}
+  {% for s in ['submitted', 'accepted', 'rejected', 'revise', 'plenary', 'keynote', 'invited', 'all'] %}
     <a class="btn btn-{% if status == s %}primary{% else %}ghost{% endif %} btn-sm"
        href="{{ url_for('admin.abstracts', status=s) }}">{{ s|capitalize }}</a>
   {% endfor %}

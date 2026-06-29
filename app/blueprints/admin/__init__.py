@@ -139,3 +139,4 @@ from . import sponsors      # noqa: F401, E402
 from . import past_boards   # noqa: F401, E402
 from . import backup        # noqa: F401, E402
 from . import update        # noqa: F401, E402
+from . import form_builder   # noqa: F401, E402

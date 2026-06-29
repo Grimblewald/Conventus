@@ -18,9 +18,11 @@ from .conference import Conference, PriceTier
 from .sponsor import Sponsor, SponsorTier
 from .announcement import Announcement
 from .registration import Registration
-from .abstract import Abstract
+from .abstract import Abstract, SPEAKER_STATUSES, SPEAKER_STATUS_ORDER, ALL_STATUSES
 from .organising_committee import OrganisingCommitteeMember
 from .past_board import PastBoard, PastBoardMember
+from .form_template import FormTemplate
+from .sub_event import SubEvent
 from .audit import AuditLog
 
 __all__ = [
@@ -34,8 +36,10 @@ __all__ = [
     "Sponsor", "SponsorTier",
     "Announcement",
     "Registration",
-    "Abstract",
+    "Abstract", "SPEAKER_STATUSES", "SPEAKER_STATUS_ORDER", "ALL_STATUSES",
     "OrganisingCommitteeMember",
     "PastBoard", "PastBoardMember",
+    "FormTemplate",
+    "SubEvent",
     "AuditLog",
 ]

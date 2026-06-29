@@ -1,0 +1,260 @@
+{% extends "admin/_base.html" %}
+{% block title %}Form Builder · {{ c.title }}{% endblock %}
+{% block admin %}
+<div class="section-head">
+  <div>
+    <div class="eyebrow">{{ form_type|capitalize }} Form</div>
+    <h2>{{ c.title }}</h2>
+  </div>
+  <a class="link" href="{{ url_for('admin.conference_edit', cid=c.id) }}">← back to conference</a>
+</div>
+
+<form method="post" class="form form-wide" id="builder-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="action" value="save_schema">
+
+  <div id="sections-container">
+    {% for si, section in enumerate(schema.sections | default([])) %}
+    <div class="edit-section schema-section" data-section-index="{{ si }}">
+      <div class="schema-section-header">
+        <div class="row-2" style="align-items:center;">
+          <div class="field" style="margin:0;">
+            <input class="input input-sm" name="section_key[]" placeholder="section_key" value="{{ section.key }}" style="width:160px;">
+          </div>
+          <div class="field" style="margin:0;">
+            <input class="input" name="section_label[]" placeholder="Section label" value="{{ section.label }}">
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:12px; margin-top:8px;">
+          <label class="check-label"><input type="checkbox" name="section_toggleable[]" value="{{ si }}" {% if section.toggleable %}checked{% endif %}> Toggleable</label>
+          <label class="check-label"><input type="checkbox" name="section_collapsible[]" value="{{ si }}" {% if section.collapsible %}checked{% endif %}> Collapsible</label>
+          <button type="button" class="btn btn-quiet btn-sm js-remove-section" style="margin-left:auto;">Remove section</button>
+        </div>
+      </div>
+
+      <div class="schema-fields" data-section="{{ si }}" style="margin-top:12px;">
+        {% for fi, field in enumerate(section.fields | default([])) %}
+        <div class="schema-field-row" data-field="{{ fi }}">
+          <div class="row-2" style="align-items:end;">
+            <div class="field"><label>Key</label><input class="input input-sm" name="field_key_{{ si }}[]" value="{{ field.key }}" style="width:140px;"></div>
+            <div class="field"><label>Label</label><input class="input input-sm" name="field_label_{{ si }}[]" value="{{ field.label }}"></div>
+          </div>
+          <div class="row-3" style="align-items:end; margin-top:8px;">
+            <div class="field">
+              <label>Type</label>
+              <select class="select select-sm" name="field_type_{{ si }}[]">
+                {% for t in ['text','email','number','tel','textarea','select','radio','checkbox','checkbox-group','country'] %}
+                  <option value="{{ t }}" {% if field.type == t %}selected{% endif %}>{{ t }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="field"><label class="check-label"><input type="checkbox" name="field_required_{{ si }}[]" value="{{ fi }}" {% if field.required %}checked{% endif %}> Required</label></div>
+            <div class="field"><button type="button" class="btn btn-quiet btn-sm js-remove-field">Remove field</button></div>
+          </div>
+          <div class="row-2" style="margin-top:8px;">
+            <div class="field">
+              <label>Options (one per line)</label>
+              <textarea class="textarea" name="field_options_{{ si }}[]" rows="2" style="font-size:12px;">{{ field.options | default([]) | join('\n') }}</textarea>
+            </div>
+            <div class="row-2" style="flex:1;">
+              <div class="field">
+                <label>Condition field</label>
+                <input class="input input-sm" name="field_cond_field_{{ si }}[]" value="{{ field.condition.field if field.condition else '' }}" placeholder="field key">
+              </div>
+              <div class="field">
+                <label>Condition value</label>
+                <input class="input input-sm" name="field_cond_value_{{ si }}[]" value="{{ field.condition.value or field.condition.contains if field.condition else '' }}" placeholder="value or contains">
+              </div>
+            </div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+      <button type="button" class="btn btn-ghost btn-sm js-add-field" data-section="{{ si }}" style="margin-top:8px;">+ Add field</button>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div style="display:flex; gap:12px; margin-top:14px;">
+    <button type="button" class="btn btn-ghost btn-sm" id="add-section-btn">+ Add section</button>
+  </div>
+
+  <div class="save-bar" style="margin-top:24px;">
+    <button class="btn btn-primary" type="submit">Save schema</button>
+  </div>
+</form>
+
+<details class="edit-section">
+  <summary class="edit-section-summary">Templates</summary>
+  <div class="edit-section-body">
+    {% if templates %}
+    <table class="table">
+      <thead><tr><th>Name</th><th>Created</th><th></th><th></th></tr></thead>
+      <tbody>
+      {% for t in templates %}
+      <tr>
+        <td>{{ t.name }}</td>
+        <td>{{ t.created_at.strftime('%-d %b %Y') if t.created_at else '' }}</td>
+        <td>
+          <form method="post" style="display:inline;">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="action" value="load_template">
+            <input type="hidden" name="template_id" value="{{ t.id }}">
+            <button class="btn btn-ghost btn-sm">Load</button>
+          </form>
+        </td>
+        <td>
+          <form method="post" style="display:inline;" onsubmit="return confirm('Delete template \\'{{ t.name }}\\'?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="action" value="delete_template">
+            <input type="hidden" name="template_id" value="{{ t.id }}">
+            <button class="btn btn-quiet btn-sm">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No templates yet. Save this schema as a template to create one.</p>
+    {% endif %}
+
+    <form method="post" style="margin-top:12px; display:flex; gap:8px; align-items:end;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="save_as_template">
+      <div class="field" style="margin:0;">
+        <label for="template_name">Save current schema as template</label>
+        <input class="input" id="template_name" name="template_name" placeholder="My Template" required>
+      </div>
+      <button class="btn btn-primary" type="submit">Save as template</button>
+    </form>
+  </div>
+</details>
+{% endblock %}
+
+{% block scripts %}
+<template id="section-tmpl">
+  <div class="edit-section schema-section">
+    <div class="schema-section-header">
+      <div class="row-2" style="align-items:center;">
+        <div class="field" style="margin:0;">
+          <input class="input input-sm" name="section_key[]" placeholder="section_key" style="width:160px;">
+        </div>
+        <div class="field" style="margin:0;">
+          <input class="input" name="section_label[]" placeholder="Section label">
+        </div>
+      </div>
+      <div style="display:flex; align-items:center; gap:12px; margin-top:8px;">
+        <label class="check-label"><input type="checkbox" name="section_toggleable[]"> Toggleable</label>
+        <label class="check-label"><input type="checkbox" name="section_collapsible[]"> Collapsible</label>
+        <button type="button" class="btn btn-quiet btn-sm js-remove-section" style="margin-left:auto;">Remove section</button>
+      </div>
+    </div>
+    <div class="schema-fields" style="margin-top:12px;"></div>
+    <button type="button" class="btn btn-ghost btn-sm js-add-field" style="margin-top:8px;">+ Add field</button>
+  </div>
+</template>
+
+<template id="field-tmpl">
+  <div class="schema-field-row">
+    <div class="row-2" style="align-items:end;">
+      <div class="field"><label>Key</label><input class="input input-sm" name="field_key_0[]" value="" style="width:140px;"></div>
+      <div class="field"><label>Label</label><input class="input input-sm" name="field_label_0[]" value=""></div>
+    </div>
+    <div class="row-3" style="align-items:end; margin-top:8px;">
+      <div class="field">
+        <label>Type</label>
+        <select class="select select-sm" name="field_type_0[]">
+          {% for t in ['text','email','number','tel','textarea','select','radio','checkbox','checkbox-group','country'] %}
+            <option value="{{ t }}">{{ t }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field"><label class="check-label"><input type="checkbox" name="field_required_0[]"> Required</label></div>
+      <div class="field"><button type="button" class="btn btn-quiet btn-sm js-remove-field">Remove field</button></div>
+    </div>
+    <div class="row-2" style="margin-top:8px;">
+      <div class="field"><label>Options (one per line)</label><textarea class="textarea" name="field_options_0[]" rows="2" style="font-size:12px;"></textarea></div>
+      <div class="row-2" style="flex:1;">
+        <div class="field"><label>Condition field</label><input class="input input-sm" name="field_cond_field_0[]" placeholder="field key"></div>
+        <div class="field"><label>Condition value</label><input class="input input-sm" name="field_cond_value_0[]" placeholder="value or contains"></div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script>
+(function(){
+  var container = document.getElementById("sections-container");
+  var sectionTmpl = document.getElementById("section-tmpl");
+  var fieldTmpl = document.getElementById("field-tmpl");
+
+  function reindex() {
+    container.querySelectorAll(".schema-section").forEach(function(sec, si) {
+      sec.setAttribute("data-section-index", si);
+      sec.querySelector(".schema-section-header").querySelector("[name='section_key[]']").name = "section_key[]";
+      sec.querySelector("[name='section_label[]']").name = "section_label[]";
+
+      var cbToggle = sec.querySelector("[name='section_toggleable[]']");
+      if (cbToggle) cbToggle.value = si;
+      var cbCol = sec.querySelector("[name='section_collapsible[]']");
+      if (cbCol) cbCol.value = si;
+
+      var addBtn = sec.querySelector(".js-add-field");
+      if (addBtn) addBtn.setAttribute("data-section", si);
+
+      sec.querySelectorAll(".schema-field-row").forEach(function(row, fi) {
+        row.querySelectorAll("input, select, textarea").forEach(function(el) {
+          el.name = el.name.replace(/_(\d+)\[\]/, "_" + si + "[]");
+        });
+        var reqCb = row.querySelector("[type='checkbox']");
+        if (reqCb && reqCb.name.indexOf("field_required_") === 0) {
+          reqCb.value = fi;
+        }
+      });
+    });
+  }
+
+  container.addEventListener("click", function(e) {
+    if (e.target.classList.contains("js-remove-field")) {
+      var row = e.target.closest(".schema-field-row");
+      var section = e.target.closest(".schema-section");
+      if (row) { row.remove(); reindex(); }
+    }
+    if (e.target.classList.contains("js-remove-section")) {
+      var sec = e.target.closest(".schema-section");
+      if (sec && container.querySelectorAll(".schema-section").length > 0) {
+        sec.remove(); reindex();
+      }
+    }
+    if (e.target.classList.contains("js-add-field")) {
+      var sec = e.target.closest(".schema-section");
+      var si = sec.getAttribute("data-section-index");
+      var clone = fieldTmpl.content.firstElementChild.cloneNode(true);
+      clone.querySelectorAll("input, select, textarea").forEach(function(el) {
+        el.name = "field_" + el.name + "_" + si + "[]";
+      });
+      sec.querySelector(".schema-fields").appendChild(clone);
+      reindex();
+    }
+  });
+
+  document.getElementById("add-section-btn").addEventListener("click", function() {
+    var clone = sectionTmpl.content.firstElementChild.cloneNode(true);
+    var si = container.querySelectorAll(".schema-section").length;
+    clone.querySelectorAll("input, select, textarea").forEach(function(el) {
+      if (el.name === "section_key[]" || el.name === "section_label[]") return;
+      if (el.type === "checkbox" && (el.name === "section_toggleable[]" || el.name === "section_collapsible[]")) {
+        el.value = si; return;
+      }
+    });
+    clone.querySelector(".js-add-field").setAttribute("data-section", si);
+    container.appendChild(clone);
+    reindex();
+  });
+
+  reindex();
+})();
+</script>
+{% endblock %}

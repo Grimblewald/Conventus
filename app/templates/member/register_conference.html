@@ -12,36 +12,172 @@
     {% if not tiers %}
       <p class="muted">No registration tiers have been configured yet.</p>
     {% else %}
-    <form method="post" class="form form-wide">
+    <form method="post" class="form form-wide" id="reg-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="field">
-        <div class="label">Tier</div>
+        <div class="label">Registration Tier</div>
         <div class="tiers">
           {% for t in tiers %}
+            {% set is_early = c.early_bird_deadline and t.early_bird_amount and c.early_bird_deadline >= today() %}
             <label class="tier">
-              <input type="radio" name="tier" value="{{ t.name }}" {% if existing and existing.tier_name == t.name %}checked{% endif %} required>
+              <input type="radio" name="tier" value="{{ t.name }}"
+                     {% if existing and existing.tier_name == t.name %}checked{% endif %} required>
               <div class="tier-inner">
                 <h4>{{ t.name }}</h4>
-                <div class="price">{{ site.currency_symbol }}{{ t.amount }} <small>{{ site.currency_code }}</small></div>
+                {% if is_early %}
+                  <div class="price">
+                    <span style="text-decoration:line-through;opacity:0.6;">{{ site.currency_symbol }}{{ t.amount }}</span>
+                    {{ site.currency_symbol }}{{ t.early_bird_amount }}
+                    <small>{{ site.currency_code }}</small>
+                  </div>
+                  <small style="color:var(--c-accent);">Early bird until {{ c.early_bird_deadline.strftime('%-d %B %Y') }}</small>
+                {% else %}
+                  <div class="price">{{ site.currency_symbol }}{{ t.amount }} <small>{{ site.currency_code }}</small></div>
+                {% endif %}
                 {% if t.description %}<p style="font-size:13.5px; color: var(--c-muted-text); margin-top:8px;">{{ t.description }}</p>{% endif %}
               </div>
             </label>
           {% endfor %}
         </div>
       </div>
-      <div class="row-2">
-        <div class="field">
-          <label for="dietary">Dietary preferences</label>
-          <input class="input" id="dietary" name="dietary" value="{{ existing.dietary if existing else '' }}">
+
+      {% if schema and schema.sections %}
+        {% set data = existing.custom_data|default({}) %}
+        {% for section in schema.sections %}
+          {% if section.collapsible %}
+            <details>
+              <summary>{{ section.label }}</summary>
+          {% elif section.toggleable %}
+            <fieldset id="section-{{ section.key }}">
+              <legend>{{ section.label }}</legend>
+          {% else %}
+            <fieldset class="toggle-fieldset">
+              <legend>{{ section.label }}</legend>
+          {% endif %}
+
+          {% for field in section.fields %}
+            {% set fkey = field.key %}
+            {% set fval = data.get(fkey, '') %}
+            {% set cond_style = '' %}
+            {% if field.condition %}
+              {% set cond_style = 'display:none;' %}
+            {% endif %}
+            <div class="field" data-cond-wrap="{{ fkey }}" style="{{ cond_style }}"
+                 {% if field.condition %}
+                 data-cond-field="{{ field.condition.field }}"
+                 {% if field.condition.value is not none %}data-cond-value="{{ field.condition.value }}"{% endif %}
+                 {% if field.condition.contains %}data-cond-contains="{{ field.condition.contains }}"{% endif %}
+                 {% endif %}>
+              {% if field.type == 'textarea' %}
+                <label for="{{ fkey }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
+                <textarea class="textarea" id="{{ fkey }}" name="{{ fkey }}"{% if field.required %} required{% endif %}>{{ fval }}</textarea>
+              {% elif field.type == 'select' %}
+                <label for="{{ fkey }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
+                <select class="select" id="{{ fkey }}" name="{{ fkey }}"{% if field.required %} required{% endif %}>
+                  <option value="">—</option>
+                  {% for o in field.options %}<option value="{{ o }}"{% if fval == o %} selected{% endif %}>{{ o }}</option>{% endfor %}
+                </select>
+              {% elif field.type == 'country' %}
+                <label for="{{ fkey }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
+                <select class="select" id="{{ fkey }}" name="{{ fkey }}"{% if field.required %} required{% endif %}>
+                  <option value="">—</option>
+                  {% for c in ['Australia','New Zealand','United Kingdom','United States','Canada','Germany','France','Japan','China','India','Singapore','Malaysia','Indonesia','South Korea','Brazil','South Africa','Netherlands','Sweden','Switzerland','Italy','Spain','Thailand','Vietnam','Taiwan','Hong Kong','Philippines','Pakistan','Bangladesh','Sri Lanka','Iran','Turkey','United Arab Emirates','Saudi Arabia','Qatar','Oman','Kuwait','Jordan','Lebanon','Israel','Egypt','Morocco','Nigeria','Ghana','Kenya','Ethiopia','Tanzania','Uganda','Sudan','Zimbabwe','Russia','Ukraine','Poland','Romania','Hungary','Czech Republic','Croatia','Serbia','Slovakia','Slovenia','Greece','Austria','Belgium','Finland','Norway','Denmark','Iceland','Ireland','Portugal','Estonia','Latvia','Lithuania','Mexico','Argentina','Chile','Colombia','Iraq','Afghanistan','Armenia','Albania','Tunisia'] %}
+                    <option value="{{ c }}"{% if fval == c %} selected{% endif %}>{{ c }}</option>
+                  {% endfor %}
+                </select>
+              {% elif field.type == 'radio' %}
+                <span class="label">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</span>
+                {% for o in field.options %}
+                  <label class="check-label"><input type="radio" name="{{ fkey }}" value="{{ o }}"{% if fval == o %} checked{% endif %}{% if field.required and loop.last and not fval %} required{% endif %}> {{ o }}</label>
+                {% endfor %}
+              {% elif field.type == 'checkbox' %}
+                <label class="check-label"><input type="checkbox" name="{{ fkey }}" value="1"{% if fval %} checked{% endif %}{% if field.required %} required{% endif %}> {{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
+              {% elif field.type == 'checkbox-group' %}
+                <span class="label">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</span>
+                {% for o in field.options %}
+                  <label class="check-label"><input type="checkbox" name="{{ fkey }}" value="{{ o }}"{% if o in (fval if fval is iterable and fval is not string else [fval]) %} checked{% endif %}> {{ o }}</label>
+                {% endfor %}
+              {% elif field.type == 'number' %}
+                <label for="{{ fkey }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
+                <input class="input" id="{{ fkey }}" name="{{ fkey }}" type="number" value="{{ fval }}"{% if field.required %} required{% endif %}>
+              {% elif field.type == 'tel' %}
+                <label for="{{ fkey }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
+                <input class="input" id="{{ fkey }}" name="{{ fkey }}" type="tel" value="{{ fval }}"{% if field.required %} required{% endif %}>
+              {% elif field.type == 'email' %}
+                <label for="{{ fkey }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
+                <input class="input" id="{{ fkey }}" name="{{ fkey }}" type="email" value="{{ fval }}"{% if field.required %} required{% endif %}>
+              {% else %}
+                <label for="{{ fkey }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
+                <input class="input" id="{{ fkey }}" name="{{ fkey }}" type="text" value="{{ fval }}"{% if field.required %} required{% endif %}>
+              {% endif %}
+            </div>
+          {% endfor %}
+
+          {% if section.collapsible %}</details>{% elif section.toggleable %}</fieldset>{% else %}</fieldset>{% endif %}
+        {% endfor %}
+      {% else %}
+        <div class="row-2">
+          <div class="field">
+            <label for="dietary">Dietary preferences</label>
+            <input class="input" id="dietary" name="dietary" value="{{ existing.dietary if existing else '' }}">
+          </div>
+          <div class="field">
+            <label for="accessibility">Accessibility needs</label>
+            <input class="input" id="accessibility" name="accessibility" value="{{ existing.accessibility if existing else '' }}">
+          </div>
         </div>
-        <div class="field">
-          <label for="accessibility">Accessibility needs</label>
-          <input class="input" id="accessibility" name="accessibility" value="{{ existing.accessibility if existing else '' }}">
-        </div>
-      </div>
+      {% endif %}
+
+      {% for se in sub_events %}
+        {% set sekey = se.name.lower().replace(' ', '_') %}
+        {% set se_data = existing.sub_events.get(sekey, {}) if existing and existing.sub_events else {} %}
+        <fieldset class="sub-event-block">
+          <legend>{{ se.name }}</legend>
+          {% if se.description %}<p class="muted">{{ se.description }}</p>{% endif %}
+          {% if se.eligibility_note %}<p class="muted" style="font-size:13px;"><em>{{ se.eligibility_note }}</em></p>{% endif %}
+          {% if se.price %}<p class="muted">Additional cost: {{ site.currency_code }} {{ se.price }}</p>{% endif %}
+          <div class="field">
+            <label>Attendance</label>
+            <label class="check-label">
+              <input type="radio" name="_sub_event_{{ sekey }}_attending" value="yes"
+                     {% if se_data.attending %}checked{% endif %}> Yes, I would like to attend (+{{ site.currency_code }} {{ se.price }})
+            </label>
+            <label class="check-label">
+              <input type="radio" name="_sub_event_{{ sekey }}_attending" value="no"
+                     {% if not se_data.attending %}checked{% endif %}> No, thank you
+            </label>
+          </div>
+          {% if se.preference_schema %}
+            {% for pf in se.preference_schema.fields %}
+              {% set pfkey = '_sub_event_' ~ sekey ~ '_' ~ pf.key %}
+              {% set pfval = se_data.get(pf.key, '') %}
+              <div class="field" data-cond-wrap="{{ pfkey }}" style="display:none;"
+                   data-cond-field="_sub_event_{{ sekey }}_attending" data-cond-value="yes">
+                <span class="label">{{ pf.label }}</span>
+                {% if pf.type == 'checkbox-group' %}
+                  {% for o in pf.options %}
+                    <label class="check-label"><input type="checkbox" name="{{ pfkey }}" value="{{ o }}"{% if o in (pfval if pfval is iterable and pfval is not string else [pfval]) %} checked{% endif %}> {{ o }}</label>
+                  {% endfor %}
+                {% elif pf.type == 'radio' %}
+                  {% for o in pf.options %}
+                    <label class="check-label"><input type="radio" name="{{ pfkey }}" value="{{ o }}"{% if pfval == o %} checked{% endif %}> {{ o }}</label>
+                  {% endfor %}
+                {% else %}
+                  <input class="input" id="{{ pfkey }}" name="{{ pfkey }}" type="text" value="{{ pfval }}">
+                {% endif %}
+              </div>
+            {% endfor %}
+          {% endif %}
+        </fieldset>
+      {% endfor %}
+
       <button class="btn btn-primary" type="submit">{{ 'Update registration' if existing else 'Register' }}</button>
     </form>
     {% endif %}
   </div>
 </section>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/member/register.js') }}"></script>
 {% endblock %}

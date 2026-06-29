@@ -12,7 +12,7 @@ The factory:
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 from flask import Flask, redirect, request, url_for
@@ -199,6 +199,7 @@ def _register_template_globals(app: Flask) -> None:
             "nav_items": nav_items,
             "footer_columns": footer_cols,
             "now": datetime.utcnow,
+            "today": date.today,
             "FONT_STACKS": FONT_STACKS,
         }
 
@@ -207,6 +208,10 @@ def _register_template_globals(app: Flask) -> None:
         # Minimal Markdown-ish: bold/italic/links/lists/headings, escaped first.
         from .services.markdown import render
         return render(text or "")
+
+    @app.template_filter("enumerate")
+    def _enumerate_filter(seq):
+        return enumerate(seq)
 
     @app.template_filter("fmt_authors")
     def format_authors(text: str) -> str:

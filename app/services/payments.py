@@ -1,47 +1,57 @@
 """Payment integration points.
 
-This module is the documented boundary between the app and whatever
-payment processor a society chooses (Stripe, PayPal, bank transfer, etc.).
+Pluggable gateway architecture: register implementations via
+``register_gateway()`` in ``app/services/gateways/``.
 
-What you need to implement:
-  1. ``initiate_payment(registration)`` — redirect the user to a payment page
-     or generate a payment link. Currently returns a URL to the internal
-     stub page.
-  2. ``handle_webhook(payload)`` — process asynchronous payment confirmation
-     from your provider. For Stripe this is a ``checkout.session.completed``
-     event. You need to:
-       - Verify the webhook signature
-       - Look up the Registration by ID
-       - Set registration.status = "paid"
-       - Call db.session.commit()
-  3. ``send_payment_email(registration, payment_url)`` — send the payment
-     link to the member. The default implementation uses the app's
-     send_mail().
-
-The payment_portal_enabled flag in SiteSettings controls whether any of
-this activates. When disabled, registrations show a "coming soon" notice
-instead.
+The ``PAYMENT_GATEWAY`` env var selects the active gateway
+(default: ``"none"`` skips payment processing).
 """
 from __future__ import annotations
 
 import logging
+import os
 
-from flask import url_for
+from flask import current_app, url_for
 
 from ..models.registration import Registration
+from .gateways import get_gateway
 from .mail import send_mail
 
 log = logging.getLogger(__name__)
 
 
-def payment_url_for(registration: Registration) -> str:
-    """Return the URL a member visits to pay for their registration.
+def _active_gateway():
+    name = os.getenv("PAYMENT_GATEWAY", "none")
+    if name == "none":
+        return None
+    return get_gateway(name)
 
-    Replace this with your payment provider's checkout-session creation:
-      - Stripe: create a Checkout Session, return session.url
-      - PayPal: create an order, return the approval link
-      - Bank transfer: return a page showing account details
+
+def initiate_payment(registration: Registration) -> str | None:
+    """Start a payment checkout for a registration.
+
+    Returns a redirect URL the user should be sent to, or None if no
+    gateway is configured (which means use the internal stub).
     """
+    g = _active_gateway()
+    if not g:
+        return None
+    result = g.create_checkout(
+        registration,
+        amount=registration.amount,
+        currency=current_app.config.get("CURRENCY_CODE", "AUD"),
+    )
+    if result.error:
+        log.warning("Payment error for reg %d: %s", registration.id, result.error)
+        return None
+    return result.redirect_url
+
+
+def payment_url_for(registration: Registration) -> str:
+    """Return the URL a member visits to pay for their registration."""
+    redirect_url = initiate_payment(registration)
+    if redirect_url:
+        return redirect_url
     return url_for("member.pay_registration", reg_id=registration.id, _external=True)
 
 
@@ -59,54 +69,3 @@ def send_payment_email(registration: Registration, pay_url: str) -> bool:
         subject=f"Payment for {conf.title}",
         body=body,
     )
-
-
-# ---------------------------------------------------------------------------
-# When you integrate a real payment provider, implement these:
-# ---------------------------------------------------------------------------
-
-# def initiate_payment(registration: Registration):
-#     """Create a payment session and redirect the member there.
-#
-#     Example for Stripe:
-#
-#         import stripe
-#         stripe.api_key = current_app.config["STRIPE_SECRET_KEY"]
-#         session = stripe.checkout.Session.create(
-#             line_items=[{
-#                 "price_data": {
-#                     "currency": "usd",
-#                     "product_data": {"name": registration.conference.title},
-#                     "unit_amount": registration.amount,
-#                 },
-#                 "quantity": 1,
-#             }],
-#             mode="payment",
-#             success_url=url_for("member.dashboard", _external=True),
-#             cancel_url=url_for("member.pay_registration",
-#                                reg_id=registration.id, _external=True),
-#             metadata={"registration_id": registration.id},
-#         )
-#         return redirect(session.url)
-#     """
-
-
-# def handle_webhook(payload, signature):
-#     """Process an incoming payment confirmation.
-#
-#     Example for Stripe:
-#
-#         import stripe
-#         stripe.api_key = current_app.config["STRIPE_SECRET_KEY"]
-#         event = stripe.Webhook.construct_event(
-#             payload, signature, current_app.config["STRIPE_WEBHOOK_SECRET"]
-#         )
-#         if event["type"] == "checkout.session.completed":
-#             session = event["data"]["object"]
-#             reg_id = session["metadata"]["registration_id"]
-#             reg = db.session.get(Registration, int(reg_id))
-#             if reg and reg.status == "pending":
-#                 reg.status = "paid"
-#                 db.session.commit()
-#         return {"status": "ok"}
-#     """

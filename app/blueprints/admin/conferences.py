@@ -14,7 +14,8 @@ from flask_login import current_user
 
 from . import admin_bp
 from ...extensions import db
-from ...models import Abstract, Conference, OTPCode, OrganisingCommitteeMember, Registration, Sponsor, SponsorTier
+from ...models import Abstract, Conference, OTPCode, OrganisingCommitteeMember, Registration, Sponsor, SponsorTier, SubEvent, User
+from ...models.abstract import SPEAKER_STATUSES
 from ...models.conference import PriceTier
 from ...security import requires_permission, audit
 from ...services.mail import send_mail
@@ -218,16 +219,20 @@ def conference_save(cid):
             if request.form.get(f"tier_delete_{t.id}"):
                 db.session.delete(t)
                 continue
-            t.name = (request.form.get(f"tier_name_{t.id}") or t.name).strip()
-            try:
-                t.amount = int(request.form.get(f"tier_amount_{t.id}") or t.amount)
-            except ValueError:
-                pass
-            t.description = (request.form.get(f"tier_desc_{t.id}") or "").strip()
-            try:
-                t.display_order = int(request.form.get(f"tier_order_{t.id}") or 0)
-            except ValueError:
-                pass
+            if f"tier_name_{t.id}" in request.form:
+                t.name = (request.form.get(f"tier_name_{t.id}") or "").strip()
+            if f"tier_amount_{t.id}" in request.form:
+                try:
+                    t.amount = int(request.form.get(f"tier_amount_{t.id}") or 0)
+                except ValueError:
+                    pass
+            if f"tier_desc_{t.id}" in request.form:
+                t.description = (request.form.get(f"tier_desc_{t.id}") or "").strip()
+            if f"tier_order_{t.id}" in request.form:
+                try:
+                    t.display_order = int(request.form.get(f"tier_order_{t.id}") or 0)
+                except ValueError:
+                    pass
 
         # Add new price tiers
         new_names = request.form.getlist("new_tier_name[]")
@@ -265,11 +270,13 @@ def conference_save(cid):
                         remove_upload(current_app.config["UPLOAD_FOLDER"], f"sponsors/{s.logo_filename}")
                 db.session.delete(st)
                 continue
-            st.name = (request.form.get(f"stier_name_{st.id}") or st.name).strip()
-            try:
-                st.display_order = int(request.form.get(f"stier_order_{st.id}") or st.display_order)
-            except ValueError:
-                pass
+            if f"stier_name_{st.id}" in request.form:
+                st.name = (request.form.get(f"stier_name_{st.id}") or "").strip()
+            if f"stier_order_{st.id}" in request.form:
+                try:
+                    st.display_order = int(request.form.get(f"stier_order_{st.id}") or st.display_order)
+                except ValueError:
+                    pass
 
             # Sponsors within this tier
             for s in list(st.sponsors):
@@ -278,12 +285,15 @@ def conference_save(cid):
                         remove_upload(current_app.config["UPLOAD_FOLDER"], f"sponsors/{s.logo_filename}")
                     db.session.delete(s)
                     continue
-                s.name = (request.form.get(f"sponsor_name_{s.id}") or s.name).strip()
-                s.url = (request.form.get(f"sponsor_url_{s.id}") or "").strip() or None
-                try:
-                    s.display_order = int(request.form.get(f"sponsor_order_{s.id}") or s.display_order)
-                except ValueError:
-                    pass
+                if f"sponsor_name_{s.id}" in request.form:
+                    s.name = (request.form.get(f"sponsor_name_{s.id}") or "").strip()
+                if f"sponsor_url_{s.id}" in request.form:
+                    s.url = (request.form.get(f"sponsor_url_{s.id}") or "").strip() or None
+                if f"sponsor_order_{s.id}" in request.form:
+                    try:
+                        s.display_order = int(request.form.get(f"sponsor_order_{s.id}") or s.display_order)
+                    except ValueError:
+                        pass
 
             # Add new sponsors under this tier
             for i in range(50):
@@ -337,14 +347,19 @@ def conference_save(cid):
             if request.form.get(f"oc_delete_{oc.id}"):
                 db.session.delete(oc)
                 continue
-            oc.full_name = (request.form.get(f"oc_name_{oc.id}") or oc.full_name).strip()
-            oc.role = (request.form.get(f"oc_role_{oc.id}") or "").strip()
-            oc.affiliation = (request.form.get(f"oc_affil_{oc.id}") or "").strip()
-            oc.email = (request.form.get(f"oc_email_{oc.id}") or "").strip()
-            try:
-                oc.display_order = int(request.form.get(f"oc_order_{oc.id}") or 0)
-            except ValueError:
-                pass
+            if f"oc_name_{oc.id}" in request.form:
+                oc.full_name = (request.form.get(f"oc_name_{oc.id}") or "").strip()
+            if f"oc_role_{oc.id}" in request.form:
+                oc.role = (request.form.get(f"oc_role_{oc.id}") or "").strip()
+            if f"oc_affil_{oc.id}" in request.form:
+                oc.affiliation = (request.form.get(f"oc_affil_{oc.id}") or "").strip()
+            if f"oc_email_{oc.id}" in request.form:
+                oc.email = (request.form.get(f"oc_email_{oc.id}") or "").strip()
+            if f"oc_order_{oc.id}" in request.form:
+                try:
+                    oc.display_order = int(request.form.get(f"oc_order_{oc.id}") or 0)
+                except ValueError:
+                    pass
 
         new_oc_names = request.form.getlist("new_oc_name[]")
         new_oc_roles = request.form.getlist("new_oc_role[]")
@@ -364,6 +379,51 @@ def conference_save(cid):
                 display_order=int(new_oc_orders[i] or 0) if i < len(new_oc_orders) else 0,
             ))
 
+        # -- Sub-events --
+        for se in list(c.sub_events):
+            if request.form.get(f"se_delete_{se.id}"):
+                db.session.delete(se)
+                continue
+            if f"se_name_{se.id}" in request.form:
+                se.name = (request.form.get(f"se_name_{se.id}") or "").strip()
+            if f"se_desc_{se.id}" in request.form:
+                se.description = (request.form.get(f"se_desc_{se.id}") or "").strip()
+            if f"se_price_{se.id}" in request.form:
+                try:
+                    se.price = int(request.form.get(f"se_price_{se.id}") or 0)
+                except ValueError:
+                    pass
+            if f"se_eligibility_{se.id}" in request.form:
+                se.eligibility_note = (request.form.get(f"se_eligibility_{se.id}") or "").strip()
+            if f"se_order_{se.id}" in request.form:
+                try:
+                    se.display_order = int(request.form.get(f"se_order_{se.id}") or 0)
+                except ValueError:
+                    pass
+
+        new_se_names = request.form.getlist("new_se_name[]")
+        new_se_descs = request.form.getlist("new_se_desc[]")
+        new_se_prices = request.form.getlist("new_se_price[]")
+        new_se_elig = request.form.getlist("new_se_eligibility[]")
+        new_se_orders = request.form.getlist("new_se_order[]")
+        for i, name in enumerate(new_se_names):
+            name = name.strip()
+            if not name:
+                continue
+            price = 0
+            try:
+                price = int(new_se_prices[i] or 0)
+            except (IndexError, ValueError):
+                pass
+            db.session.add(SubEvent(
+                conference_id=c.id,
+                name=name,
+                description=(new_se_descs[i] if i < len(new_se_descs) else "").strip(),
+                price=price,
+                eligibility_note=(new_se_elig[i] if i < len(new_se_elig) else "").strip(),
+                display_order=int(new_se_orders[i] or 0) if i < len(new_se_orders) else 0,
+            ))
+
         db.session.commit()
         audit.record("conference.updated",
                      target_kind="conference", target_id=c.id,
@@ -374,6 +434,77 @@ def conference_save(cid):
     except Exception as e:
         db.session.rollback()
         flash(f"Could not save: {e}", "error")
+    return redirect(url_for("admin.conference_edit", cid=c.id))
+
+
+# ---------------------------------------------------------------------------
+# Manual abstract submission (on behalf of a speaker)
+# ---------------------------------------------------------------------------
+
+@admin_bp.route("/conferences/<int:cid>/add-abstract", methods=["POST"])
+@requires_permission("conf.edit")
+def conference_add_abstract(cid):
+    c = Conference.query.get_or_404(cid)
+    try:
+        owner_email = (request.form.get("owner_email") or "").strip().lower()
+        if not owner_email:
+            raise ValueError("Abstract owner email is required.")
+        full_name = (request.form.get("full_name") or "").strip()
+        title = (request.form.get("abs_title") or "").strip()
+        authors = (request.form.get("abs_authors") or "").strip()
+        body = (request.form.get("abs_body") or "").strip()
+        track = (request.form.get("abs_track") or "").strip()
+        status = (request.form.get("abs_status") or "accepted").strip()
+        if not title:
+            raise ValueError("Title is required.")
+        if not authors:
+            if full_name:
+                authors = f"{full_name}||"
+            else:
+                raise ValueError("Authors field is required.")
+
+        user = User.query.filter_by(email=owner_email).first()
+        if not user:
+            user = User(email=owner_email, full_name=full_name or owner_email,
+                        role_name="unregistered")
+            db.session.add(user)
+            db.session.flush()
+
+        a = Abstract(
+            user_id=user.id,
+            conference_id=c.id,
+            title=title,
+            authors=authors,
+            body=body or "",
+            track=track,
+            status=status,
+            decided_by_id=current_user.id,
+        )
+
+        pic = request.files.get("abs_profile_picture")
+        if pic and pic.filename:
+            rel = save_image(
+                pic,
+                upload_folder=current_app.config["UPLOAD_FOLDER"],
+                subdir="abstracts",
+                prefix="profile-",
+                max_bytes=current_app.config["MAX_HERO_BYTES"],
+                target_size=400,
+                force_webp=True,
+            )
+            a.profile_picture_filename = rel.split("/", 1)[-1]
+
+        db.session.add(a)
+        db.session.commit()
+        audit.record("abstract.admin_created",
+                     target_kind="abstract", target_id=a.id,
+                     summary=f"Added on behalf of {owner_email} for {c.slug}: {title}")
+        flash(f"Abstract \"{title}\" added for {owner_email}.", "success")
+    except UploadError as e:
+        flash(str(e), "error")
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Could not add abstract: {e}", "error")
     return redirect(url_for("admin.conference_edit", cid=c.id))
 
 
@@ -669,7 +800,7 @@ def conference_compile_booklet(cid):
     abstracts = (
         Abstract.query
         .filter_by(conference_id=c.id)
-        .filter(Abstract.status == "accepted")
+        .filter(Abstract.status.in_(SPEAKER_STATUSES))
         .filter(Abstract.deleted_at.is_(None))
         .order_by(Abstract.created_at.asc())
         .all()

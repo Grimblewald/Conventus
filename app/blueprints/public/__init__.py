@@ -16,6 +16,7 @@ from flask_login import current_user
 from ...extensions import db, limiter
 from ...models import (
     Announcement, CommitteeMember, Conference, OTPCode, Page, PastBoard, User,
+    Abstract, SPEAKER_STATUSES,
     get_site_settings,
 )
 from ...services.mail import send_mail
@@ -90,7 +91,15 @@ def conference_detail(slug):
         abort(404)
     if c.auto_reopen():
         db.session.commit()
-    return render_template("public/conference_detail.html", c=c)
+    speakers = sorted(
+        Abstract.query
+        .filter_by(conference_id=c.id)
+        .filter(Abstract.status.in_(SPEAKER_STATUSES))
+        .filter(Abstract.deleted_at.is_(None))
+        .all(),
+        key=lambda a: (a.speaker_sort_key, a.created_at),
+    )
+    return render_template("public/conference_detail.html", c=c, speakers=speakers)
 
 
 # ---------------------------------------------------------------------------
@@ -337,6 +346,13 @@ def sponsor_upload(name):
     return send_from_directory(folder, name)
 
 
+@public_bp.route("/uploads/abstracts/<path:name>")
+def abstract_upload(name):
+    """Abstract profile pictures — public (used by speaker cards)."""
+    folder = Path(current_app.config["UPLOAD_FOLDER"]) / "abstracts"
+    return send_from_directory(folder, name)
+
+
 @public_bp.route("/favicon.ico")
 def favicon():
     from ...models import get_site_settings
@@ -344,6 +360,35 @@ def favicon():
     if s.favicon_filename:
         return redirect(url_for("public.site_upload", name=s.favicon_filename))
     abort(404)
+
+
+@public_bp.route("/payments/webhook", methods=["POST"])
+@limiter.exempt
+def payment_webhook():
+    """Receive payment provider webhooks. Provider selected by PAYMENT_GATEWAY env var."""
+    import os
+    from ...models import Registration
+    from ...services.gateways import get_gateway
+
+    g = get_gateway(os.getenv("PAYMENT_GATEWAY", ""))
+    if not g:
+        return {"status": "no gateway configured"}, 200
+
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        result = g.verify_webhook(data, dict(request.headers))
+        if result.success and result.registration_id:
+            reg = db.session.get(Registration, result.registration_id)
+            if reg and reg.status == "pending":
+                reg.status = "paid"
+                db.session.commit()
+                log = current_app.logger
+                log.info("Payment webhook: reg %d marked paid (%s)",
+                         result.registration_id, result.transaction_id)
+        return {"status": "ok" if result.success else "ignored"}, 200
+    except Exception as exc:
+        current_app.logger.exception("Webhook error")
+        return {"status": "error", "message": str(exc)}, 500
 
 
 @public_bp.route("/dev/reload")

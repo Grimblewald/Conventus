@@ -29,7 +29,7 @@
     <div class="field">
       <label for="status">Decision</label>
       <select class="select" id="status" name="status">
-        {% for s in ['submitted', 'accepted', 'rejected', 'revise'] %}
+        {% for s in ['submitted', 'accepted', 'rejected', 'revise', 'plenary', 'keynote', 'invited'] %}
           <option value="{{ s }}" {% if a.status == s %}selected{% endif %}>{{ s }}</option>
         {% endfor %}
       </select>

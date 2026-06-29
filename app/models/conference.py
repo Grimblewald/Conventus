@@ -65,6 +65,9 @@ class Conference(db.Model):
 
     tracks = db.Column(db.Text, default="")          # newline-separated
 
+    registration_form_schema = db.Column(db.JSON, default=None)
+    abstract_form_schema = db.Column(db.JSON, default=None)
+
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow,
                            onupdate=datetime.utcnow, nullable=False)
@@ -183,6 +186,7 @@ class PriceTier(db.Model):
     )
     name = db.Column(db.String(80), nullable=False)        # Academic / Student / ...
     amount = db.Column(db.Integer, default=0, nullable=False)  # minor unit-agnostic
+    early_bird_amount = db.Column(db.Integer, nullable=True)
     description = db.Column(db.String(400), default="")
     display_order = db.Column(db.Integer, default=0, nullable=False)
 

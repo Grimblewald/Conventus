@@ -5,7 +5,10 @@ from datetime import datetime
 
 from ..extensions import db
 
-
+SPEAKER_STATUSES = ("plenary", "keynote", "invited", "accepted")
+SPEAKER_STATUS_ORDER = {s: i for i, s in enumerate(SPEAKER_STATUSES)}
+ALL_STATUSES = ("submitted", "accepted", "rejected", "revise",
+                "plenary", "keynote", "invited")
 
 
 class Abstract(db.Model):
@@ -24,6 +27,7 @@ class Abstract(db.Model):
     presentation_type = db.Column(db.String(40), default="Either")
     keywords = db.Column(db.String(300), default="")
     coi = db.Column(db.Text, default="")
+    custom_data = db.Column(db.JSON, default=None)
 
     figure_filename = db.Column(db.String(240))
     profile_picture_filename = db.Column(db.String(240))
@@ -40,3 +44,21 @@ class Abstract(db.Model):
     conference = db.relationship("Conference")
     author = db.relationship("User", foreign_keys=[user_id], backref="abstracts")
     decided_by = db.relationship("User", foreign_keys=[decided_by_id])
+
+    @property
+    def presenting_author(self) -> tuple[str, str]:
+        if not self.authors or not self.authors.strip():
+            return ("", "")
+        first_line = self.authors.strip().split("\n")[0].strip()
+        parts = first_line.split("|")
+        name = parts[0].strip() if parts else ""
+        affil = parts[2].strip() if len(parts) > 2 else ""
+        return (name, affil)
+
+    @property
+    def is_speaker(self) -> bool:
+        return self.status in SPEAKER_STATUSES
+
+    @property
+    def speaker_sort_key(self) -> int:
+        return SPEAKER_STATUS_ORDER.get(self.status, len(SPEAKER_STATUSES))

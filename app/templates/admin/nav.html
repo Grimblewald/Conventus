@@ -68,3 +68,7 @@
   <button class="btn btn-quiet btn-sm" type="submit">Remove selected</button>
 </form>
 {% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/admin/nav.js') }}"></script>
+{% endblock %}

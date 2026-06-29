@@ -22,6 +22,8 @@ class Registration(db.Model):
 
     dietary = db.Column(db.String(200), default="")
     accessibility = db.Column(db.String(400), default="")
+    custom_data = db.Column(db.JSON, default=None)
+    sub_events = db.Column(db.JSON, default=None)
     status = db.Column(db.String(40), default="pending", nullable=False)
     payment_sent_at = db.Column(db.DateTime, nullable=True)
 

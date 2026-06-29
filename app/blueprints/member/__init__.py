@@ -20,6 +20,7 @@ from ...security import audit
 from ...services.mail import send_mail
 from ...services.payments import payment_url_for, send_payment_email
 from ...services.uploads import UploadError, save_figure, save_image
+from ...services.form_renderer import validate_form
 
 
 member_bp = Blueprint("member", __name__)
@@ -94,6 +95,8 @@ def register_conf(slug):
     )
 
     tiers = list(c.price_tiers)
+    schema = c.registration_form_schema
+    sub_events = list(c.sub_events)
 
     if request.method == "POST":
         tier_name = (request.form.get("tier") or "").strip()
@@ -101,13 +104,49 @@ def register_conf(slug):
         if not tier:
             flash("Please choose a registration tier.", "error")
             return render_template("member/register_conference.html",
-                                   c=c, tiers=tiers, existing=existing)
+                                   c=c, tiers=tiers, existing=existing,
+                                   schema=schema, sub_events=sub_events)
+
+        # Collect custom field data from schema
+        custom_data: dict = {}
+        if schema:
+            for section in schema.get("sections", []):
+                for field in section.get("fields", []):
+                    key = field.get("key", "")
+                    val = request.form.getlist(key) if field.get("type") == "checkbox-group" else request.form.get(key, "")
+                    custom_data[key] = val
+
+        # Collect sub-event registration data
+        sub_event_data: dict = {}
+        for se in sub_events:
+            sekey = se.name.lower().replace(" ", "_")
+            attending = request.form.get(f"_sub_event_{sekey}_attending") == "yes"
+            entry = {"attending": attending}
+            if attending and se.preference_schema:
+                for pf in se.preference_schema.get("fields", []):
+                    pfkey = pf.get("key", "")
+                    pval = request.form.getlist(f"_sub_event_{sekey}_{pfkey}") if pf.get("type") == "checkbox-group" else request.form.get(f"_sub_event_{sekey}_{pfkey}", "")
+                    entry[pfkey] = pval
+            sub_event_data[sekey] = entry
+
+        # Validate custom fields against schema
+        if schema:
+            form_errors = validate_form(schema, request.form)
+            if form_errors:
+                for err in form_errors:
+                    flash(err, "error")
+                return render_template("member/register_conference.html",
+                                       c=c, tiers=tiers, existing=existing,
+                                       schema=schema, sub_events=sub_events)
 
         reg = existing or Registration(user_id=current_user.id, conference_id=c.id)
         reg.tier_name = tier.name
-        reg.amount = tier.amount
+        amount = tier.early_bird_amount if tier.early_bird_amount and c.early_bird_deadline and c.early_bird_deadline >= datetime.utcnow().date() else tier.amount
+        reg.amount = amount
         reg.dietary = (request.form.get("dietary") or "").strip()
         reg.accessibility = (request.form.get("accessibility") or "").strip()
+        reg.custom_data = custom_data if custom_data else None
+        reg.sub_events = sub_event_data if any(v.get("attending") for v in sub_event_data.values()) else None
         reg.status = "pending"
         if not existing:
             db.session.add(reg)
@@ -130,7 +169,8 @@ def register_conf(slug):
         return redirect(url_for("member.dashboard"))
 
     return render_template("member/register_conference.html",
-                           c=c, tiers=tiers, existing=existing)
+                           c=c, tiers=tiers, existing=existing,
+                           schema=schema, sub_events=sub_events)
 
 
 # ---------------------------------------------------------------------------
@@ -166,6 +206,7 @@ def submit_abstract(slug):
             return redirect(url_for("public.conference_detail", slug=c.slug))
 
     tracks = c.tracks_list()
+    abstract_schema = c.abstract_form_schema
 
     if request.method == "POST":
         title = (request.form.get("title") or "").strip()
@@ -176,6 +217,16 @@ def submit_abstract(slug):
         keywords = (request.form.get("keywords") or "").strip()
         coi = (request.form.get("coi") or "").strip()
 
+        # Collect custom field data from abstract schema
+        custom_data: dict = {}
+        if abstract_schema:
+            for section in abstract_schema.get("sections", []):
+                for field in section.get("fields", []):
+                    key = field.get("key", "")
+                    val = request.form.getlist(key) if field.get("type") == "checkbox-group" else request.form.get(key, "")
+                    if val:
+                        custom_data[key] = val
+
         words = len(body.split())
         if not (title and authors and body):
             flash("Title, authors and abstract body are required.", "error")
@@ -184,11 +235,17 @@ def submit_abstract(slug):
                 f"Abstract body is {words} words — the limit is 300 (soft cap 320).",
                 "error",
             )
+        elif abstract_schema:
+            form_errors = validate_form(abstract_schema, request.form)
+            if form_errors:
+                for err in form_errors:
+                    flash(err, "error")
         else:
             a = Abstract(
                 user_id=current_user.id, conference_id=c.id,
                 title=title, authors=authors, body=body, track=track,
                 presentation_type=ptype, keywords=keywords, coi=coi,
+                custom_data=custom_data if custom_data else None,
             )
             f = request.files.get("figure")
             if f and f.filename:
@@ -201,7 +258,8 @@ def submit_abstract(slug):
                 except UploadError as e:
                     flash(str(e), "error")
                     return render_template("member/submit_abstract.html",
-                                           c=c, tracks=tracks, form=request.form)
+                                           c=c, tracks=tracks, form=request.form,
+                                           abstract_schema=abstract_schema)
 
             pic = request.files.get("profile_picture")
             if pic and pic.filename:
@@ -219,7 +277,8 @@ def submit_abstract(slug):
                 except UploadError as e:
                     flash(str(e), "error")
                     return render_template("member/submit_abstract.html",
-                                           c=c, tracks=tracks, form=request.form)
+                                           c=c, tracks=tracks, form=request.form,
+                                           abstract_schema=abstract_schema)
             db.session.add(a)
             db.session.commit()
             audit.record("abstract.submitted",
@@ -230,7 +289,8 @@ def submit_abstract(slug):
             return redirect(url_for("member.dashboard"))
 
     return render_template("member/submit_abstract.html",
-                           c=c, tracks=tracks, form={})
+                           c=c, tracks=tracks, form={},
+                           abstract_schema=abstract_schema)
 
 
 # ---------------------------------------------------------------------------

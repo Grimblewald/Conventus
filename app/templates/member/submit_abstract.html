@@ -75,220 +75,61 @@
         <label for="coi">Conflicts of interest</label>
         <textarea class="textarea" id="coi" name="coi">{{ form.coi or '' }}</textarea>
       </div>
+
+      {% if abstract_schema and abstract_schema.sections %}
+        {% for section in abstract_schema.sections %}
+          <fieldset class="toggle-fieldset">
+            <legend>{{ section.label }}</legend>
+            {% for field in section.fields %}
+              {% set fkey = field.key %}
+              {% set fval = form.get(fkey, '') %}
+              {% set cond_style = '' %}
+              {% if field.condition %}{% set cond_style = 'display:none;' %}{% endif %}
+              <div class="field" data-cond-wrap="{{ fkey }}" style="{{ cond_style }}"
+                   {% if field.condition %}
+                   data-cond-field="{{ field.condition.field }}"
+                   {% if field.condition.value is not none %}data-cond-value="{{ field.condition.value }}"{% endif %}
+                   {% if field.condition.contains %}data-cond-contains="{{ field.condition.contains }}"{% endif %}
+                   {% endif %}>
+                {% if field.type == 'textarea' %}
+                  <label for="{{ fkey }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
+                  <textarea class="textarea" id="{{ fkey }}" name="{{ fkey }}"{% if field.required %} required{% endif %}>{{ fval }}</textarea>
+                {% elif field.type == 'select' %}
+                  <label for="{{ fkey }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
+                  <select class="select" id="{{ fkey }}" name="{{ fkey }}"{% if field.required %} required{% endif %}>
+                    <option value="">—</option>
+                    {% for o in field.options %}<option value="{{ o }}"{% if fval == o %} selected{% endif %}>{{ o }}</option>{% endfor %}
+                  </select>
+                {% elif field.type == 'radio' %}
+                  <span class="label">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</span>
+                  {% for o in field.options %}
+                    <label class="check-label"><input type="radio" name="{{ fkey }}" value="{{ o }}"{% if fval == o %} checked{% endif %}> {{ o }}</label>
+                  {% endfor %}
+                {% elif field.type == 'checkbox' %}
+                  <label class="check-label"><input type="checkbox" name="{{ fkey }}" value="1"{% if fval %} checked{% endif %}> {{ field.label }}</label>
+                {% elif field.type == 'checkbox-group' %}
+                  <span class="label">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</span>
+                  {% for o in field.options %}
+                    <label class="check-label"><input type="checkbox" name="{{ fkey }}" value="{{ o }}"{% if o in (fval if fval is iterable and fval is not string else [fval]|default([], true)) %} checked{% endif %}> {{ o }}</label>
+                  {% endfor %}
+                {% else %}
+                  <label for="{{ fkey }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
+                  <input class="input" id="{{ fkey }}" name="{{ fkey }}" type="{{ field.type }}" value="{{ fval }}"{% if field.required %} required{% endif %}>
+                {% endif %}
+              </div>
+            {% endfor %}
+          </fieldset>
+        {% endfor %}
+      {% endif %}
       <button class="btn btn-primary" type="submit">Submit abstract</button>
+      {% if form.authors %}
+      <script type="application/json" id="authors-data">{{ form.authors | tojson }}</script>
+      {% endif %}
     </form>
   </div>
 </section>
 {% endblock %}
 
 {% block scripts %}
-<script>
-(function () {
-  "use strict";
-
-  var form = document.getElementById("abstract-form");
-  var rowsContainer = document.getElementById("author-rows");
-  var addBtn = document.getElementById("add-author-btn");
-  var tmpl = document.getElementById("author-row-tmpl");
-  var hidden = document.getElementById("authors-hidden");
-
-  if (!form || !rowsContainer || !addBtn || !tmpl || !hidden) return;
-
-  // ---- Collect current affiliation options across all rows ----
-  function gatherAffiliations() {
-    var map = [];  // ordered list of unique affiliation names
-    rowsContainer.querySelectorAll(".author-row").forEach(function (row) {
-      var sel = row.querySelector("[data-author-affil]");
-      if (!sel) return;
-      for (var i = 1; i < sel.options.length; i++) {
-        var val = sel.options[i].value;
-        if (val && val !== "__new__" && map.indexOf(val) === -1) {
-          map.push(val);
-        }
-      }
-      var newInput = row.querySelector("[data-author-affil-new]");
-      if (newInput && newInput.style.display !== "none") {
-        var nv = newInput.value.trim();
-        if (nv && map.indexOf(nv) === -1) {
-          map.push(nv);
-        }
-      }
-    });
-    return map;
-  }
-
-  // ---- Rebuild all affiliation dropdowns ----
-  function refreshAffilDropdowns() {
-    var affils = gatherAffiliations();
-    rowsContainer.querySelectorAll(".author-row").forEach(function (row) {
-      var sel = row.querySelector("[data-author-affil]");
-      if (!sel) return;
-      var current = sel.value;
-      // Preserve first two options, rebuild the rest
-      while (sel.options.length > 2) sel.remove(2);
-      affils.forEach(function (a) {
-        var opt = document.createElement("option");
-        opt.value = a;
-        opt.textContent = a;
-        sel.appendChild(opt);
-      });
-      // Try to restore selection
-      if (current && current !== "__new__") {
-        for (var i = 0; i < sel.options.length; i++) {
-          if (sel.options[i].value === current) {
-            sel.value = current;
-            break;
-          }
-        }
-      }
-    });
-  }
-
-  // ---- Add a new row ----
-  function addRow() {
-    var clone = tmpl.content.firstElementChild.cloneNode(true);
-    rowsContainer.appendChild(clone);
-    refreshAffilDropdowns();
-    bindRow(clone);
-  }
-
-  // ---- Serialize all rows into hidden field ----
-  function serialize() {
-    var lines = [];
-    var affilIndex = {};
-    var nextIdx = 1;
-    var rows = rowsContainer.querySelectorAll(".author-row");
-
-    // First pass: assign indices to unique affiliations
-    rows.forEach(function (row) {
-      var sel = row.querySelector("[data-author-affil]");
-      var newInput = row.querySelector("[data-author-affil-new]");
-      var affilName = "";
-      if (sel && sel.value === "__new__" && newInput) {
-        affilName = newInput.value.trim();
-      } else if (sel && sel.value) {
-        affilName = sel.value;
-      }
-      if (affilName && !(affilName in affilIndex)) {
-        affilIndex[affilName] = nextIdx++;
-      }
-    });
-
-    // Second pass: build lines
-    rows.forEach(function (row) {
-      var nameInput = row.querySelector("[data-author-name]");
-      var sel = row.querySelector("[data-author-affil]");
-      var newInput = row.querySelector("[data-author-affil-new]");
-      var name = nameInput ? nameInput.value.trim() : "";
-      if (!name) return;
-
-      var affilName = "";
-      if (sel && sel.value === "__new__" && newInput) {
-        affilName = newInput.value.trim();
-      } else if (sel && sel.value) {
-        affilName = sel.value;
-      }
-      var idx = affilIndex[affilName] || 0;
-      if (affilName && idx) {
-        lines.push(name + "|" + idx + "|" + affilName);
-      } else {
-        lines.push(name + "||");
-      }
-    });
-
-    hidden.value = lines.join("\n");
-  }
-
-  // ---- Bind events on a row ----
-  function bindRow(row) {
-    var sel = row.querySelector("[data-author-affil]");
-    var newInput = row.querySelector("[data-author-affil-new]");
-    var removeBtn = row.querySelector(".js-remove-author");
-    var nameInput = row.querySelector("[data-author-name]");
-
-    if (sel) {
-      sel.addEventListener("change", function () {
-        if (sel.value === "__new__") {
-          if (newInput) { newInput.style.display = ""; newInput.focus(); }
-        } else {
-          if (newInput) { newInput.style.display = "none"; newInput.value = ""; }
-          refreshAffilDropdowns();
-        }
-      });
-    }
-
-    if (newInput) {
-      newInput.addEventListener("blur", function () {
-        var v = newInput.value.trim();
-        if (v && sel.value === "__new__") {
-          refreshAffilDropdowns();
-          // Select the newly added option
-          for (var j = 0; j < sel.options.length; j++) {
-            if (sel.options[j].value === v) { sel.value = v; break; }
-          }
-          newInput.style.display = "none";
-        }
-      });
-    }
-
-    if (removeBtn) {
-      removeBtn.addEventListener("click", function () {
-        var allRows = rowsContainer.querySelectorAll(".author-row");
-        if (allRows.length <= 1) return;  // keep at least one
-        row.parentNode.removeChild(row);
-        refreshAffilDropdowns();
-      });
-    }
-
-    if (nameInput) {
-      nameInput.addEventListener("input", function () { serialize(); });
-    }
-  }
-
-  // ---- Form submit ----
-  form.addEventListener("submit", function () {
-    serialize();
-    var allRows = rowsContainer.querySelectorAll(".author-row");
-    if (allRows.length === 0) {
-      alert("Please add at least one author.");
-      return false;
-    }
-    return true;
-  });
-
-  // ---- Initialize ----
-  addBtn.addEventListener("click", addRow);
-  // Start with one empty row
-  addRow();
-
-  // ---- Populate from existing form data on re-render ----
-  {% if form.authors %}
-  (function () {
-    var existing = {{ form.authors | tojson }};
-    if (!existing) return;
-    // Clear auto-added row
-    rowsContainer.innerHTML = "";
-    existing.split("\n").forEach(function (line) {
-      var parts = line.split("|");
-      if (parts.length < 1) return;
-      var clone = tmpl.content.firstElementChild.cloneNode(true);
-      var nameInp = clone.querySelector("[data-author-name]");
-      var affilSel = clone.querySelector("[data-author-affil]");
-      if (nameInp && parts[0]) nameInp.value = parts[0];
-      if (affilSel && parts[2]) {
-        var opt = document.createElement("option");
-        opt.value = parts[2];
-        opt.textContent = parts[2];
-        opt.selected = true;
-        affilSel.appendChild(opt);
-      }
-      rowsContainer.appendChild(clone);
-      bindRow(clone);
-    });
-    refreshAffilDropdowns();
-    serialize();
-  })();
-  {% endif %}
-})();
-</script>
+<script src="{{ url_for('static', filename='js/member/abstract.js') }}"></script>
 {% endblock %}

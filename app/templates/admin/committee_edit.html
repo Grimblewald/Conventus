@@ -63,13 +63,22 @@
               <input class="input input-sm" name="dyn_role_{{ loop.index0 }}" value="{{ entry.role }}" placeholder="Role">
               <div style="display:flex; gap:6px;">
                 <input class="input input-sm" name="dyn_affil_{{ loop.index0 }}" value="{{ entry.affiliation }}" placeholder="Affiliation" style="flex:1;">
-                <button type="button" class="btn btn-quiet btn-sm js-rem-dyn-role" title="Remove" onclick="return removeDynRole(this)">×</button>
+                <button type="button" class="btn btn-quiet btn-sm js-rem-dyn-role" title="Remove">×</button>
               </div>
             </div>
             {% endfor %}
           {% endif %}
         </div>
-        <button type="button" class="btn btn-ghost btn-sm" style="margin-top:6px;" onclick="addDynRole()">+ Add role</button>
+        <button type="button" class="btn btn-ghost btn-sm" style="margin-top:6px;" id="add-dyn-role-btn">+ Add role</button>
+        <template id="dyn-role-tmpl">
+          <div class="row-2 dyn-role-row dyn-role-row--new" style="margin-bottom:8px;">
+            <input class="input input-sm" name="new_dyn_role[]" value="" placeholder="Role">
+            <div style="display:flex; gap:6px;">
+              <input class="input input-sm" name="new_dyn_affil[]" value="" placeholder="Affiliation" style="flex:1;">
+              <button type="button" class="btn btn-quiet btn-sm js-rem-dyn-role" title="Remove">×</button>
+            </div>
+          </div>
+        </template>
         <div class="help">Add extra roles and affiliations that appear on your committee profile.</div>
       </fieldset>
       <div class="field"><label for="interests">Research interests / keywords</label>
@@ -117,34 +126,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
-function addDynRole() {
-  var container = document.getElementById("dyn-roles-container");
-  var row = document.createElement("div");
-  row.className = "row-2 dyn-role-row dyn-role-row--new";
-  row.style.marginBottom = "8px";
-  row.innerHTML = '<input class="input input-sm" name="new_dyn_role[]" value="" placeholder="Role">'
-    + '<div style="display:flex; gap:6px;">'
-    + '<input class="input input-sm" name="new_dyn_affil[]" value="" placeholder="Affiliation" style="flex:1;">'
-    + '<button type="button" class="btn btn-quiet btn-sm" onclick="removeDynRole(this)" title="Remove">\u00d7</button>'
-    + '</div>';
-  container.appendChild(row);
-}
-
-function removeDynRole(btn) {
-  var row = btn.closest(".dyn-role-row");
-  if (!row) return false;
-  if (row.dataset.idx !== undefined) {
-    var del = document.createElement("input");
-    del.type = "hidden";
-    del.name = "dyn_delete_" + row.dataset.idx;
-    del.value = "1";
-    row.appendChild(del);
-    row.style.display = "none";
-  } else {
-    row.parentNode.removeChild(row);
-  }
-  return false;
-}
-</script>
+<script src="{{ url_for('static', filename='js/admin/committee-edit.js') }}"></script>
 {% endblock %}

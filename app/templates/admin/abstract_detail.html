@@ -32,7 +32,12 @@
 {% endif %}
 {% if a.figure_filename %}
   <h3>Figure</h3>
-  <p><a class="btn btn-quiet btn-sm" href="{{ url_for('member.abstract_figure', aid=a.id) }}">Download figure</a></p>
+  {% set ext = a.figure_filename.split('.')[-1] | lower %}
+  {% if ext in ('png', 'jpg', 'jpeg', 'webp', 'gif') %}
+    <img src="{{ url_for('member.abstract_figure', aid=a.id) }}"
+         alt="Abstract figure" style="max-width:100%; border:1px solid var(--c-card-border); border-radius:var(--rad);">
+  {% endif %}
+  <p style="margin-top:8px;"><a class="btn btn-quiet btn-sm" href="{{ url_for('member.abstract_figure', aid=a.id) }}">Download figure</a></p>
 {% endif %}
 {% if a.coi %}<h3>Conflicts of interest</h3><p>{{ a.coi }}</p>{% endif %}
 

@@ -235,7 +235,7 @@
       var si = sec.getAttribute("data-section-index");
       var clone = fieldTmpl.content.firstElementChild.cloneNode(true);
       clone.querySelectorAll("input, select, textarea").forEach(function(el) {
-        el.name = "field_" + el.name + "_" + si + "[]";
+        el.name = el.name.replace(/_(\d+)\[\]/, "_" + si + "[]");
       });
       sec.querySelector(".schema-fields").appendChild(clone);
       reindex();

@@ -7,7 +7,6 @@
 </div>
 <dl class="hero-meta">
   <div><dt>Conference</dt><dd>{{ a.conference.title if a.conference else '?' }}</dd></div>
-  <div><dt>Author</dt><dd>{{ a.user.email if a.user else '?' }}</dd></div>
   <div><dt>Track</dt><dd>{{ a.track or '—' }}</dd></div>
   <div><dt>Presentation</dt><dd>{{ a.presentation_type }}</dd></div>
   <div><dt>Keywords</dt><dd>{{ a.keywords or '—' }}</dd></div>

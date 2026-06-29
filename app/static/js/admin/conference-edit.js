@@ -178,6 +178,9 @@
           var container = btn.parentElement.querySelector(".se-prefs-container");
           if (tmpl && container) {
             var clone = tmpl.content.firstElementChild.cloneNode(true);
+            var idx = container.querySelectorAll(".se-pref-row").length;
+            var reqCb = clone.querySelector("input[type=checkbox]");
+            if (reqCb) reqCb.value = idx;
             container.appendChild(clone);
           }
         } else if (btn.classList.contains("js-remove-se-pref")) {

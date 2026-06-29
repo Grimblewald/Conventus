@@ -81,62 +81,6 @@
               {% elif field.type == 'email' %}
                 <label for="{{ fkey }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
                 <input class="input" id="{{ fkey }}" name="{{ fkey }}" type="email" value="{{ fval }}"{% if field.required and not field.condition %} required{% endif %}>
-              {% else %}
-                <label for="{{ fkey }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
-                <input class="input" id="{{ fkey }}" name="{{ fkey }}" type="text" value="{{ fval }}"{% if field.required and not field.condition %} required{% endif %}>
-              {% endif %}
-            </div>
-          {% endfor %}
-
-          {% if section.collapsible %}</details>{% elif section.toggleable %}</fieldset>{% else %}</fieldset>{% endif %}
-        {% endfor %}
-      {% else %}
-        <div class="row-2">
-          <div class="field">
-            <label for="dietary">Dietary preferences</label>
-            <input class="input" id="dietary" name="dietary" value="{{ existing.dietary if existing else '' }}">
-          </div>
-          <div class="field">
-            <label for="accessibility">Accessibility needs</label>
-            <input class="input" id="accessibility" name="accessibility" value="{{ existing.accessibility if existing else '' }}">
-          </div>
-        </div>
-      {% endif %}
-
-      {% for se in sub_events %}
-        {% set sekey = se.name.lower().replace(' ', '_') %}
-        {% set se_data = existing.sub_events.get(sekey, {}) if existing and existing.sub_events else {} %}
-        <fieldset class="sub-event-block">
-          <legend>{{ se.name }}</legend>
-          {% if se.description %}<p class="muted">{{ se.description }}</p>{% endif %}
-          {% if se.eligibility_note %}<p class="muted" style="font-size:13px;"><em>{{ se.eligibility_note }}</em></p>{% endif %}
-          {% if se.price %}<p class="muted">Additional cost: {{ site.currency_code }} {{ se.price }}</p>{% endif %}
-          <div class="field">
-            <label>Attendance</label>
-            <label class="check-label">
-              <input type="radio" name="_sub_event_{{ sekey }}_attending" value="yes"
-                     {% if se_data.attending %}checked{% endif %}> Yes, I would like to attend (+{{ site.currency_code }} {{ se.price }})
-            </label>
-            <label class="check-label">
-              <input type="radio" name="_sub_event_{{ sekey }}_attending" value="no"
-                     {% if not se_data.attending %}checked{% endif %}> No, thank you
-            </label>
-          </div>
-          {% if se.preference_schema %}
-            {% for pf in se.preference_schema.fields %}
-              {% set pfkey = '_sub_event_' ~ sekey ~ '_' ~ pf.key %}
-              {% set pfval = se_data.get(pf.key, '') %}
-              <div class="field" data-cond-wrap="{{ pfkey }}" style="display:none;"
-                   data-cond-field="_sub_event_{{ sekey }}_attending" data-cond-value="yes">
-                <span class="label">{{ pf.label }}</span>
-                {% if pf.type == 'checkbox-group' %}
-                  {% for o in pf.options %}
-                    <label class="check-label"><input type="checkbox" name="{{ pfkey }}" value="{{ o }}"{% if o in (pfval if pfval is iterable and pfval is not string else [pfval]) %} checked{% endif %}> {{ o }}</label>
-                  {% endfor %}
-                {% elif pf.type == 'radio' %}
-                  {% for o in pf.options %}
-                    <label class="check-label"><input type="radio" name="{{ pfkey }}" value="{{ o }}"{% if pfval == o %} checked{% endif %}> {{ o }}</label>
-                  {% endfor %}
               {% elif field.type == 'registration-tier' %}
                 <label for="tier">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
                 <select class="select" id="tier" name="tier"{% if field.required %} required{% endif %}>
@@ -212,6 +156,18 @@
 
           {% if section.collapsible %}</details>{% elif section.toggleable %}</fieldset>{% else %}</fieldset>{% endif %}
         {% endfor %}
+      {% else %}
+        <div class="row-2">
+          <div class="field">
+            <label for="dietary">Dietary preferences</label>
+            <input class="input" id="dietary" name="dietary" value="{{ existing.dietary if existing else '' }}">
+          </div>
+          <div class="field">
+            <label for="accessibility">Accessibility needs</label>
+            <input class="input" id="accessibility" name="accessibility" value="{{ existing.accessibility if existing else '' }}">
+          </div>
+        </div>
+      {% endif %}
 
       <button class="btn btn-primary" type="submit">{{ 'Update registration' if existing else 'Register' }}</button>
     </form>

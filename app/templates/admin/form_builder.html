@@ -173,11 +173,11 @@
       <div class="field"><label>Key</label><input class="input input-sm" name="field_key_0[]" value="" style="width:140px;"></div>
       <div class="field"><label>Label</label><input class="input input-sm" name="field_label_0[]" value=""></div>
     </div>
-    <div class="row-3" style="align-items:end; margin-top:8px;">
+    <div class="row-4" style="align-items:end; margin-top:8px;">
       <div class="field">
         <label>Type</label>
         <select class="select select-sm" name="field_type_0[]">
-          {% for t in ['text','email','number','tel','textarea','select','radio','checkbox','checkbox-group','country'] %}
+          {% for t in ['text','email','number','tel','textarea','select','radio','checkbox','checkbox-group','country','registration-tier','sub-event'] %}
             <option value="{{ t }}">{{ t }}</option>
           {% endfor %}
         </select>

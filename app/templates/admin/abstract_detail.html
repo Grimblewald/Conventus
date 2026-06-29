@@ -13,9 +13,23 @@
   <div><dt>Keywords</dt><dd>{{ a.keywords or '—' }}</dd></div>
 </dl>
 <h3>Authors</h3>
-<p>{{ a.authors | fmt_authors }}</p>
+<p>
+  {{ a.authors | fmt_authors }}
+  {% set pa = a.presenting_author %}
+  {% if pa[0] %}
+    <br><small class="muted">Presenting author: <strong>{{ pa[0] }}</strong>{% if pa[1] %}, {{ pa[1] }}{% endif %}</small>
+  {% endif %}
+</p>
 <h3>Body</h3>
 <div class="md">{{ a.body | md | safe }}</div>
+{% if a.references %}
+  <h3>References</h3>
+  <ol>
+  {% for ref in a.references %}
+    <li><a href="https://doi.org/{{ ref.doi }}" target="_blank" rel="noopener">{{ ref.doi }}</a></li>
+  {% endfor %}
+  </ol>
+{% endif %}
 {% if a.figure_filename %}
   <h3>Figure</h3>
   <p><a class="btn btn-quiet btn-sm" href="{{ url_for('member.abstract_figure', aid=a.id) }}">Download figure</a></p>

@@ -11,18 +11,25 @@
     </div>
     <form method="post" class="form form-wide" enctype="multipart/form-data" id="abstract-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
       <div class="field">
-        <label for="title">Title</label>
-        <input class="input" id="title" name="title" required value="{{ form.title or '' }}">
+        <label for="title">Title <span class="muted" id="title-word-count" style="font-weight:400;"></span></label>
+        <input class="input" id="title" name="title" required value="{{ form.title or '' }}" placeholder="15 words or fewer">
       </div>
 
       <!-- Authors + Affiliations — dynamic rows -->
       <fieldset class="toggle-fieldset">
         <legend>Authors &amp; Affiliations</legend>
+        <p class="help">Enter each author with their affiliation. Affiliations should include institution, city and country. The presenting author will be underlined in the final program.</p>
         <div id="author-rows"></div>
+        <div class="field" style="margin-top:8px;">
+          <label for="presenting-author-select">Presenting author</label>
+          <select class="select" id="presenting-author-select" name="presenting_author_index">
+            <option value="">— select —</option>
+          </select>
+        </div>
         <button type="button" class="btn btn-ghost btn-sm" id="add-author-btn" style="margin-top:8px;">+ Add another author</button>
         <input type="hidden" name="authors" id="authors-hidden">
-        <div class="help" style="margin-top:4px;">Each author needs a name and an affiliation. Affiliations with the same name share a superscript marker in the final booklet.</div>
       </fieldset>
 
       <template id="author-row-tmpl">
@@ -37,45 +44,7 @@
         </div>
       </template>
 
-      <div class="field">
-        <label for="body">Abstract body (300-word limit, soft cap 320)</label>
-        <textarea class="textarea" id="body" name="body" required>{{ form.body or '' }}</textarea>
-      </div>
-      <div class="row-3">
-        <div class="field">
-          <label for="track">Track</label>
-          <select class="select" id="track" name="track">
-            <option value="">—</option>
-            {% for t in tracks %}<option {% if form.track == t %}selected{% endif %}>{{ t }}</option>{% endfor %}
-          </select>
-        </div>
-        <div class="field">
-          <label for="presentation_type">Presentation</label>
-          <select class="select" id="presentation_type" name="presentation_type">
-            {% for opt in ['Either','Oral','Poster'] %}
-              <option {% if form.presentation_type == opt %}selected{% endif %}>{{ opt }}</option>
-            {% endfor %}
-          </select>
-        </div>
-        <div class="field">
-          <label for="keywords">Keywords</label>
-          <input class="input" id="keywords" name="keywords" value="{{ form.keywords or '' }}">
-        </div>
-      </div>
-      <div class="field">
-        <label for="profile_picture">Profile picture (optional — PNG, JPG, or WebP, max 4 MB)</label>
-        <input class="input" id="profile_picture" name="profile_picture" type="file" accept=".png,.jpg,.jpeg,.webp">
-        <div class="help">A headshot or photo for your presenter profile.</div>
-      </div>
-      <div class="field">
-        <label for="figure">Figure (optional — PNG, JPG, TIFF or PDF, max 8 MB)</label>
-        <input class="input" id="figure" name="figure" type="file" accept=".png,.jpg,.jpeg,.tif,.tiff,.pdf">
-      </div>
-      <div class="field">
-        <label for="coi">Conflicts of interest</label>
-        <textarea class="textarea" id="coi" name="coi">{{ form.coi or '' }}</textarea>
-      </div>
-
+      <!-- Custom fields from abstract schema (career stage, presentation pref, etc.) -->
       {% if abstract_schema and abstract_schema.sections %}
         {% for section in abstract_schema.sections %}
           <fieldset class="toggle-fieldset">
@@ -122,6 +91,72 @@
           </fieldset>
         {% endfor %}
       {% endif %}
+
+      <div class="field">
+        <label for="body">Abstract body <span class="muted" id="body-word-count" style="font-weight:400;"></span></label>
+        <textarea class="textarea" id="body" name="body" required style="min-height:200px;">{{ form.body or '' }}</textarea>
+        <div class="help">300 words maximum (soft cap 320). Structure: Background/Objectives, Methods, Results, Conclusions.</div>
+      </div>
+
+      <div class="row-3">
+        <div class="field">
+          <label for="track">Track</label>
+          <select class="select" id="track" name="track">
+            <option value="">—</option>
+            {% for t in tracks %}<option {% if form.track == t %}selected{% endif %}>{{ t }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="presentation_type">Presentation</label>
+          <select class="select" id="presentation_type" name="presentation_type">
+            {% for opt in ['Either','Oral','Poster'] %}
+              <option {% if form.presentation_type == opt %}selected{% endif %}>{{ opt }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="keywords">Keywords</label>
+          <input class="input" id="keywords" name="keywords" value="{{ form.keywords or '' }}">
+        </div>
+      </div>
+
+      <!-- References -->
+      <fieldset class="toggle-fieldset">
+        <legend>References</legend>
+        <p class="help">Enter the DOI for each reference. Cite them in your abstract text with [1], [2], etc.</p>
+        <div id="reference-rows"></div>
+        <button type="button" class="btn btn-ghost btn-sm" id="add-reference-btn" style="margin-top:8px;">+ Add another reference</button>
+        <p class="muted" id="reference-validation-msg" style="font-size:12px; margin-top:8px; display:none;"></p>
+      </fieldset>
+
+      <template id="reference-row-tmpl">
+        <div class="reference-row" style="display:flex; gap:8px; align-items:center; margin-bottom:6px;">
+          <span class="ref-key" style="font-weight:bold; min-width:28px; font-family:var(--f-heading);">[1]</span>
+          <input class="input input-sm" data-ref-doi value="" placeholder="DOI (e.g. 10.1000/xyz123)" style="flex:1;">
+          <button type="button" class="btn btn-quiet btn-sm js-remove-ref" title="Remove reference">×</button>
+        </div>
+      </template>
+
+      <div class="field">
+        <label for="coi">Conflicts of interest</label>
+        <textarea class="textarea" id="coi" name="coi">{{ form.coi or '' }}</textarea>
+      </div>
+
+      <div class="field">
+        <label for="figure">Figure (optional — PNG, JPG, TIFF or PDF, max 8 MB)</label>
+        <input class="input" id="figure" name="figure" type="file" accept=".png,.jpg,.jpeg,.tif,.tiff,.pdf">
+      </div>
+
+      <div class="field">
+        <label for="profile_picture">Profile picture (optional — PNG, JPG, or WebP, max 4 MB)</label>
+        <input class="input" id="profile_picture" name="profile_picture" type="file" accept=".png,.jpg,.jpeg,.webp">
+        <div class="help">A headshot or photo for your presenter profile.</div>
+      </div>
+
+      <p class="muted" style="margin-top:16px; font-size:13px;">
+        At least one author must register for the conference for the abstract to be included in the final program.
+      </p>
+
       <button class="btn btn-primary" type="submit">Submit abstract</button>
       {% if form.authors %}
       <script type="application/json" id="authors-data">{{ form.authors | tojson }}</script>

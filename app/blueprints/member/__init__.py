@@ -3,6 +3,7 @@ submission. All require login.
 """
 from __future__ import annotations
 
+import re
 import secrets
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -177,6 +178,18 @@ def register_conf(slug):
 # Abstract submission
 # ---------------------------------------------------------------------------
 
+def _validate_reference(key: int, doi: str, body: str) -> list[str]:
+    errors: list[str] = []
+    marker = f"[{key}]"
+    if marker not in body:
+        errors.append(
+            f"Reference {marker} ({doi}) is not cited in the abstract text. "
+            f"Add {marker} where this reference belongs.")
+    if not doi.startswith("10."):
+        errors.append(f"Reference {marker} DOI does not look valid (should start with 10.).")
+    return errors
+
+
 @member_bp.route("/conferences/<slug>/abstract", methods=["GET", "POST"])
 @login_required
 def submit_abstract(slug):
@@ -227,66 +240,107 @@ def submit_abstract(slug):
                     if val:
                         custom_data[key] = val
 
-        words = len(body.split())
-        if not (title and authors and body):
-            flash("Title, authors and abstract body are required.", "error")
-        elif words > 320:
-            flash(
-                f"Abstract body is {words} words — the limit is 300 (soft cap 320).",
-                "error",
-            )
-        elif abstract_schema:
-            form_errors = validate_form(abstract_schema, request.form)
-            if form_errors:
-                for err in form_errors:
-                    flash(err, "error")
-        else:
-            a = Abstract(
-                user_id=current_user.id, conference_id=c.id,
-                title=title, authors=authors, body=body, track=track,
-                presentation_type=ptype, keywords=keywords, coi=coi,
-                custom_data=custom_data if custom_data else None,
-            )
-            f = request.files.get("figure")
-            if f and f.filename:
-                try:
-                    a.figure_filename = save_figure(
-                        f,
-                        upload_folder=current_app.config["UPLOAD_FOLDER"],
-                        max_bytes=current_app.config["MAX_FIGURE_BYTES"],
-                    )
-                except UploadError as e:
-                    flash(str(e), "error")
-                    return render_template("member/submit_abstract.html",
-                                           c=c, tracks=tracks, form=request.form,
-                                           abstract_schema=abstract_schema)
+        # Collect references
+        ref_dois = request.form.getlist("ref_doi[]")
+        references = []
+        ref_errors: list[str] = []
+        ref_keys = set()
+        for i, doi in enumerate(ref_dois):
+            doi = doi.strip()
+            if doi:
+                ref_errors.extend(_validate_reference(i + 1, doi, body))
+                references.append({"key": i + 1, "doi": doi})
+                ref_keys.add(i + 1)
 
-            pic = request.files.get("profile_picture")
-            if pic and pic.filename:
-                try:
-                    rel = save_image(
-                        pic,
-                        upload_folder=current_app.config["UPLOAD_FOLDER"],
-                        subdir="abstracts",
-                        prefix="profile-",
-                        max_bytes=current_app.config["MAX_HERO_BYTES"],
-                        target_size=400,
-                        force_webp=True,
-                    )
-                    a.profile_picture_filename = rel.split("/", 1)[-1]
-                except UploadError as e:
-                    flash(str(e), "error")
-                    return render_template("member/submit_abstract.html",
-                                           c=c, tracks=tracks, form=request.form,
-                                           abstract_schema=abstract_schema)
-            db.session.add(a)
-            db.session.commit()
-            audit.record("abstract.submitted",
-                         target_kind="abstract", target_id=a.id,
-                         summary=f"{current_user.email} → {c.slug}: {title}")
-            flash("Abstract submitted. You'll be notified after review.",
-                  "success")
-            return redirect(url_for("member.dashboard"))
+        # Check for orphan [n] markers in text with no matching reference
+        body_markers = re.findall(r"\[(\d+)\]", body)
+        for m in body_markers:
+            n = int(m)
+            if n not in ref_keys:
+                ref_errors.append(
+                    f"Citation [\u200B{n}\u200B] appears in text but has no matching reference.")
+
+        presenting_author_index = 0
+        try:
+            presenting_author_index = int(
+                request.form.get("presenting_author_index", "0") or "0")
+        except ValueError:
+            pass
+
+        title_words = len(title.split())
+        words = len(body.split())
+        errors: list[str] = []
+        if not (title and authors and body):
+            errors.append("Title, authors and abstract body are required.")
+        if title_words > 15:
+            errors.append(
+                f"Title is {title_words} words — the limit is 15.")
+        if words > 320:
+            errors.append(
+                f"Abstract body is {words} words — the limit is 300 (soft cap 320).")
+
+        if abstract_schema:
+            form_errors = validate_form(abstract_schema, request.form)
+            errors.extend(form_errors)
+
+        if ref_errors:
+            errors.extend(ref_errors)
+
+        if errors:
+            for err in errors:
+                flash(err, "error")
+            return render_template("member/submit_abstract.html",
+                                   c=c, tracks=tracks, form=request.form,
+                                   abstract_schema=abstract_schema)
+
+        a = Abstract(
+            user_id=current_user.id, conference_id=c.id,
+            title=title, authors=authors, body=body, track=track,
+            presentation_type=ptype, keywords=keywords, coi=coi,
+            custom_data=custom_data if custom_data else None,
+            presenting_author_index=presenting_author_index,
+            references=references if references else None,
+        )
+        f = request.files.get("figure")
+        if f and f.filename:
+            try:
+                a.figure_filename = save_figure(
+                    f,
+                    upload_folder=current_app.config["UPLOAD_FOLDER"],
+                    max_bytes=current_app.config["MAX_FIGURE_BYTES"],
+                )
+            except UploadError as e:
+                flash(str(e), "error")
+                return render_template("member/submit_abstract.html",
+                                       c=c, tracks=tracks, form=request.form,
+                                       abstract_schema=abstract_schema)
+
+        pic = request.files.get("profile_picture")
+        if pic and pic.filename:
+            try:
+                rel = save_image(
+                    pic,
+                    upload_folder=current_app.config["UPLOAD_FOLDER"],
+                    subdir="abstracts",
+                    prefix="profile-",
+                    max_bytes=current_app.config["MAX_HERO_BYTES"],
+                    target_size=400,
+                    force_webp=True,
+                )
+                a.profile_picture_filename = rel.split("/", 1)[-1]
+            except UploadError as e:
+                flash(str(e), "error")
+                return render_template("member/submit_abstract.html",
+                                       c=c, tracks=tracks, form=request.form,
+                                       abstract_schema=abstract_schema)
+        db.session.add(a)
+        db.session.commit()
+        audit.record("abstract.submitted",
+                     target_kind="abstract", target_id=a.id,
+                     summary=f"{current_user.email} → {c.slug}: {title}")
+        flash("Abstract submitted. You'll be notified after review.",
+              "success")
+        return redirect(url_for("member.dashboard"))
 
     return render_template("member/submit_abstract.html",
                            c=c, tracks=tracks, form={},

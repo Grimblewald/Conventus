@@ -7,8 +7,13 @@
     var addBtn = document.getElementById("add-author-btn");
     var tmpl = document.getElementById("author-row-tmpl");
     var hidden = document.getElementById("authors-hidden");
+    var presentingSelect = document.getElementById("presenting-author-select");
 
     if (!form || !rowsContainer || !addBtn || !tmpl || !hidden) return;
+
+    // ====================================================================
+    // Author rows
+    // ====================================================================
 
     function gatherAffiliations() {
       var map = [];
@@ -56,6 +61,28 @@
       });
     }
 
+    function refreshPresentingAuthorSelect() {
+      if (!presentingSelect) return;
+      var current = presentingSelect.value;
+      presentingSelect.innerHTML = '<option value="">— select —</option>';
+      var rows = rowsContainer.querySelectorAll(".author-row");
+      rows.forEach(function (row, idx) {
+        var nameInput = row.querySelector("[data-author-name]");
+        var name = nameInput ? nameInput.value.trim() : "";
+        if (!name) return;
+        var opt = document.createElement("option");
+        opt.value = idx;
+        opt.textContent = name;
+        presentingSelect.appendChild(opt);
+      });
+      for (var i = 0; i < presentingSelect.options.length; i++) {
+        if (presentingSelect.options[i].value === current) {
+          presentingSelect.value = current;
+          return;
+        }
+      }
+    }
+
     function serialize() {
       var lines = [];
       var affilIndex = {};
@@ -97,6 +124,7 @@
       });
 
       hidden.value = lines.join("\n");
+      refreshPresentingAuthorSelect();
     }
 
     function bindRow(row) {
@@ -135,6 +163,7 @@
           if (allRows.length <= 1) return;
           row.parentNode.removeChild(row);
           refreshAffilDropdowns();
+          serialize();
         });
       }
 
@@ -160,7 +189,7 @@
       return true;
     });
 
-    addBtn.addEventListener("click", addRow);
+    if (addBtn) addBtn.addEventListener("click", addRow);
     addRow();
 
     var authorsData = document.getElementById("authors-data");
@@ -190,6 +219,136 @@
           serialize();
         }
       } catch (e) { /* ignore */ }
+    }
+
+    refreshPresentingAuthorSelect();
+
+    // ====================================================================
+    // Word counting
+    // ====================================================================
+
+    function countWords(text) {
+      return (text || "").trim().split(/\s+/).filter(Boolean).length;
+    }
+
+    var titleInput = document.getElementById("title");
+    var titleWC = document.getElementById("title-word-count");
+    var bodyInput = document.getElementById("body");
+    var bodyWC = document.getElementById("body-word-count");
+
+    function updateTitleCount() {
+      if (!titleInput || !titleWC) return;
+      var wc = countWords(titleInput.value);
+      titleWC.textContent = "(" + wc + " word" + (wc !== 1 ? "s" : "") + ")";
+      titleWC.style.color = wc > 15 ? "var(--c-accent)" : "";
+    }
+
+    function updateBodyCount() {
+      if (!bodyInput || !bodyWC) return;
+      var wc = countWords(bodyInput.value);
+      bodyWC.textContent = "(" + wc + " / 300 word" + (wc !== 1 ? "s" : "") + ")";
+      bodyWC.style.color = wc > 300 ? "var(--c-accent)" : "";
+    }
+
+    if (titleInput) titleInput.addEventListener("input", updateTitleCount);
+    if (bodyInput) bodyInput.addEventListener("input", updateBodyCount);
+    updateTitleCount();
+    updateBodyCount();
+
+    // ====================================================================
+    // References
+    // ====================================================================
+
+    var refContainer = document.getElementById("reference-rows");
+    var addRefBtn = document.getElementById("add-reference-btn");
+    var refTmpl = document.getElementById("reference-row-tmpl");
+    var refMsg = document.getElementById("reference-validation-msg");
+
+    function parseBodyRefs() {
+      if (!bodyInput) return [];
+      var matches = bodyInput.value.match(/\[(\d+)\]/g) || [];
+      var nums = [];
+      matches.forEach(function (m) {
+        var n = parseInt(m.replace(/[\[\]]/g, ""), 10);
+        if (nums.indexOf(n) === -1) nums.push(n);
+      });
+      return nums.sort(function (a, b) { return a - b; });
+    }
+
+    function getRefDOIs() {
+      var dois = [];
+      if (!refContainer) return dois;
+      refContainer.querySelectorAll(".reference-row").forEach(function (row) {
+        var inp = row.querySelector("[data-ref-doi]");
+        if (inp) dois.push(inp.value.trim());
+      });
+      return dois;
+    }
+
+    function reindexRefs() {
+      if (!refContainer) return;
+      refContainer.querySelectorAll(".reference-row").forEach(function (row, idx) {
+        row.querySelector(".ref-key").textContent = "[" + (idx + 1) + "]";
+      });
+    }
+
+    function validateReferences() {
+      if (!refMsg) return;
+      var bodyRefs = parseBodyRefs();
+      var dois = getRefDOIs();
+      var maxKey = dois.filter(function (d) { return d !== ""; }).length;
+      var errors = [];
+
+      bodyRefs.forEach(function (n) {
+        if (n > maxKey) errors.push("Citation [\u200B" + n + "\u200B] in text has no matching reference.");
+      });
+      for (var k = 1; k <= maxKey; k++) {
+        if (bodyRefs.indexOf(k) === -1) errors.push("Reference [\u200B" + k + "\u200B] is not cited in the abstract text.");
+      }
+
+      if (errors.length > 0) {
+        refMsg.style.display = "";
+        refMsg.style.color = "var(--c-accent)";
+        refMsg.textContent = errors.join(" ");
+      } else if (maxKey > 0) {
+        refMsg.style.display = "";
+        refMsg.style.color = "";
+        refMsg.textContent = maxKey + " reference" + (maxKey !== 1 ? "s" : "") + " — all cited in text.";
+      } else {
+        refMsg.style.display = "none";
+      }
+    }
+
+    function addRefRow() {
+      if (!refContainer || !refTmpl) return;
+      var clone = refTmpl.content.firstElementChild.cloneNode(true);
+      refContainer.appendChild(clone);
+      reindexRefs();
+      var doiInput = clone.querySelector("[data-ref-doi]");
+      var removeBtn = clone.querySelector(".js-remove-ref");
+      if (removeBtn) {
+        removeBtn.addEventListener("click", function () {
+          clone.parentNode.removeChild(clone);
+          reindexRefs();
+          validateReferences();
+        });
+      }
+      if (doiInput) {
+        doiInput.addEventListener("input", validateReferences);
+      }
+    }
+
+    if (addRefBtn) addRefBtn.addEventListener("click", addRefRow);
+    if (bodyInput) bodyInput.addEventListener("input", validateReferences);
+
+    // Initialize existing refs from edit form if any
+    if (refContainer) {
+      var existingRefs = refContainer.querySelectorAll("[data-ref-doi]");
+      if (existingRefs.length > 0) {
+        existingRefs.forEach(function (inp) {
+          inp.addEventListener("input", validateReferences);
+        });
+      }
     }
   });
 })();

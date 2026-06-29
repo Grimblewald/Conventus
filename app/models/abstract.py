@@ -28,6 +28,8 @@ class Abstract(db.Model):
     keywords = db.Column(db.String(300), default="")
     coi = db.Column(db.Text, default="")
     custom_data = db.Column(db.JSON, default=None)
+    presenting_author_index = db.Column(db.Integer, default=0)
+    references = db.Column(db.JSON, default=None)
 
     figure_filename = db.Column(db.String(240))
     profile_picture_filename = db.Column(db.String(240))
@@ -49,8 +51,9 @@ class Abstract(db.Model):
     def presenting_author(self) -> tuple[str, str]:
         if not self.authors or not self.authors.strip():
             return ("", "")
-        first_line = self.authors.strip().split("\n")[0].strip()
-        parts = first_line.split("|")
+        lines = self.authors.strip().split("\n")
+        idx = max(0, min(self.presenting_author_index or 0, len(lines) - 1))
+        parts = lines[idx].split("|")
         name = parts[0].strip() if parts else ""
         affil = parts[2].strip() if len(parts) > 2 else ""
         return (name, affil)

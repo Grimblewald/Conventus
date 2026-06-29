@@ -851,6 +851,47 @@ section.block.ink .table td {
 .input-sm { font-size: 13px; padding: 6px 8px; width: auto; }
 .tier-row--new td { opacity: .72; }
 
+/* ---------------- Form builder ---------------- */
+.schema-section {
+  margin-bottom: 12px;
+}
+.schema-section-header {
+  padding: 14px 20px;
+  background: color-mix(in oklab, var(--c-card-bg) 96%, var(--c-accent));
+  border-bottom: 1px solid var(--c-card-border);
+}
+.schema-fields {
+  padding: 12px 20px 0;
+}
+.schema-field-row {
+  padding: 14px;
+  margin-bottom: 10px;
+  border: 1px dashed var(--c-card-border);
+  border-radius: var(--rad-sm);
+}
+.schema-field-row:last-child { margin-bottom: 0; }
+
+/* Form builder links on conference edit — match edit-section-summary look */
+a.edit-section-summary {
+  display: block;
+  text-decoration: none;
+  color: var(--c-page-text);
+  border-bottom: 1px solid var(--c-card-border);
+}
+a.edit-section-summary:last-child {
+  border-bottom: none;
+}
+a.edit-section-summary::before {
+  content: "→";
+  display: inline-block;
+  width: 14px;
+  font-size: 12px;
+  color: var(--c-muted-text);
+}
+a.edit-section-summary:hover {
+  background: color-mix(in oklab, var(--c-accent) 4%, transparent);
+}
+
 /* --- Organising committee modal --- */
 .oc-modal-overlay {
   position: fixed; inset: 0; z-index: 100;

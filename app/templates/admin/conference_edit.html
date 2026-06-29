@@ -162,40 +162,6 @@
   </details>
 
   <!-- ============================================================ -->
-  <!-- Booklet Design                                                -->
-  <!-- ============================================================ -->
-  <details class="edit-section">
-    <summary class="edit-section-summary">Booklet Design</summary>
-    <div class="edit-section-body">
-      <p class="muted" style="margin-top:0;">Optional images applied to every page when the abstract booklet is compiled into a PDF.</p>
-      <div class="row-2">
-        <div class="field">
-          <label for="booklet_header">Header image</label>
-          <input class="input" id="booklet_header" name="booklet_header" type="file" accept=".png,.jpg,.jpeg,.webp">
-          {% if c.booklet_header_filename %}
-            <label class="check-label" style="margin-top:8px;"><input type="checkbox" name="remove_booklet_header"> Remove current</label>
-          {% endif %}
-        </div>
-        <div class="field">
-          <label for="booklet_footer">Footer image</label>
-          <input class="input" id="booklet_footer" name="booklet_footer" type="file" accept=".png,.jpg,.jpeg,.webp">
-          {% if c.booklet_footer_filename %}
-            <label class="check-label" style="margin-top:8px;"><input type="checkbox" name="remove_booklet_footer"> Remove current</label>
-          {% endif %}
-        </div>
-      </div>
-      <div class="field">
-        <label for="booklet_background">Page background</label>
-        <input class="input" id="booklet_background" name="booklet_background" type="file" accept=".png,.jpg,.jpeg,.webp" style="max-width:400px;">
-        {% if c.booklet_background_filename %}
-          <label class="check-label" style="margin-top:8px;"><input type="checkbox" name="remove_booklet_background"> Remove current</label>
-        {% endif %}
-        <div class="help">A faint, full-page watermark behind every abstract.</div>
-      </div>
-    </div>
-  </details>
-
-  <!-- ============================================================ -->
   <!-- Price Tiers                                                   -->
   <!-- ============================================================ -->
   <details class="edit-section">
@@ -471,18 +437,44 @@
 </details>
 
 {% if can('abs.compile_booklet') %}
-<div class="edit-section">
-  <div class="edit-section-summary" style="cursor:default; border-bottom:1px solid var(--c-card-border); padding-bottom:12px; margin-bottom:12px;">
-    Abstract Booklet
-  </div>
-  <div class="edit-section-body" style="padding:0;">
+<details class="edit-section">
+  <summary class="edit-section-summary">Abstract Booklet</summary>
+  <div class="edit-section-body">
     <form method="post" action="{{ url_for('admin.conference_compile_booklet', cid=c.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <p class="muted">Generates a LaTeX source zip containing all accepted abstracts for this conference. If nothing has changed, the same file is served from cache.</p>
-      <button class="btn btn-primary" type="submit">Compile abstract booklet</button>
+
+      <h4 style="margin-top:20px; margin-bottom:12px;">Booklet Design</h4>
+      <p class="muted" style="margin-top:0;">Optional images applied to every page when the abstract booklet is compiled into a PDF.</p>
+      <div class="row-2">
+        <div class="field">
+          <label for="booklet_header">Header image</label>
+          <input class="input" id="booklet_header" name="booklet_header" type="file" accept=".png,.jpg,.jpeg,.webp">
+          {% if c.booklet_header_filename %}
+            <label class="check-label" style="margin-top:8px;"><input type="checkbox" name="remove_booklet_header"> Remove current</label>
+          {% endif %}
+        </div>
+        <div class="field">
+          <label for="booklet_footer">Footer image</label>
+          <input class="input" id="booklet_footer" name="booklet_footer" type="file" accept=".png,.jpg,.jpeg,.webp">
+          {% if c.booklet_footer_filename %}
+            <label class="check-label" style="margin-top:8px;"><input type="checkbox" name="remove_booklet_footer"> Remove current</label>
+          {% endif %}
+        </div>
+      </div>
+      <div class="field">
+        <label for="booklet_background">Page background</label>
+        <input class="input" id="booklet_background" name="booklet_background" type="file" accept=".png,.jpg,.jpeg,.webp" style="max-width:400px;">
+        {% if c.booklet_background_filename %}
+          <label class="check-label" style="margin-top:8px;"><input type="checkbox" name="remove_booklet_background"> Remove current</label>
+        {% endif %}
+        <div class="help">A faint, full-page watermark behind every abstract.</div>
+      </div>
+
+      <button class="btn btn-primary" type="submit" style="margin-top:8px;">Compile abstract booklet</button>
     </form>
   </div>
-</div>
+</details>
 {% endif %}
 
 {% if can('conf.delete') %}

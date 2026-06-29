@@ -22,6 +22,7 @@ from ...services.mail import send_mail
 from ...services.payments import payment_url_for, send_payment_email
 from ...services.uploads import UploadError, save_figure, save_image
 from ...services.form_renderer import validate_form
+from ...services.citations import fetch_metadata, format_reference
 
 
 member_bp = Blueprint("member", __name__)
@@ -219,15 +220,16 @@ def submit_abstract(slug):
         flash("Abstract submission is not open for this conference.", "error")
         return redirect(url_for("public.conference_detail", slug=c.slug))
 
-    # Enforce per-user abstract limit
+    # Enforce per-user abstract limit (exclude drafts)
     if c.max_abstracts_per_user:
-        existing = (
+        existing_count = (
             Abstract.query
             .filter_by(user_id=current_user.id, conference_id=c.id)
             .filter(Abstract.deleted_at.is_(None))
+            .filter(Abstract.status != "draft")
             .count()
         )
-        if existing >= c.max_abstracts_per_user:
+        if existing_count >= c.max_abstracts_per_user:
             flash(
                 f"You've reached the limit of {c.max_abstracts_per_user} "
                 f"abstract(s) for this conference.", "error",
@@ -237,7 +239,19 @@ def submit_abstract(slug):
     tracks = c.tracks_list()
     abstract_schema = c.abstract_form_schema
 
+    # Edit mode — load existing draft
+    edit_id = request.args.get("edit", type=int)
+    draft = None
+    if edit_id:
+        draft = (Abstract.query
+                 .filter_by(id=edit_id, user_id=current_user.id)
+                 .filter(Abstract.deleted_at.is_(None))
+                 .first())
+
     if request.method == "POST":
+        action = request.form.get("action", "submit")
+        is_draft = action in ("draft", "preview")
+
         title = (request.form.get("title") or "").strip()
         authors = (request.form.get("authors") or "").strip()
         body = (request.form.get("body") or "").strip()
@@ -246,7 +260,7 @@ def submit_abstract(slug):
         keywords = (request.form.get("keywords") or "").strip()
         coi = (request.form.get("coi") or "").strip()
 
-        # Collect custom field data from abstract schema
+        # Collect custom field data
         custom_data: dict = {}
         if abstract_schema:
             for section in abstract_schema.get("sections", []):
@@ -259,22 +273,12 @@ def submit_abstract(slug):
         # Collect references
         ref_dois = request.form.getlist("ref_doi[]")
         references = []
-        ref_errors: list[str] = []
         ref_keys = set()
         for i, doi in enumerate(ref_dois):
             doi = _normalize_doi(doi)
             if doi:
-                ref_errors.extend(_validate_reference(i + 1, doi, body))
                 references.append({"key": i + 1, "doi": doi})
                 ref_keys.add(i + 1)
-
-        # Check for orphan [n] markers in text with no matching reference
-        body_markers = re.findall(r"\[(\d+)\]", body)
-        for m in body_markers:
-            n = int(m)
-            if n not in ref_keys:
-                ref_errors.append(
-                    f"Citation [\u200B{n}\u200B] appears in text but has no matching reference.")
 
         presenting_author_index = 0
         try:
@@ -283,40 +287,60 @@ def submit_abstract(slug):
         except ValueError:
             pass
 
-        title_words = len(title.split())
-        words = len(body.split())
         errors: list[str] = []
-        if not (title and authors and body):
-            errors.append("Title, authors and abstract body are required.")
-        if title_words > 15:
-            errors.append(
-                f"Title is {title_words} words — the limit is 15.")
-        if words > 320:
-            errors.append(
-                f"Abstract body is {words} words — the limit is 300 (soft cap 320).")
 
-        if abstract_schema:
-            form_errors = validate_form(abstract_schema, request.form)
-            errors.extend(form_errors)
+        if not is_draft:
+            # Full validation for submit
+            if not (title and authors and body):
+                errors.append("Title, authors and abstract body are required.")
+            if len(title.split()) > 15:
+                errors.append(f"Title is {len(title.split())} words — the limit is 15.")
+            if len(body.split()) > 320:
+                errors.append(f"Abstract body is {len(body.split())} words — the limit is 300 (soft cap 320).")
 
-        if ref_errors:
+            if abstract_schema:
+                form_errors = validate_form(abstract_schema, request.form)
+                errors.extend(form_errors)
+
+            # Reference validation
+            ref_errors: list[str] = []
+            for ref in references:
+                ref_errors.extend(_validate_reference(ref["key"], ref["doi"], body))
+            body_markers = re.findall(r"\[(\d+)\]", body)
+            for m in body_markers:
+                n = int(m)
+                if n not in ref_keys:
+                    ref_errors.append(
+                        f"Citation [\u200B{n}\u200B] appears in text but has no matching reference.")
             errors.extend(ref_errors)
+
+        elif not (title and authors):
+            errors.append("Title and at least one author are required even for drafts.")
 
         if errors:
             for err in errors:
                 flash(err, "error")
             return render_template("member/submit_abstract.html",
                                    c=c, tracks=tracks, form=request.form,
-                                   abstract_schema=abstract_schema)
+                                   abstract_schema=abstract_schema, draft=draft)
 
-        a = Abstract(
-            user_id=current_user.id, conference_id=c.id,
-            title=title, authors=authors, body=body, track=track,
-            presentation_type=ptype, keywords=keywords, coi=coi,
-            custom_data=custom_data if custom_data else None,
-            presenting_author_index=presenting_author_index,
-            references=references if references else None,
-        )
+        # Save abstract
+        if draft:
+            a = draft
+        else:
+            a = Abstract(user_id=current_user.id, conference_id=c.id)
+        a.title = title
+        a.authors = authors
+        a.body = body
+        a.track = track
+        a.presentation_type = ptype
+        a.keywords = keywords
+        a.coi = coi
+        a.custom_data = custom_data if custom_data else None
+        a.presenting_author_index = presenting_author_index
+        a.references = references if references else None
+        a.status = "draft" if is_draft else "submitted"
+
         f = request.files.get("figure")
         if f and f.filename:
             try:
@@ -329,38 +353,87 @@ def submit_abstract(slug):
                 flash(str(e), "error")
                 return render_template("member/submit_abstract.html",
                                        c=c, tracks=tracks, form=request.form,
-                                       abstract_schema=abstract_schema)
+                                       abstract_schema=abstract_schema, draft=draft)
 
         pic = request.files.get("profile_picture")
         if pic and pic.filename:
             try:
-                rel = save_image(
-                    pic,
-                    upload_folder=current_app.config["UPLOAD_FOLDER"],
-                    subdir="abstracts",
-                    prefix="profile-",
-                    max_bytes=current_app.config["MAX_HERO_BYTES"],
-                    target_size=400,
-                    force_webp=True,
-                )
+                rel = save_image(pic,
+                                 upload_folder=current_app.config["UPLOAD_FOLDER"],
+                                 subdir="abstracts", prefix="profile-",
+                                 max_bytes=current_app.config["MAX_HERO_BYTES"],
+                                 target_size=400, force_webp=True)
                 a.profile_picture_filename = rel.split("/", 1)[-1]
             except UploadError as e:
                 flash(str(e), "error")
                 return render_template("member/submit_abstract.html",
                                        c=c, tracks=tracks, form=request.form,
-                                       abstract_schema=abstract_schema)
-        db.session.add(a)
+                                       abstract_schema=abstract_schema, draft=draft)
+
+        if not draft:
+            db.session.add(a)
         db.session.commit()
-        audit.record("abstract.submitted",
+
+        if action == "preview":
+            return redirect(url_for("member.preview_abstract", aid=a.id))
+
+        audit.record("abstract.submitted" if not is_draft else "abstract.draft",
                      target_kind="abstract", target_id=a.id,
                      summary=f"{current_user.email} → {c.slug}: {title}")
-        flash("Abstract submitted. You'll be notified after review.",
-              "success")
+        flash("Abstract submitted. You'll be notified after review." if not is_draft
+              else "Draft saved.", "success")
         return redirect(url_for("member.dashboard"))
 
+    # GET — pre-fill form for editing
+    form_data: dict = {}
+    if draft:
+        form_data = {
+            "title": draft.title,
+            "authors": draft.authors,
+            "body": draft.body,
+            "track": draft.track,
+            "presentation_type": draft.presentation_type,
+            "keywords": draft.keywords,
+            "coi": draft.coi,
+            "presenting_author_index": draft.presenting_author_index,
+            **{k: v for k, v in (draft.custom_data or {}).items()},
+        }
+
     return render_template("member/submit_abstract.html",
-                           c=c, tracks=tracks, form={},
+                           c=c, tracks=tracks, form=form_data, draft=draft,
                            abstract_schema=abstract_schema)
+
+
+# ---------------------------------------------------------------------------
+# Abstract preview (fetches DOI metadata for references)
+# ---------------------------------------------------------------------------
+
+@member_bp.route("/abstracts/<int:aid>/preview")
+@login_required
+def preview_abstract(aid):
+    a = Abstract.query.get_or_404(aid)
+    if a.user_id != current_user.id:
+        abort(403)
+
+    refs_with_meta: list[dict] = []
+    for ref in (a.references or []):
+        doi = ref["doi"]
+        meta = fetch_metadata(doi)
+        if meta:
+            refs_with_meta.append({
+                "key": ref["key"],
+                "doi": doi,
+                "citation": format_reference(meta),
+            })
+        else:
+            refs_with_meta.append({
+                "key": ref["key"],
+                "doi": doi,
+                "citation": doi,
+            })
+
+    return render_template("member/preview_abstract.html",
+                           a=a, refs_with_meta=refs_with_meta)
 
 
 # ---------------------------------------------------------------------------

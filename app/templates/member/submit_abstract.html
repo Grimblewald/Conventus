@@ -157,11 +157,28 @@
         At least one author must register for the conference for the abstract to be included in the final program.
       </p>
 
-      <button class="btn btn-primary" type="submit">Submit abstract</button>
+      <input type="hidden" name="action" id="form-action" value="submit">
+      <div style="display:flex; gap:8px; margin-top:20px;">
+        <button class="btn btn-ghost" type="submit" id="btn-draft">Save draft</button>
+        <button class="btn btn-ghost" type="submit" id="btn-preview">Preview</button>
+        <button class="btn btn-primary" type="submit" id="btn-submit">Submit abstract</button>
+      </div>
       {% if form.authors %}
       <script type="application/json" id="authors-data">{{ form.authors | tojson }}</script>
       {% endif %}
+      {% if draft and draft.references %}
+      <script type="application/json" id="references-data">{{ draft.references | tojson }}</script>
+      {% endif %}
     </form>
+
+    <script>
+      (function () {
+        var action = document.getElementById("form-action");
+        document.getElementById("btn-draft").addEventListener("click", function () { action.value = "draft"; });
+        document.getElementById("btn-preview").addEventListener("click", function () { action.value = "preview"; });
+        document.getElementById("btn-submit").addEventListener("click", function () { action.value = "submit"; });
+      })();
+    </script>
   </div>
 </section>
 {% endblock %}

@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Preview · {{ a.title }}{% endblock %}
+{% block content %}
+<section class="block">
+  <div class="container" style="max-width:800px;">
+    <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:24px; gap:12px;">
+      <div>
+        <div class="eyebrow">{{ a.conference.date_range if a.conference else '' }}</div>
+        <span class="muted" style="font-size:14px;">Abstract preview{% if a.status == 'draft' %} &mdash; <em>draft</em>{% endif %}</span>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <a class="btn btn-ghost btn-sm" href="{{ url_for('member.submit_abstract', slug=a.conference.slug, edit=a.id) }}">Edit</a>
+        <a class="btn btn-primary btn-sm" href="{{ url_for('member.dashboard') }}">Dashboard</a>
+      </div>
+    </div>
+
+    <!-- Title (centred, bold) -->
+    <h1 style="text-align:center; margin-bottom:8px;">{{ a.title }}</h1>
+
+    <!-- Authors (centred, presenting underlined) -->
+    {% set pa = a.presenting_author %}
+    <p style="text-align:center; font-size:1.05rem; margin-bottom:4px;">
+      {% set author_lines = a.authors.strip().split('\n') %}
+      {% for line in author_lines %}
+        {% set parts = line.split('|') %}
+        {% set name = parts[0].strip() if parts else '' %}
+        {% set idx = parts[1].strip() if parts|length > 1 else '' %}
+        {% set affil = parts[2].strip() if parts|length > 2 else '' %}
+        {% if name %}
+          {% if loop.index0 == (a.presenting_author_index or 0) %}<strong><u>{% endif %}
+          {{ name }}{% if idx %}<sup>{{ idx }}</sup>{% endif %}
+          {% if loop.index0 == (a.presenting_author_index or 0) %}</u></strong>{% endif %}
+          {% if not loop.last %}, {% endif %}
+        {% endif %}
+      {% endfor %}
+    </p>
+
+    <!-- Affiliations (centred, italic, superscript) -->
+    {% set affil_map = {} %}
+    {% for line in author_lines %}
+      {% set parts = line.split('|') %}
+      {% set idx = parts[1].strip() if parts|length > 1 else '' %}
+      {% set affil = parts[2].strip() if parts|length > 2 else '' %}
+      {% if idx and affil and idx not in affil_map %}
+        {% set _ = affil_map.update({idx: affil}) %}
+      {% endif %}
+    {% endfor %}
+    {% if affil_map %}
+    <p style="text-align:center; font-size:0.92rem; font-style:italic; margin-bottom:4px;">
+      {% for idx in affil_map.keys()|sort %}
+        <sup>{{ idx }}</sup>{{ affil_map[idx] }}
+        {% if not loop.last %}&emsp;{% endif %}
+      {% endfor %}
+    </p>
+    {% endif %}
+
+    <!-- Career stage / presentation preference -->
+    {% set cd = a.custom_data or {} %}
+    {% set career = cd.get('career-stage', '').strip() %}
+    {% set pref = cd.get('presentation-preference', '').strip() %}
+    {% if career or pref %}
+    <p style="text-align:center; font-size:0.85rem; color:var(--c-muted-text); margin-bottom:8px;">
+      {{ career }}{% if career and pref %} · {% endif %}{{ pref }}
+    </p>
+    {% endif %}
+
+    <hr style="margin-bottom:16px;">
+
+    <!-- Abstract body (preserving paragraphs) -->
+    <div style="font-size:0.95rem; line-height:1.6; text-align:justify; margin-bottom:24px;">
+      {% for paragraph in a.body.strip().split('\n\n') %}
+        {% if paragraph.strip() %}
+        <p style="margin-bottom:12px;">{{ paragraph.strip() }}</p>
+        {% endif %}
+      {% endfor %}
+    </div>
+
+    <!-- Figure (if present) -->
+    {% if a.figure_filename %}
+    <div style="text-align:center; margin-bottom:24px;">
+      <img src="{{ url_for('member.abstract_figure', aid=a.id) }}"
+           alt="Figure" style="max-width:100%; max-height:360px; border:1px solid var(--c-card-border); border-radius:var(--rad);">
+    </div>
+    {% endif %}
+
+    <!-- References -->
+    {% if refs_with_meta %}
+    <h3 style="margin-bottom:4px;">References</h3>
+    <ol style="font-size:0.85rem; line-height:1.5; padding-left:20px;">
+      {% for ref in refs_with_meta %}
+      <li style="margin-bottom:4px;">
+        [{{ ref.key }}] {{ ref.citation }}
+      </li>
+      {% endfor %}
+    </ol>
+    {% endif %}
+
+    <!-- Conflicts of interest -->
+    {% if a.coi %}
+    <h3 style="margin-top:20px;">Conflicts of interest</h3>
+    <p style="font-size:0.85rem;">{{ a.coi }}</p>
+    {% endif %}
+
+    <hr style="margin-top:24px;">
+    <p class="muted" style="font-size:0.8rem; text-align:center;">
+      This is a preview of how your abstract will appear in the conference booklet.
+      Actual formatting (fonts, spacing, page breaks) is controlled by the LaTeX compilation step.
+    </p>
+  </div>
+</section>
+{% endblock %}

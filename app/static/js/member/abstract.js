@@ -124,7 +124,25 @@
       });
 
       hidden.value = lines.join("\n");
-      refreshPresentingAuthorSelect();
+    refreshPresentingAuthorSelect();
+
+    // Populate existing references when editing a draft
+    var refsData = document.getElementById("references-data");
+    if (refsData && refContainer) {
+      try {
+        var existingRefs = JSON.parse(refsData.textContent);
+        if (Array.isArray(existingRefs) && existingRefs.length > 0) {
+          existingRefs.forEach(function (r) {
+            var clone = refTmpl.content.firstElementChild.cloneNode(true);
+            var doiInp = clone.querySelector("[data-ref-doi]");
+            if (doiInp) doiInp.value = r.doi || "";
+            refContainer.appendChild(clone);
+          });
+          reindexRefs();
+          validateReferences();
+        }
+      } catch (e) { /* ignore */ }
+    }
     }
 
     function bindRow(row) {

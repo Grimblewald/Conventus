@@ -7,7 +7,7 @@ from ..extensions import db
 
 SPEAKER_STATUSES = ("plenary", "keynote", "invited", "accepted")
 SPEAKER_STATUS_ORDER = {s: i for i, s in enumerate(SPEAKER_STATUSES)}
-ALL_STATUSES = ("submitted", "accepted", "rejected", "revise",
+ALL_STATUSES = ("draft", "submitted", "accepted", "rejected", "revise",
                 "plenary", "keynote", "invited")
 
 

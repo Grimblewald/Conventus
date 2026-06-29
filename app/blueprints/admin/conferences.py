@@ -21,7 +21,7 @@ from ...security import requires_permission, audit
 from ...services.mail import send_mail
 from ...services.slugs import slugify
 from ...services.uploads import (
-    UploadError, save_image, save_pdf,
+    UploadError, save_image, save_pdf, remove_upload,
 )
 from ...services.citations import fetch_metadata, format_reference_compact
 

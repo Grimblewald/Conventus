@@ -981,7 +981,11 @@ def _booklet_preamble(conference, inputs: list[str],
 
     pkgs = [
         "\\documentclass[11pt,a4paper]{article}",
-        "\\usepackage[margin=2.2cm,headheight=2.2cm,footskip=1.2cm]{geometry}",
+        "\\usepackage[margin=25.4mm,headheight=14pt,footskip=18pt]{geometry}",
+        "\\usepackage{helvet}",
+        "\\renewcommand{\\familydefault}{\\sfdefault}",
+        "\\usepackage{setspace}",
+        "\\setstretch{1.15}",
         "\\usepackage{graphicx}",
         "\\usepackage{hyperref}",
         "\\usepackage{parskip}",
@@ -995,7 +999,6 @@ def _booklet_preamble(conference, inputs: list[str],
     pkgs.append("\\fancyhf{}")
     pkgs.append("\\renewcommand{\\headrulewidth}{0.4pt}")
 
-    # Header
     if header_rel:
         pkgs.append(
             "\\fancyhead[L]{\\includegraphics[height=1.3cm,keepaspectratio]"
@@ -1005,7 +1008,6 @@ def _booklet_preamble(conference, inputs: list[str],
         pkgs.append(f"\\fancyhead[L]{{\\small\\itshape {title_esc}}}")
     pkgs.append("\\fancyhead[R]{\\small\\thepage}")
 
-    # Footer (only page-number when no footer image — avoids double numbers)
     if footer_rel:
         pkgs.append(
             "\\fancyfoot[R]{\\includegraphics[height=0.9cm,keepaspectratio]"
@@ -1044,22 +1046,12 @@ def _booklet_preamble(conference, inputs: list[str],
 def _abstract_fragment(label: str, abstract,
                        has_header: bool = False,
                        has_background: bool = False) -> str:
-    """Return the LaTeX fragment for one abstract.
+    """Return LaTeX fragment matching the abstract preview page layout.
 
-    Layout::
-
-        ┌──────────────────────────┬──────────┐
-        │  title                   │ portrait │
-        │  authors (superscripts)  │  3 cm    │
-        │  affiliations            │          │
-        │  track · keywords        │          │
-        ├──────────────────────────┴──────────┤
-        │  abstract body                      │
-        ├─────────────────────────────────────┤
-        │           figure (fill)             │
-        └─────────────────────────────────────┘
-
-    The fragment is designed to occupy one page.
+    Centred title (bold), centred authors with superscript affiliations
+    and presenting author underlined, centred italic affiliations,
+    career-stage / presentation-preference meta, justified body,
+    figure filling remaining space, and numbered DOI references.
     """
     folder = f"abstract_{label}"
     title = abstract.title.replace("&", "\\&").replace("#", "\\#").replace("_", "\\_")
@@ -1072,6 +1064,8 @@ def _abstract_fragment(label: str, abstract,
     body = body.replace("{", "\\{").replace("}", "\\}")
     body = body.replace("~", "\\textasciitilde{}").replace("^", "\\^{}")
     body = body.replace(_BSL, "\\textbackslash{}")
+    body = body.replace("\r\n", "\n")
+    body = body.replace("\n\n", "\n\n\\medskip\n\n")
 
     def _out_ext(filename: str | None) -> str:
         if not filename:
@@ -1081,68 +1075,45 @@ def _abstract_fragment(label: str, abstract,
             return ".png" if ext in {".webp", ".tif", ".tiff"} else ext
         return ext
 
-    author_line, affil_line = _parse_authors(abstract.authors)
+    presenting_idx = abstract.presenting_author_index or 0
+    author_line, affil_line = _parse_authors(abstract.authors, presenting_idx)
 
     lines: list[str] = []
-
-    # --- TOC entry (invisible \section for table of contents) ---
     lines.append(f"\\addcontentsline{{toc}}{{section}}{{{title}}}")
 
-    # --- Per-page setup ---
     if has_background:
         lines.append("\\BgThispage")
 
-    # --- Top row: info (left) + portrait (right) ---
-    has_portrait = bool(abstract.profile_picture_filename)
-    left_width = "0.72" if has_portrait else "1.0"
+    lines.append("\\begin{center}")
+    lines.append(f"  {{\\LARGE\\bfseries {title}\\par}}")
+    lines.append("\\end{center}")
 
-    lines.append("\\noindent")
-    lines.append(f"\\begin{{minipage}}[t]{{{left_width}\\textwidth}}")
-    lines.append("  \\vspace{0pt}%")
-    lines.append("  \\raggedright")
-
-    # Line 1 — title
-    lines.append(f"  {{\\LARGE\\bfseries {title}}}\\newline")
-
-    # Line 2 — authors with superscripts
     if author_line:
-        lines.append(f"  {{\\large {author_line}}}\\newline")
+        lines.append("\\begin{center}")
+        lines.append(f"  {{\\large {author_line}\\par}}")
+        lines.append("\\end{center}")
 
-    # Line 3 — affiliations
     if affil_line:
-        lines.append(f"  {{\\footnotesize {affil_line}}}\\newline")
+        lines.append("\\begin{center}")
+        lines.append(f"  {{\\large\\itshape {affil_line}\\par}}")
+        lines.append("\\end{center}")
 
-    # Line 4 — track + keywords (compact: "Track --- \\textit{kw1, kw2}")
-    if abstract.track or abstract.keywords:
-        meta_parts: list[str] = []
-        if abstract.track:
-            meta_parts.append(abstract.track)
-        if abstract.keywords:
-            meta_parts.append(f"\\textit{{{abstract.keywords}}}")
-        kv = " --- ".join(meta_parts) if len(meta_parts) > 1 else meta_parts[0]
-        lines.append(f"  {{\\footnotesize\\itshape {kv}}}")
+    cd = abstract.custom_data or {}
+    career = (cd.get("career-stage") or "").strip()
+    pres = (cd.get("presentation-preference") or "").strip()
+    meta_bits: list[str] = []
+    if career:
+        meta_bits.append(career)
+    if pres:
+        meta_bits.append(pres)
+    if meta_bits:
+        lines.append("\\begin{center}")
+        lines.append(f"  {{\\small\\textit{{{'  \\textperiodcentered{}  '.join(meta_bits)}}}\\par}}")
+        lines.append("\\end{center}")
 
-    lines.append("\\end{minipage}%")
-
-    if has_portrait:
-        lines.append("\\hfill")
-        out = _out_ext(abstract.profile_picture_filename)
-        lines.append("\\begin{minipage}[t]{0.24\\textwidth}")
-        lines.append("  \\vspace{0pt}%")
-        lines.append("  \\raggedleft")
-        lines.append(f"  \\includegraphics[height=3cm,keepaspectratio]{{{folder}/profile{out}}}")
-        lines.append("\\end{minipage}")
-
-    # --- Divider ---
     lines.append("")
-    lines.append("\\vspace{6pt}")
-    lines.append("{\\noindent\\rule{\\textwidth}{0.4pt}}")
-    lines.append("\\vspace{8pt}")
-
-    # --- Middle row: abstract body ---
     lines.append(body)
 
-    # --- Bottom row: figure, scaled to fill remaining vertical space ---
     if abstract.figure_filename:
         out = _out_ext(abstract.figure_filename)
         lines.append("")
@@ -1157,27 +1128,33 @@ def _abstract_fragment(label: str, abstract,
         )
         lines.append("\\end{center}")
 
+    refs = abstract.references or []
+    if refs:
+        lines.append("")
+        lines.append("\\textbf{References}")
+        lines.append("\\begin{enumerate}")
+        for ref in refs:
+            doi_esc = ref["doi"].replace("_", "\\_")
+            lines.append(f"  \\item \\href{{https://doi.org/{doi_esc}}}{{{doi_esc}}}")
+        lines.append("\\end{enumerate}")
+
     lines.append("")
     lines.append("\\newpage")
     return "\n".join(lines)
 
 
-def _parse_authors(raw: str) -> tuple[str, str]:
+def _parse_authors(raw: str, presenting_idx: int = 0) -> tuple[str, str]:
     """Parse pipe-delimited author rows into LaTeX-formatted lines.
 
-    Input format (one author per line)::
-
-        Full Name|affil_index|Affiliation Name
-
-    Returns ``(author_line, affil_line)`` where *author_line* contains
-    names with ``\\textsuperscript{…}`` markers and *affil_line*
-    lists the unique affiliations with their superscripts.
+    Returns ``(author_line, affil_line)``.  Author names carry
+    ``\\textsuperscript{…}`` affiliation markers.  The presenting author
+    (by index) is wrapped in ``\\underline{…}``.
     """
     if not raw or not raw.strip():
         return ("", "")
 
-    authors: list[tuple[str, str, str]] = []  # (name, idx, affil)
-    affil_map: dict[str, str] = {}            # idx → affil name
+    authors: list[tuple[str, str, str]] = []
+    affil_map: dict[str, str] = {}
     seen_affils: set[str] = set()
 
     for line in raw.strip().split("\n"):
@@ -1197,17 +1174,18 @@ def _parse_authors(raw: str) -> tuple[str, str]:
     if not authors:
         return ("", "")
 
-    # Build author line: Name\textsuperscript{1}, Name\textsuperscript{2}, ...
     author_names: list[str] = []
-    for name, idx, _affil in authors:
+    for i, (name, idx, _affil) in enumerate(authors):
         name_esc = name.replace("&", "\\&").replace("#", "\\#").replace("_", "\\_")
         if idx:
-            author_names.append(f"{name_esc}\\textsuperscript{{{idx}}}")
+            tag = f"{name_esc}\\textsuperscript{{{idx}}}"
         else:
-            author_names.append(name_esc)
+            tag = name_esc
+        if i == presenting_idx:
+            tag = f"\\underline{{{tag}}}"
+        author_names.append(tag)
     author_line = ", ".join(author_names)
 
-    # Build affiliation line: \textsuperscript{1}Affil\quad\textsuperscript{2}Affil
     affil_parts: list[str] = []
     for idx in sorted(affil_map.keys(), key=int):
         affil_esc = affil_map[idx].replace("&", "\\&").replace("#", "\\#").replace("_", "\\_")

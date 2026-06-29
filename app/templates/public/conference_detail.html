@@ -139,6 +139,7 @@
     <div class="grid cols-3 committee-grid">
       {% for a in speakers %}
         {% set name, affil = a.presenting_author %}
+        <a href="{{ url_for('public.abstract_view', aid=a.id) }}" style="text-decoration:none; color:inherit;">
         <article class="speaker-card">
           {% if a.status != 'accepted' %}<div class="role">{{ a.status }}</div>{% endif %}
           <div class="speaker-row">
@@ -166,6 +167,7 @@
             </div>
           {% endif %}
         </article>
+        </a>
       {% endfor %}
     </div>
   </div>

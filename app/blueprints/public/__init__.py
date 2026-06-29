@@ -20,6 +20,7 @@ from ...models import (
     get_site_settings,
 )
 from ...services.mail import send_mail
+from ...services.citations import fetch_metadata, format_reference_compact
 
 
 public_bp = Blueprint("public", __name__)
@@ -344,6 +345,35 @@ def conference_upload(name):
 def sponsor_upload(name):
     folder = Path(current_app.config["UPLOAD_FOLDER"]) / "sponsors"
     return send_from_directory(folder, name)
+
+
+# ---------------------------------------------------------------------------
+# Abstract public view (linked from speaker cards)
+# ---------------------------------------------------------------------------
+
+@public_bp.route("/abstracts/<int:aid>")
+def abstract_view(aid):
+    a = Abstract.query.get_or_404(aid)
+    if not a.status or a.status not in SPEAKER_STATUSES:
+        abort(404)
+
+    refs_with_meta: list[dict] = []
+    for ref in (a.references or []):
+        meta = fetch_metadata(ref["doi"])
+        if meta:
+            refs_with_meta.append({
+                "key": ref["key"],
+                "doi": ref["doi"],
+                "citation": format_reference_compact(meta),
+            })
+        else:
+            refs_with_meta.append({
+                "key": ref["key"],
+                "doi": ref["doi"],
+                "citation": ref["doi"],
+            })
+
+    return render_template("public/abstract.html", a=a, refs_with_meta=refs_with_meta)
 
 
 @public_bp.route("/uploads/abstracts/<path:name>")

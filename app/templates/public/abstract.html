@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}{{ a.title }}{% endblock %}
+{% block content %}
+<section class="block">
+  <div class="container" style="max-width:800px;">
+    <div class="section-head">
+      <div>
+        <div class="eyebrow">{{ a.conference.date_range if a.conference else '' }}</div>
+        <h2>{{ a.title }}</h2>
+      </div>
+      <a class="link" href="{{ url_for('public.conference_detail', slug=a.conference.slug) }}">← back to conference</a>
+    </div>
+
+    {% set pa = a.presenting_author %}
+    <div class="hero-meta" style="margin-bottom:24px;">
+      <div>
+        <dt>Presenting author</dt>
+        <dd>{{ pa[0] }}{% if pa[1] %}, {{ pa[1] }}{% endif %}</dd>
+      </div>
+      {% if a.track %}
+      <div><dt>Track</dt><dd>{{ a.track }}</dd></div>
+      {% endif %}
+      <div><dt>Presentation</dt><dd>{{ a.presentation_type }}</dd></div>
+    </div>
+
+    <h3>Authors</h3>
+    <p>{{ a.authors | fmt_authors }}</p>
+
+    <h3>Abstract</h3>
+    <div style="font-size:0.95rem; line-height:1.6; text-align:justify; margin-bottom:24px;">
+      {% for paragraph in a.body.strip().split('\n\n') %}
+        {% if paragraph.strip() %}
+        <p style="margin-bottom:12px;">{{ paragraph.strip() }}</p>
+        {% endif %}
+      {% endfor %}
+    </div>
+
+    {% if a.figure_filename %}
+    <h3>Figure</h3>
+    <div style="text-align:center; margin-bottom:24px;">
+      <img src="{{ url_for('public.abstract_upload', name=a.figure_filename.split('/')[-1]) }}"
+           alt="Figure" style="max-width:100%; max-height:480px; border:1px solid var(--c-card-border); border-radius:var(--rad);">
+    </div>
+    {% endif %}
+
+    {% if refs_with_meta %}
+    <h3>References</h3>
+    <ol style="font-size:0.85rem; line-height:1.5; padding-left:20px;">
+      {% for ref in refs_with_meta %}
+      <li style="margin-bottom:4px;">
+        <a href="https://doi.org/{{ ref.doi }}" target="_blank" rel="noopener">[{{ ref.key }}] {{ ref.citation }}</a>
+      </li>
+      {% endfor %}
+    </ol>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

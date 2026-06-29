@@ -293,7 +293,7 @@
       <button type="button" class="oc-modal-close" id="oc-modal-close">&times;</button>
       <h3>Organising Committee</h3>
       <table class="table">
-        <thead><tr><th style="width:64px">Order</th><th>Name</th><th>Role</th><th>Affiliation</th><th>Email</th><th style="width:70px"></th></tr></thead>
+        <thead><tr><th style="width:64px">Order</th><th>Name</th><th>Role</th><th>Affiliation</th><th>Email</th><th>Portrait</th><th style="width:70px"></th></tr></thead>
         <tbody id="oc-tbody">
           {% for oc in c.organising_committee %}
           <tr class="oc-row" data-oc-id="{{ oc.id }}">
@@ -302,6 +302,12 @@
             <td><input class="input" name="oc_role_{{ oc.id }}" value="{{ oc.role }}"></td>
             <td><input class="input" name="oc_affil_{{ oc.id }}" value="{{ oc.affiliation }}"></td>
             <td><input class="input" name="oc_email_{{ oc.id }}" value="{{ oc.email }}"></td>
+            <td>
+              <input class="input input-sm" name="oc_portrait_{{ oc.id }}" type="file" accept=".png,.jpg,.jpeg,.webp" style="width:140px;">
+              {% if oc.portrait_filename %}
+                <label class="check-label" style="margin-top:4px;font-size:11px;"><input type="checkbox" name="oc_remove_portrait_{{ oc.id }}" value="1"> Remove</label>
+              {% endif %}
+            </td>
             <td>
               <input type="hidden" name="oc_delete_{{ oc.id }}" value="">
               <button type="button" class="btn btn-quiet btn-sm js-remove-oc">Remove</button>
@@ -317,6 +323,7 @@
           <td><input class="input" name="new_oc_role[]" value=""></td>
           <td><input class="input" name="new_oc_affil[]" value=""></td>
           <td><input class="input" name="new_oc_email[]" value=""></td>
+          <td><input class="input input-sm" name="new_oc_portrait[]" type="file" accept=".png,.jpg,.jpeg,.webp" style="width:140px;"></td>
           <td><button type="button" class="btn btn-quiet btn-sm js-remove-row">Remove</button></td>
         </tr>
       </template>

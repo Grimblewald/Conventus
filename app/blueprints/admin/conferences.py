@@ -376,6 +376,28 @@ def conference_save(cid):
                     oc.display_order = int(request.form.get(f"oc_order_{oc.id}") or 0)
                 except ValueError:
                     pass
+            portrait = request.files.get(f"oc_portrait_{oc.id}")
+            if portrait and portrait.filename:
+                try:
+                    rel = save_image(
+                        portrait,
+                        upload_folder=current_app.config["UPLOAD_FOLDER"],
+                        subdir="committee",
+                        prefix=f"oc-{oc.id}",
+                        max_bytes=current_app.config["MAX_HERO_BYTES"],
+                        target_size=400,
+                    )
+                    if oc.portrait_filename:
+                        remove_upload(current_app.config["UPLOAD_FOLDER"],
+                                      f"committee/{oc.portrait_filename}")
+                    oc.portrait_filename = rel.split("/", 1)[-1]
+                except UploadError as e:
+                    flash(f"Portrait error: {e}", "error")
+            elif request.form.get(f"oc_remove_portrait_{oc.id}"):
+                if oc.portrait_filename:
+                    remove_upload(current_app.config["UPLOAD_FOLDER"],
+                                  f"committee/{oc.portrait_filename}")
+                oc.portrait_filename = None
 
         new_oc_names = request.form.getlist("new_oc_name[]")
         new_oc_roles = request.form.getlist("new_oc_role[]")
@@ -386,14 +408,32 @@ def conference_save(cid):
             name = name.strip()
             if not name:
                 continue
-            db.session.add(OrganisingCommitteeMember(
+            oc = OrganisingCommitteeMember(
                 conference_id=c.id,
                 full_name=name,
                 role=(new_oc_roles[i] if i < len(new_oc_roles) else "").strip(),
                 affiliation=(new_oc_affils[i] if i < len(new_oc_affils) else "").strip(),
                 email=(new_oc_emails[i] if i < len(new_oc_emails) else "").strip(),
                 display_order=int(new_oc_orders[i] or 0) if i < len(new_oc_orders) else 0,
-            ))
+            )
+            new_portrait = request.files.getlist("new_oc_portrait[]")
+            portrait = new_portrait[i] if i < len(new_portrait) else None
+            if portrait and portrait.filename:
+                db.session.add(oc)
+                db.session.flush()
+                try:
+                    rel = save_image(
+                        portrait,
+                        upload_folder=current_app.config["UPLOAD_FOLDER"],
+                        subdir="committee",
+                        prefix=f"oc-{oc.id}",
+                        max_bytes=current_app.config["MAX_HERO_BYTES"],
+                        target_size=400,
+                    )
+                    oc.portrait_filename = rel.split("/", 1)[-1]
+                except UploadError as e:
+                    flash(f"Portrait error: {e}", "error")
+            db.session.add(oc)
 
         # -- Sub-events --
         for se in list(c.sub_events):

@@ -15,30 +15,29 @@
     <form method="post" class="form form-wide" id="reg-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="field">
-        <div class="label">Registration Tier</div>
-        <div class="tiers">
+        <label for="tier">Registration Tier</label>
+        <select class="select" id="tier" name="tier" required>
+          <option value="">— Select a tier —</option>
           {% for t in tiers %}
             {% set is_early = c.early_bird_deadline and t.early_bird_amount and c.early_bird_deadline >= today() %}
-            <label class="tier">
-              <input type="radio" name="tier" value="{{ t.name }}"
-                     {% if existing and existing.tier_name == t.name %}checked{% endif %} required>
-              <div class="tier-inner">
-                <h4>{{ t.name }}</h4>
-                {% if is_early %}
-                  <div class="price">
-                    <span style="text-decoration:line-through;opacity:0.6;">{{ site.currency_symbol }}{{ t.amount }}</span>
-                    {{ site.currency_symbol }}{{ t.early_bird_amount }}
-                    <small>{{ site.currency_code }}</small>
-                  </div>
-                  <small style="color:var(--c-accent);">Early bird until {{ c.early_bird_deadline.strftime('%-d %B %Y') }}</small>
-                {% else %}
-                  <div class="price">{{ site.currency_symbol }}{{ t.amount }} <small>{{ site.currency_code }}</small></div>
-                {% endif %}
-                {% if t.description %}<p style="font-size:13.5px; color: var(--c-muted-text); margin-top:8px;">{{ t.description }}</p>{% endif %}
-              </div>
-            </label>
+            <option value="{{ t.name }}" {% if existing and existing.tier_name == t.name %}selected{% endif %}>
+              {{ t.name }} —
+              {% if is_early %}
+                {{ site.currency_symbol }}{{ t.early_bird_amount }} (early bird, {{ site.currency_symbol }}{{ t.amount }} standard)
+              {% else %}
+                {{ site.currency_symbol }}{{ t.amount }}
+              {% endif %}
+            </option>
           {% endfor %}
-        </div>
+        </select>
+        {% for t in tiers %}
+          {% if t.description %}
+            <div class="help">{{ t.name }}: {{ t.description }}</div>
+          {% endif %}
+        {% endfor %}
+        {% if c.early_bird_deadline %}
+          <div class="help" style="color:var(--c-accent);">Early bird pricing ends {{ c.early_bird_deadline.strftime('%-d %B %Y') }}.</div>
+        {% endif %}
       </div>
 
       {% if schema and schema.sections %}

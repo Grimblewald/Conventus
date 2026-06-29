@@ -82,7 +82,11 @@ def _send_smtp(to: str, subject: str, body: str,
     msg["From"] = sender
     msg["To"] = to
     msg["Subject"] = subject
-    msg["Message-ID"] = make_msgid()
+    # Extract domain from sender address for a valid Message-ID domain
+    # (avoid socket.getfqdn() leaking internal hostnames like .localdomain)
+    _d, addr = parseaddr(sender)
+    mid_domain = addr.split("@")[-1] if "@" in addr else "conventus.local"
+    msg["Message-ID"] = make_msgid(domain=mid_domain)
     msg["Date"] = formatdate(localtime=True)
     if reply_to:
         msg["Reply-To"] = reply_to

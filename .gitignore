@@ -41,3 +41,5 @@ build/
 # but version files SHOULD be committed
 migrations/__pycache__/
 /backups
+AGENTS.md
+TODO.md

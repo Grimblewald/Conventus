@@ -38,19 +38,22 @@
     <h3 style="margin-top:36px;">Abstracts</h3>
     {% if abstracts %}
       <table class="table">
-        <thead><tr><th>Conference</th><th>Title</th><th>Status</th><th>Submitted</th></tr></thead>
+        <thead><tr><th>Conference</th><th>Title</th><th>Status</th><th>Submitted</th><th></th></tr></thead>
         <tbody>
           {% for a in abstracts %}
           <tr>
             <td>{{ a.conference.title }}</td>
             <td>{{ a.title }}</td>
             <td><span class="status" data-v="{{ a.status }}">{{ a.status }}</span></td>
+            <td>{{ a.created_at.strftime('%-d %b %Y') }}</td>
             <td>
-              {{ a.created_at.strftime('%-d %b %Y') }}
+              {% if a.status in ('draft', 'revise') %}
+                <a class="btn btn-ghost btn-sm" href="{{ url_for('member.submit_abstract', slug=a.conference.slug, edit=a.id) }}">Edit</a>
+              {% endif %}
               {% if a.status in ('submitted', 'accepted') %}
                 <form method="post" action="{{ url_for('member.delete_abstract_request', aid=a.id) }}"
                       data-confirm="Request a confirmation code to delete this abstract?"
-                      style="display:inline; margin-left:8px;">
+                      style="display:inline; margin-left:4px;">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <button class="btn btn-quiet btn-sm" type="submit">Delete</button>
                 </form>

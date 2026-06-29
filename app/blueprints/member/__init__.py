@@ -339,7 +339,11 @@ def submit_abstract(slug):
         a.custom_data = custom_data if custom_data else None
         a.presenting_author_index = presenting_author_index
         a.references = references if references else None
-        a.status = "draft" if is_draft else "submitted"
+        if not is_draft:
+            a.status = "submitted"
+        elif not draft:
+            a.status = "draft"
+        # else: keep existing status (e.g. "revise") on draft saves
 
         f = request.files.get("figure")
         if f and f.filename:

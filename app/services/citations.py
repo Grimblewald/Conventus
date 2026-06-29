@@ -104,7 +104,7 @@ def format_reference_compact(ref_data: dict) -> str:
         if parts:
             # Check if there are other authors after the first
             has_more = "," in authors
-            first_author = parts[-1]  # surname is the last word
+            first_author = parts[0]  # surname is first word in "FamilyName Initials"
             if has_more:
                 first_author += " et al."
 

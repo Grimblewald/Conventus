@@ -178,6 +178,22 @@ def register_conf(slug):
 # Abstract submission
 # ---------------------------------------------------------------------------
 
+_DOI_URL_PREFIXES = [
+    "https://doi.org/", "http://doi.org/",
+    "https://dx.doi.org/", "http://dx.doi.org/",
+    "doi.org/", "dx.doi.org/",
+]
+
+
+def _normalize_doi(raw: str) -> str:
+    doi = raw.strip()
+    for prefix in _DOI_URL_PREFIXES:
+        if doi.lower().startswith(prefix.lower()):
+            doi = doi[len(prefix):]
+            break
+    return doi.strip()
+
+
 def _validate_reference(key: int, doi: str, body: str) -> list[str]:
     errors: list[str] = []
     marker = f"[{key}]"
@@ -246,7 +262,7 @@ def submit_abstract(slug):
         ref_errors: list[str] = []
         ref_keys = set()
         for i, doi in enumerate(ref_dois):
-            doi = doi.strip()
+            doi = _normalize_doi(doi)
             if doi:
                 ref_errors.extend(_validate_reference(i + 1, doi, body))
                 references.append({"key": i + 1, "doi": doi})

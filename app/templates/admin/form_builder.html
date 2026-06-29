@@ -41,16 +41,25 @@
             <div class="field"><label>Key</label><input class="input input-sm" name="field_key_{{ si }}[]" value="{{ field.key }}" style="width:140px;"></div>
             <div class="field"><label>Label</label><input class="input input-sm" name="field_label_{{ si }}[]" value="{{ field.label }}"></div>
           </div>
-          <div class="row-3" style="align-items:end; margin-top:8px;">
+          <div class="row-4" style="align-items:end; margin-top:8px;">
             <div class="field">
               <label>Type</label>
               <select class="select select-sm" name="field_type_{{ si }}[]">
-                {% for t in ['text','email','number','tel','textarea','select','radio','checkbox','checkbox-group','country'] %}
+                {% for t in ['text','email','number','tel','textarea','select','radio','checkbox','checkbox-group','country','registration-tier','sub-event'] %}
                   <option value="{{ t }}" {% if field.type == t %}selected{% endif %}>{{ t }}</option>
                 {% endfor %}
               </select>
             </div>
             <div class="field"><label class="check-label"><input type="checkbox" name="field_required_{{ si }}[]" value="{{ fi }}" {% if field.required %}checked{% endif %}> Required</label></div>
+            <div class="field">
+              <label>Sub-event</label>
+              <select class="select select-sm" name="field_sub_event_{{ si }}[]">
+                <option value="">—</option>
+                {% for se in sub_events %}
+                  <option value="{{ se.id }}" {% if field.sub_event_id == se.id %}selected{% endif %}>{{ se.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
             <div class="field"><button type="button" class="btn btn-quiet btn-sm js-remove-field">Remove field</button></div>
           </div>
           <div class="row-2" style="margin-top:8px;">
@@ -174,6 +183,15 @@
         </select>
       </div>
       <div class="field"><label class="check-label"><input type="checkbox" name="field_required_0[]"> Required</label></div>
+      <div class="field">
+        <label>Sub-event</label>
+        <select class="select select-sm" name="field_sub_event_0[]">
+          <option value="">—</option>
+          {% for se in sub_events %}
+            <option value="{{ se.id }}">{{ se.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
       <div class="field"><button type="button" class="btn btn-quiet btn-sm js-remove-field">Remove field</button></div>
     </div>
     <div class="row-2" style="margin-top:8px;">

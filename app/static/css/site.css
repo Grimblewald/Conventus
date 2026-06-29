@@ -493,6 +493,7 @@ section.block.ink .table td {
 }
 .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
 .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+.row-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 16px; }
 
 /* Tier picker */
 .tiers { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
@@ -1026,7 +1027,7 @@ a.edit-section-summary:hover {
   h1, .hero h1 { font-size: 2.2rem; }
   .ann { grid-template-columns: 1fr; gap: 6px; }
   .site-footer .cols { grid-template-columns: 1fr 1fr; }
-  .row-2, .row-3 { grid-template-columns: 1fr; }
+  .row-2, .row-3, .row-4 { grid-template-columns: 1fr; }
   .conf-body-grid { grid-template-columns: 1fr; }
   .sponsor-sidebar { position: static; }
 }

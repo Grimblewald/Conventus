@@ -342,18 +342,56 @@
     </summary>
     <div class="edit-section-body">
       <table class="table">
-        <thead><tr><th style="width:64px">Order</th><th>Name</th><th>Description</th><th>Price ({{ site.currency_code }})</th><th>Eligibility</th><th style="width:70px"></th></tr></thead>
+        <thead><tr><th style="width:64px">Order</th><th>Name</th><th>Description</th><th>Price ({{ site.currency_code }})</th><th>Eligibility</th><th>Prefs</th><th style="width:70px"></th></tr></thead>
         <tbody id="se-tbody">
           {% for se in c.sub_events %}
+          {% set seidx = loop.index0 %}
           <tr class="se-row" data-se-id="{{ se.id }}">
             <td><input class="input" name="se_order_{{ se.id }}" value="{{ se.display_order }}" style="width:64px;"></td>
             <td><input class="input" name="se_name_{{ se.id }}" value="{{ se.name }}"></td>
             <td><input class="input" name="se_desc_{{ se.id }}" value="{{ se.description }}"></td>
             <td><input class="input" name="se_price_{{ se.id }}" value="{{ se.price }}" style="width:100px;"></td>
             <td><input class="input" name="se_eligibility_{{ se.id }}" value="{{ se.eligibility_note }}"></td>
+            <td><small class="muted">{{ se.preference_schema.fields|default([])|length }} field{% if se.preference_schema.fields|default([])|length != 1 %}s{% endif %}</small></td>
             <td>
               <input type="hidden" name="se_delete_{{ se.id }}" value="">
               <button type="button" class="btn btn-quiet btn-sm js-remove-se">Remove</button>
+            </td>
+          </tr>
+          <tr class="se-prefs-row" data-se-id="{{ se.id }}">
+            <td colspan="7" style="padding:4px 14px 12px;">
+              <div class="se-prefs-container" data-se-id="{{ se.id }}">
+                {% for pf in se.preference_schema.fields | default([]) %}
+                <div class="se-pref-row" style="display:flex; gap:6px; align-items:end; margin-bottom:4px;">
+                  <input class="input input-sm" name="se_pf_key_{{ se.id }}[]" value="{{ pf.key }}" placeholder="key" style="width:100px;">
+                  <input class="input input-sm" name="se_pf_label_{{ se.id }}[]" value="{{ pf.label }}" placeholder="label" style="width:120px;">
+                  <select class="select select-sm" name="se_pf_type_{{ se.id }}[]" style="width:110px;">
+                    {% for t in ['text','checkbox-group','radio','select','textarea'] %}
+                      <option value="{{ t }}" {% if pf.type == t %}selected{% endif %}>{{ t }}</option>
+                    {% endfor %}
+                  </select>
+                  <label class="check-label" style="font-size:11px;white-space:nowrap;"><input type="checkbox" name="se_pf_req_{{ se.id }}[]" value="1" {% if pf.required %}checked{% endif %}> Req</label>
+                  <input class="input input-sm" name="se_pf_opts_{{ se.id }}[]" value="{{ pf.options|default([])|join(', ') }}" placeholder="opts, comma sep" style="width:140px;">
+                  <button type="button" class="btn btn-quiet btn-sm js-remove-se-pref">×</button>
+                </div>
+                {% endfor %}
+              </div>
+              <template id="se-pref-tmpl-{{ se.id }}">
+                <div class="se-pref-row se-pref-row--new" style="display:flex; gap:6px; align-items:end; margin-bottom:4px;">
+                  <input class="input input-sm" name="se_pf_key_{{ se.id }}[]" placeholder="key" style="width:100px;">
+                  <input class="input input-sm" name="se_pf_label_{{ se.id }}[]" placeholder="label" style="width:120px;">
+                  <select class="select select-sm" name="se_pf_type_{{ se.id }}[]" style="width:110px;">
+                    {% for t in ['text','checkbox-group','radio','select','textarea'] %}
+                      <option value="{{ t }}">{{ t }}</option>
+                    {% endfor %}
+                  </select>
+                  <label class="check-label" style="font-size:11px;white-space:nowrap;"><input type="checkbox" name="se_pf_req_{{ se.id }}[]" value="1"> Req</label>
+                  <input class="input input-sm" name="se_pf_opts_{{ se.id }}[]" placeholder="opts, comma sep" style="width:140px;">
+                  <button type="button" class="btn btn-quiet btn-sm js-remove-se-pref">×</button>
+                </div>
+              </template>
+              <button type="button" class="btn btn-ghost btn-sm js-add-se-pref" data-se-id="{{ se.id }}" style="margin-top:4px;">+ Add preference field</button>
+              </div>
             </td>
           </tr>
           {% endfor %}
@@ -366,6 +404,7 @@
           <td><input class="input" name="new_se_desc[]" value=""></td>
           <td><input class="input" name="new_se_price[]" value="" style="width:100px;"></td>
           <td><input class="input" name="new_se_eligibility[]" value=""></td>
+          <td><small class="muted">0 fields</small></td>
           <td><button type="button" class="btn btn-quiet btn-sm js-remove-row">Remove</button></td>
         </tr>
       </template>

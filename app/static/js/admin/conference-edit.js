@@ -165,9 +165,24 @@
           var row = btn.closest("tr");
           if (row && row.dataset.seId) {
             markRowDeleted(row);
+            var prefsRow = row.nextElementSibling;
+            if (prefsRow && prefsRow.classList.contains("se-prefs-row")) {
+              prefsRow.style.display = "none";
+            }
           }
         } else if (btn.classList.contains("js-remove-row")) {
           removeNewRow(btn.closest("tr"));
+        } else if (btn.classList.contains("js-add-se-pref")) {
+          var seId = btn.dataset.seId;
+          var tmpl = document.getElementById("se-pref-tmpl-" + seId);
+          var container = btn.parentElement.querySelector(".se-prefs-container");
+          if (tmpl && container) {
+            var clone = tmpl.content.firstElementChild.cloneNode(true);
+            container.appendChild(clone);
+          }
+        } else if (btn.classList.contains("js-remove-se-pref")) {
+          var row = btn.closest(".se-pref-row");
+          if (row) { row.remove(); }
         }
       });
     }

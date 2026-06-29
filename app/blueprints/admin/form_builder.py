@@ -100,7 +100,7 @@ def form_builder(cid, form_type):
 
     return render_template("admin/form_builder.html",
                            c=c, form_type=form_type, schema=schema,
-                           templates=templates)
+                           templates=templates, sub_events=c.sub_events)
 
 
 def _save_schema_from_form(conference, form_type):
@@ -127,6 +127,7 @@ def _save_schema_from_form(conference, form_type):
         field_labels = request.form.getlist(f"field_label_{i}[]")
         field_types = request.form.getlist(f"field_type_{i}[]")
         field_required = request.form.getlist(f"field_required_{i}[]")
+        field_sub_event = request.form.getlist(f"field_sub_event_{i}[]")
         field_options = request.form.getlist(f"field_options_{i}[]")
         field_cond_field = request.form.getlist(f"field_cond_field_{i}[]")
         field_cond_value = request.form.getlist(f"field_cond_value_{i}[]")
@@ -141,6 +142,10 @@ def _save_schema_from_form(conference, form_type):
                 "type": field_types[fj].strip() if fj < len(field_types) else "text",
                 "required": str(fj) in field_required,
             }
+            if fdef["type"] == "sub-event":
+                se_val = field_sub_event[fj].strip() if fj < len(field_sub_event) else ""
+                if se_val:
+                    fdef["sub_event_id"] = int(se_val)
             opts = field_options[fj].strip() if fj < len(field_options) else ""
             if opts:
                 fdef["options"] = [o.strip() for o in opts.split("\n") if o.strip()]

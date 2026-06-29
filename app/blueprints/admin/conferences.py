@@ -456,6 +456,28 @@ def conference_save(cid):
                     se.display_order = int(request.form.get(f"se_order_{se.id}") or 0)
                 except ValueError:
                     pass
+            pf_keys = request.form.getlist(f"se_pf_key_{se.id}[]")
+            if pf_keys:
+                pfs: list[dict] = []
+                pf_labels = request.form.getlist(f"se_pf_label_{se.id}[]")
+                pf_types = request.form.getlist(f"se_pf_type_{se.id}[]")
+                pf_reqs = request.form.getlist(f"se_pf_req_{se.id}[]")
+                pf_opts = request.form.getlist(f"se_pf_opts_{se.id}[]")
+                for pfi, pfk in enumerate(pf_keys):
+                    pfk = pfk.strip()
+                    if not pfk:
+                        continue
+                    pf: dict = {
+                        "key": pfk,
+                        "label": (pf_labels[pfi].strip() if pfi < len(pf_labels) else pfk),
+                        "type": (pf_types[pfi].strip() if pfi < len(pf_types) else "text"),
+                        "required": str(pfi) in pf_reqs,
+                    }
+                    opts_raw = (pf_opts[pfi].strip() if pfi < len(pf_opts) else "")
+                    if opts_raw:
+                        pf["options"] = [o.strip() for o in opts_raw.split(",") if o.strip()]
+                    pfs.append(pf)
+                se.preference_schema = {"fields": pfs}
 
         new_se_names = request.form.getlist("new_se_name[]")
         new_se_descs = request.form.getlist("new_se_desc[]")

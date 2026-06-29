@@ -14,31 +14,6 @@
     {% else %}
     <form method="post" class="form form-wide" id="reg-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="field">
-        <label for="tier">Registration Tier</label>
-        <select class="select" id="tier" name="tier" required>
-          <option value="">— Select a tier —</option>
-          {% for t in tiers %}
-            {% set is_early = c.early_bird_deadline and t.early_bird_amount and c.early_bird_deadline >= today() %}
-            <option value="{{ t.name }}" {% if existing and existing.tier_name == t.name %}selected{% endif %}>
-              {{ t.name }} —
-              {% if is_early %}
-                {{ site.currency_symbol }}{{ t.early_bird_amount }} (early bird, {{ site.currency_symbol }}{{ t.amount }} standard)
-              {% else %}
-                {{ site.currency_symbol }}{{ t.amount }}
-              {% endif %}
-            </option>
-          {% endfor %}
-        </select>
-        {% for t in tiers %}
-          {% if t.description %}
-            <div class="help">{{ t.name }}: {{ t.description }}</div>
-          {% endif %}
-        {% endfor %}
-        {% if c.early_bird_deadline %}
-          <div class="help" style="color:var(--c-accent);">Early bird pricing ends {{ c.early_bird_deadline.strftime('%-d %B %Y') }}.</div>
-        {% endif %}
-      </div>
 
       {% if schema and schema.sections %}
         {% set data = existing.custom_data|default({}) %}
@@ -162,14 +137,81 @@
                   {% for o in pf.options %}
                     <label class="check-label"><input type="radio" name="{{ pfkey }}" value="{{ o }}"{% if pfval == o %} checked{% endif %}> {{ o }}</label>
                   {% endfor %}
-                {% else %}
-                  <input class="input" id="{{ pfkey }}" name="{{ pfkey }}" type="text" value="{{ pfval }}">
+              {% elif field.type == 'registration-tier' %}
+                <label for="tier">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
+                <select class="select" id="tier" name="tier"{% if field.required %} required{% endif %}>
+                  <option value="">— Select a tier —</option>
+                  {% for t in tiers %}
+                    {% set is_early = c.early_bird_deadline and t.early_bird_amount and c.early_bird_deadline >= today() %}
+                    <option value="{{ t.name }}" {% if existing and existing.tier_name == t.name %}selected{% endif %}>
+                      {{ t.name }} —
+                      {% if is_early %}
+                        {{ site.currency_symbol }}{{ t.early_bird_amount }} (early bird, {{ site.currency_symbol }}{{ t.amount }} standard)
+                      {% else %}
+                        {{ site.currency_symbol }}{{ t.amount }}
+                      {% endif %}
+                    </option>
+                  {% endfor %}
+                </select>
+                {% for t in tiers %}
+                  {% if t.description %}<div class="help">{{ t.name }}: {{ t.description }}</div>{% endif %}
+                {% endfor %}
+                {% if c.early_bird_deadline %}
+                  <div class="help" style="color:var(--c-accent);">Early bird pricing ends {{ c.early_bird_deadline.strftime('%-d %B %Y') }}.</div>
                 {% endif %}
-              </div>
-            {% endfor %}
-          {% endif %}
-        </fieldset>
-      {% endfor %}
+              {% elif field.type == 'sub-event' %}
+                {% set se = sub_events | selectattr('id', 'equalto', field.sub_event_id) | first if field.sub_event_id else None %}
+                {% if se %}
+                <fieldset class="sub-event-block">
+                  <legend>{{ se.name }}</legend>
+                  {% if se.description %}<p class="muted">{{ se.description }}</p>{% endif %}
+                  {% if se.eligibility_note %}<p class="muted" style="font-size:13px;"><em>{{ se.eligibility_note }}</em></p>{% endif %}
+                  {% if se.price %}<p class="muted">Additional cost: {{ site.currency_code }} {{ se.price }}</p>{% endif %}
+                  {% set sekey = se.name.lower().replace(' ', '_') %}
+                  {% set se_data = existing.sub_events.get(sekey, {}) if existing and existing.sub_events else {} %}
+                  <div class="field">
+                    <label>Attendance</label>
+                    <label class="check-label">
+                      <input type="radio" name="_sub_event_{{ sekey }}_attending" value="yes"
+                             {% if se_data.attending %}checked{% endif %}> Yes, I would like to attend (+{{ site.currency_code }} {{ se.price }})
+                    </label>
+                    <label class="check-label">
+                      <input type="radio" name="_sub_event_{{ sekey }}_attending" value="no"
+                             {% if not se_data.attending %}checked{% endif %}> No, thank you
+                    </label>
+                  </div>
+                  {% if se.preference_schema %}
+                    {% for pf in se.preference_schema.fields %}
+                      {% set pfkey = '_sub_event_' ~ sekey ~ '_' ~ pf.key %}
+                      {% set pfval = se_data.get(pf.key, '') %}
+                      <div class="field" data-cond-wrap="{{ pfkey }}" style="display:none;"
+                           data-cond-field="_sub_event_{{ sekey }}_attending" data-cond-value="yes">
+                        <span class="label">{{ pf.label }}</span>
+                        {% if pf.type == 'checkbox-group' %}
+                          {% for o in pf.options %}
+                            <label class="check-label"><input type="checkbox" name="{{ pfkey }}" value="{{ o }}"{% if o in (pfval if pfval is iterable and pfval is not string else [pfval]) %} checked{% endif %}> {{ o }}</label>
+                          {% endfor %}
+                        {% elif pf.type == 'radio' %}
+                          {% for o in pf.options %}
+                            <label class="check-label"><input type="radio" name="{{ pfkey }}" value="{{ o }}"{% if pfval == o %} checked{% endif %}> {{ o }}</label>
+                          {% endfor %}
+                        {% else %}
+                          <input class="input" id="{{ pfkey }}" name="{{ pfkey }}" type="text" value="{{ pfval }}">
+                        {% endif %}
+                      </div>
+                    {% endfor %}
+                  {% endif %}
+                </fieldset>
+                {% endif %}
+              {% else %}
+                <label for="{{ fkey }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
+                <input class="input" id="{{ fkey }}" name="{{ fkey }}" type="text" value="{{ fval }}"{% if field.required and not field.condition %} required{% endif %}>
+              {% endif %}
+            </div>
+          {% endfor %}
+
+          {% if section.collapsible %}</details>{% elif section.toggleable %}</fieldset>{% else %}</fieldset>{% endif %}
+        {% endfor %}
 
       <button class="btn btn-primary" type="submit">{{ 'Update registration' if existing else 'Register' }}</button>
     </form>

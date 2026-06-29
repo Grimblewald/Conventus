@@ -221,7 +221,7 @@ def submit_abstract(slug):
         return redirect(url_for("public.conference_detail", slug=c.slug))
 
     # Enforce per-user abstract limit (exclude drafts, skip when editing)
-    edit_id = request.args.get("edit", type=int)
+    edit_id = request.args.get("edit", type=int) or request.form.get("edit_id", type=int)
     if c.max_abstracts_per_user and not edit_id:
         existing_count = (
             Abstract.query

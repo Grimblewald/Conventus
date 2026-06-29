@@ -11,6 +11,7 @@
     </div>
     <form method="post" class="form form-wide" enctype="multipart/form-data" id="abstract-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {% if draft %}<input type="hidden" name="edit_id" value="{{ draft.id }}">{% endif %}
 
       <div class="field">
         <label for="title">Title <span class="muted" id="title-word-count" style="font-weight:400;"></span></label>

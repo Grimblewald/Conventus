@@ -58,11 +58,14 @@ def form_builder(cid, form_type):
                 if not name:
                     flash("Template name is required.", "error")
                 else:
-                    _save_schema_from_form(c, form_type)
                     current_schema = (
                         c.registration_form_schema if form_type == "registration"
                         else c.abstract_form_schema
-                    ) or {"sections": []}
+                    )
+                    if not current_schema or not current_schema.get("sections"):
+                        flash("Save the form schema first before creating a template.", "error")
+                        return redirect(url_for("admin.form_builder",
+                                                cid=c.id, form_type=form_type))
                     tmpl = FormTemplate(
                         name=name,
                         form_type=form_type,

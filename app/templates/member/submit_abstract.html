@@ -85,37 +85,38 @@
               {% set fval = form.get(fkey, '') %}
               {% set cond_style = '' %}
               {% if field.condition %}{% set cond_style = 'display:none;' %}{% endif %}
-              <div class="field" data-cond-wrap="{{ fkey }}" style="{{ cond_style }}"
-                   {% if field.condition %}
-                   data-cond-field="{{ field.condition.field }}"
-                   {% if field.condition.value is not none %}data-cond-value="{{ field.condition.value }}"{% endif %}
-                   {% if field.condition.contains %}data-cond-contains="{{ field.condition.contains }}"{% endif %}
-                   {% endif %}>
-                {% if field.type == 'textarea' %}
-                  <label for="{{ fkey }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
-                  <textarea class="textarea" id="{{ fkey }}" name="{{ fkey }}"{% if field.required %} required{% endif %}>{{ fval }}</textarea>
-                {% elif field.type == 'select' %}
-                  <label for="{{ fkey }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
-                  <select class="select" id="{{ fkey }}" name="{{ fkey }}"{% if field.required %} required{% endif %}>
-                    <option value="">—</option>
-                    {% for o in field.options %}<option value="{{ o }}"{% if fval == o %} selected{% endif %}>{{ o }}</option>{% endfor %}
-                  </select>
-                {% elif field.type == 'radio' %}
-                  <span class="label">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</span>
-                  {% for o in field.options %}
-                    <label class="check-label"><input type="radio" name="{{ fkey }}" value="{{ o }}"{% if fval == o %} checked{% endif %}> {{ o }}</label>
-                  {% endfor %}
-                {% elif field.type == 'checkbox' %}
-                  <label class="check-label"><input type="checkbox" name="{{ fkey }}" value="1"{% if fval %} checked{% endif %}> {{ field.label }}</label>
-                {% elif field.type == 'checkbox-group' %}
-                  <span class="label">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</span>
-                  {% for o in field.options %}
-                    <label class="check-label"><input type="checkbox" name="{{ fkey }}" value="{{ o }}"{% if o in (fval if fval is iterable and fval is not string else [fval]|default([], true)) %} checked{% endif %}> {{ o }}</label>
-                  {% endfor %}
-                {% else %}
-                  <label for="{{ fkey }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
-                  <input class="input" id="{{ fkey }}" name="{{ fkey }}" type="{{ field.type }}" value="{{ fval }}"{% if field.required %} required{% endif %}>
-                {% endif %}
+               <div class="field" data-cond-wrap="{{ fkey }}" style="{{ cond_style }}"
+                    {% if field.condition %}
+                    data-cond-field="{{ field.condition.field }}"
+                    {% if field.condition.value is not none %}data-cond-value="{{ field.condition.value }}"{% endif %}
+                    {% if field.condition.contains %}data-cond-contains="{{ field.condition.contains }}"{% endif %}
+                    {% endif %}
+                    {% if field.required and field.condition %}data-cond-required="true"{% endif %}>
+                 {% if field.type == 'textarea' %}
+                   <label for="{{ fkey }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
+                   <textarea class="textarea" id="{{ fkey }}" name="{{ fkey }}"{% if field.required and not field.condition %} required{% endif %}>{{ fval }}</textarea>
+                 {% elif field.type == 'select' %}
+                   <label for="{{ fkey }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
+                   <select class="select" id="{{ fkey }}" name="{{ fkey }}"{% if field.required and not field.condition %} required{% endif %}>
+                     <option value="">—</option>
+                     {% for o in field.options %}<option value="{{ o }}"{% if fval == o %} selected{% endif %}>{{ o }}</option>{% endfor %}
+                   </select>
+                 {% elif field.type == 'radio' %}
+                   <span class="label">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</span>
+                   {% for o in field.options %}
+                     <label class="check-label"><input type="radio" name="{{ fkey }}" value="{{ o }}"{% if fval == o %} checked{% endif %}> {{ o }}</label>
+                   {% endfor %}
+                 {% elif field.type == 'checkbox' %}
+                   <label class="check-label"><input type="checkbox" name="{{ fkey }}" value="1"{% if fval %} checked{% endif %}> {{ field.label }}</label>
+                 {% elif field.type == 'checkbox-group' %}
+                   <span class="label">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</span>
+                   {% for o in field.options %}
+                     <label class="check-label"><input type="checkbox" name="{{ fkey }}" value="{{ o }}"{% if o in (fval if fval is iterable and fval is not string else [fval]|default([], true)) %} checked{% endif %}> {{ o }}</label>
+                   {% endfor %}
+                 {% else %}
+                   <label for="{{ fkey }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
+                   <input class="input" id="{{ fkey }}" name="{{ fkey }}" type="{{ field.type }}" value="{{ fval }}"{% if field.required and not field.condition %} required{% endif %}>
+                 {% endif %}
               </div>
             {% endfor %}
           </fieldset>
@@ -131,5 +132,6 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/member/conditional.js') }}"></script>
 <script src="{{ url_for('static', filename='js/member/abstract.js') }}"></script>
 {% endblock %}

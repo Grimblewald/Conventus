@@ -21,8 +21,9 @@ from ...security import requires_permission, audit
 from ...services.mail import send_mail
 from ...services.slugs import slugify
 from ...services.uploads import (
-    UploadError, remove_upload, save_image, save_pdf,
+    UploadError, save_image, save_pdf,
 )
+from ...services.citations import fetch_metadata, format_reference
 
 
 # ---------------------------------------------------------------------------
@@ -889,7 +890,7 @@ def conference_compile_booklet(cid):
 
     cache_key = hashlib.sha256(
         ",".join(
-            [f"{a.id}:{a.status}" for a in abstracts]
+            [f"{a.id}:{a.status}:{a.updated_at.isoformat()}" for a in abstracts]
             + [
                 c.booklet_header_filename or "",
                 c.booklet_footer_filename or "",
@@ -971,6 +972,21 @@ def conference_compile_booklet(cid):
 # ---------------------------------------------------------------------------
 # LaTeX template helpers
 # ---------------------------------------------------------------------------
+
+def _latex_escape(text: str) -> str:
+    """Escape special characters for LaTeX text mode."""
+    text = text.replace("\\", "\\textbackslash{}")
+    text = text.replace("&", "\\&")
+    text = text.replace("%", "\\%")
+    text = text.replace("$", "\\$")
+    text = text.replace("#", "\\#")
+    text = text.replace("_", "\\_")
+    text = text.replace("{", "\\{")
+    text = text.replace("}", "\\}")
+    text = text.replace("~", "\\textasciitilde{}")
+    text = text.replace("^", "\\^{}")
+    return text
+
 
 def _booklet_preamble(conference, inputs: list[str],
                       header_rel: str | None,
@@ -1079,7 +1095,22 @@ def _abstract_fragment(label: str, abstract,
     author_line, affil_line = _parse_authors(abstract.authors, presenting_idx)
 
     lines: list[str] = []
-    lines.append(f"\\addcontentsline{{toc}}{{section}}{{{title}}}")
+
+    # Build TOC text: title + first author et al.
+    toc_text = title
+    first_author = ""
+    if abstract.authors:
+        first_line = abstract.authors.strip().split("\n")[0]
+        first_name = first_line.split("|")[0].strip()
+        if first_name:
+            first_author = first_name.replace("&", "\\&").replace("#", "\\#").replace("_", "\\_")
+    if first_author:
+        total = len([ln for ln in abstract.authors.strip().split("\n") if ln.strip()])
+        if total > 1:
+            toc_text = f"{title} --- {first_author} \\textit{{et al.}}"
+        else:
+            toc_text = f"{title} --- {first_author}"
+    lines.append(f"\\addcontentsline{{toc}}{{section}}{{{toc_text}}}")
 
     if has_background:
         lines.append("\\BgThispage")
@@ -1134,8 +1165,13 @@ def _abstract_fragment(label: str, abstract,
         lines.append("\\textbf{References}")
         lines.append("\\begin{enumerate}")
         for ref in refs:
-            doi_esc = ref["doi"].replace("_", "\\_")
-            lines.append(f"  \\item \\href{{https://doi.org/{doi_esc}}}{{{doi_esc}}}")
+            meta = fetch_metadata(ref["doi"])
+            if meta:
+                citation = _latex_escape(format_reference(meta))
+            else:
+                doi_esc = ref["doi"].replace("_", "\\_")
+                citation = f"\\href{{https://doi.org/{doi_esc}}}{{{doi_esc}}}"
+            lines.append(f"  \\item {citation}")
         lines.append("\\end{enumerate}")
 
     lines.append("")

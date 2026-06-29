@@ -1,0 +1,126 @@
+{% extends "admin/_base.html" %}
+{% block title %}Registration · {{ reg.user.email if reg.user else '?' }} · Admin{% endblock %}
+{% block admin %}
+<div class="section-head">
+  <div>
+    <div class="eyebrow">Registration</div>
+    <h2>{{ reg.user.email if reg.user else '—' }}</h2>
+  </div>
+  <a class="link" href="{{ url_for('admin.registrations') }}">← back to list</a>
+</div>
+
+<div class="row-2" style="align-items:start;">
+  <div class="card">
+    <h4 style="margin-top:0;">Details</h4>
+    <dl class="hero-meta" style="margin-top:0; padding-top:0; border-top:none;">
+      <div><dt>Name</dt><dd>{{ reg.user.full_name or '—' }}</dd></div>
+      <div><dt>Email</dt><dd>{{ reg.user.email }}</dd></div>
+      <div><dt>Conference</dt><dd>{{ conference.title if conference else '—' }}</dd></div>
+      <div><dt>Tier</dt><dd>{{ reg.tier_name }}</dd></div>
+      <div><dt>Amount</dt><dd>{{ site.currency_symbol }}{{ reg.amount }} {{ site.currency_code }}</dd></div>
+      <div><dt>Status</dt><dd><span class="status" data-v="{{ reg.status }}">{{ reg.status }}</span></dd></div>
+      <div><dt>Payment sent</dt><dd>{{ reg.payment_sent_at.strftime('%-d %b %Y %H:%M') if reg.payment_sent_at else '—' }}</dd></div>
+      <div><dt>Registered</dt><dd>{{ reg.created_at.strftime('%-d %b %Y %H:%M') }}</dd></div>
+      <div><dt>Updated</dt><dd>{{ reg.updated_at.strftime('%-d %b %Y %H:%M') }}</dd></div>
+    </dl>
+  </div>
+
+  <div class="card">
+    <h4 style="margin-top:0;">Status</h4>
+    <form method="post" action="{{ url_for('admin.registration_status', reg_id=reg.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="row-2" style="align-items:end;">
+        <div class="field" style="margin:0;">
+          <select class="select" name="status">
+            <option value="pending" {% if reg.status == 'pending' %}selected{% endif %}>Pending</option>
+            <option value="paid" {% if reg.status == 'paid' %}selected{% endif %}>Paid</option>
+            <option value="refunded" {% if reg.status == 'refunded' %}selected{% endif %}>Refunded</option>
+            <option value="cancelled" {% if reg.status == 'cancelled' %}selected{% endif %}>Cancelled</option>
+          </select>
+        </div>
+        <div class="field" style="margin:0;">
+          <button class="btn btn-primary btn-sm" type="submit">Update status</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if reg.dietary or reg.accessibility %}
+<div class="card" style="margin-top:12px;">
+  <h4 style="margin-top:0;">Legacy fields</h4>
+  <dl class="hero-meta" style="margin-top:0; padding-top:0; border-top:none;">
+    {% if reg.dietary %}<div><dt>Dietary</dt><dd>{{ reg.dietary }}</dd></div>{% endif %}
+    {% if reg.accessibility %}<div><dt>Accessibility</dt><dd>{{ reg.accessibility }}</dd></div>{% endif %}
+  </dl>
+</div>
+{% endif %}
+
+{% if schema and schema.sections and reg.custom_data %}
+<div class="card" style="margin-top:12px;">
+  <h4 style="margin-top:0;">Custom fields</h4>
+  {% for section in schema.sections %}
+    {% for field in section.fields %}
+      {% set val = reg.custom_data.get(field.key, '') %}
+      {% if val %}
+        <dl class="hero-meta" style="margin-top:0; padding-top:0; border-top:none;">
+          <div><dt>{{ field.label }}</dt>
+            <dd>
+              {% if val is not string and val is iterable %}
+                {{ val | join(', ') }}
+              {% else %}
+                {{ val }}
+              {% endif %}
+            </dd>
+          </div>
+        </dl>
+      {% endif %}
+    {% endfor %}
+  {% endfor %}
+</div>
+{% endif %}
+
+{% if reg.sub_events %}
+<div class="card" style="margin-top:12px;">
+  <h4 style="margin-top:0;">Sub-events</h4>
+  {% for se in sub_events_list %}
+    {% set sekey = se.name.lower().replace(' ', '_') %}
+    {% set se_data = reg.sub_events.get(sekey, {}) %}
+    {% if se_data.attending %}
+    <div style="margin-bottom:14px; {% if not loop.last %}padding-bottom:14px; border-bottom:1px solid var(--c-card-border);{% endif %}">
+      <h5 style="margin:0 0 6px;">{{ se.name }}</h5>
+      <dl class="hero-meta" style="margin-top:0; padding-top:0; border-top:none;">
+        <div><dt>Attendance</dt><dd>Yes (+{{ site.currency_code }} {{ se.price }})</dd></div>
+        {% if se.preference_schema %}
+          {% for pf in se.preference_schema.fields %}
+            {% set pfval = se_data.get(pf.key, '') %}
+            {% if pfval %}
+              <div><dt>{{ pf.label }}</dt>
+                <dd>
+                  {% if pfval is not string and pfval is iterable %}
+                    {{ pfval | join(', ') }}
+                  {% else %}
+                    {{ pfval }}
+                  {% endif %}
+                </dd>
+              </div>
+            {% endif %}
+          {% endfor %}
+        {% endif %}
+      </dl>
+    </div>
+    {% endif %}
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="danger-zone">
+  <form method="post" action="{{ url_for('admin.registration_delete_request', reg_id=reg.id) }}"
+        data-confirm="Send a confirmation code to delete this registration?">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <h4>Danger zone</h4>
+    <p class="muted">Deleting a registration is irreversible. We'll email you a 6-digit confirmation code first.</p>
+    <button class="btn btn-quiet" type="submit">Delete this registration →</button>
+  </form>
+</div>
+{% endblock %}

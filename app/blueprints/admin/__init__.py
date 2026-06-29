@@ -5,14 +5,18 @@ module under `app/blueprints/admin/` and stitch them together here.
 """
 from __future__ import annotations
 
-from flask import Blueprint, flash, redirect, render_template, request, url_for
+import secrets
+from datetime import datetime, timedelta
+
+from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user
 
 from ...extensions import db
 from ...models import (
-    Abstract, Announcement, Conference, Registration, User,
+    Abstract, Announcement, Conference, OTPCode, Registration, User,
 )
 from ...security import staff_required, can
+from ...services.mail import send_mail
 from ...services.updater import latest_status
 
 
@@ -118,6 +122,86 @@ def registration_status(reg_id):
         )
         flash(f"Registration marked as {new_status}.", "success")
     return redirect(url_for("admin.registrations"))
+
+
+@admin_bp.route("/registrations/<int:reg_id>")
+@staff_required
+def registration_detail(reg_id):
+    reg = Registration.query.get_or_404(reg_id)
+    conference = reg.conference
+    schema = conference.registration_form_schema if conference else None
+    sub_events_list = conference.sub_events if conference else []
+    return render_template(
+        "admin/registration_detail.html",
+        reg=reg, conference=conference,
+        schema=schema, sub_events_list=sub_events_list,
+    )
+
+
+@admin_bp.route("/registrations/<int:reg_id>/delete-request", methods=["POST"])
+@staff_required
+def registration_delete_request(reg_id):
+    reg = Registration.query.get_or_404(reg_id)
+    if reg.deleted_at is not None:
+        flash("This registration has already been deleted.", "error")
+        return redirect(url_for("admin.registrations"))
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    ttl = current_app.config["OTP_TTL_SECONDS"]
+    ok = send_mail(
+        to=current_user.email,
+        subject="Confirm registration deletion",
+        body=(f"You requested to delete a registration by "
+              f"{reg.user.email if reg.user else 'unknown'} "
+              f"for \"{reg.conference.title if reg.conference else '?'}\".\n\n"
+              f"Confirmation code: {code}\n\n"
+              f"This code expires in {ttl // 60} minutes. "
+              f"If you didn't request this, ignore the email."),
+    )
+    if not ok:
+        flash("Failed to send confirmation email. Please try again.", "error")
+        return redirect(url_for("admin.registration_detail", reg_id=reg.id))
+    db.session.add(OTPCode(
+        email=current_user.email.lower(),
+        code=code,
+        purpose="registration_delete",
+        expires_at=datetime.utcnow() + timedelta(seconds=ttl),
+        ip=request.remote_addr,
+    ))
+    db.session.commit()
+    flash("A confirmation code has been sent to your email.", "success")
+    return redirect(url_for("admin.registration_delete_confirm", reg_id=reg.id))
+
+
+@admin_bp.route("/registrations/<int:reg_id>/delete-confirm", methods=["GET", "POST"])
+@staff_required
+def registration_delete_confirm(reg_id):
+    reg = Registration.query.get_or_404(reg_id)
+    if reg.deleted_at is not None:
+        flash("This registration has already been deleted.", "error")
+        return redirect(url_for("admin.registrations"))
+    if request.method == "POST":
+        entered = (request.form.get("code") or "").strip().replace(" ", "")
+        otp = (OTPCode.query
+               .filter_by(email=current_user.email.lower(),
+                          code=entered,
+                          purpose="registration_delete",
+                          consumed_at=None)
+               .order_by(OTPCode.id.desc())
+               .first())
+        if not (otp and otp.is_valid()):
+            flash("That code didn't match, or it has expired.", "error")
+            return render_template("admin/registration_delete_confirm.html", reg=reg)
+        otp.consumed_at = datetime.utcnow()
+        summary = f"{reg.user.email if reg.user else '?'} → {reg.conference.title if reg.conference else '?'}"
+        reg.deleted_at = datetime.utcnow()
+        db.session.commit()
+        from ...security import audit as audit_log
+        audit_log.record("registration.deleted",
+                         target_kind="registration", target_id=reg.id,
+                         summary=f"Deleted {summary}")
+        flash(f"Deleted registration for {summary}.", "success")
+        return redirect(url_for("admin.registrations"))
+    return render_template("admin/registration_delete_confirm.html", reg=reg)
 
 
 # ---------------------------------------------------------------------------

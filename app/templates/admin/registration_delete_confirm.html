@@ -1,0 +1,25 @@
+{% extends "admin/_base.html" %}
+{% block title %}Confirm delete · Admin{% endblock %}
+{% block admin %}
+<div class="section-head">
+  <div>
+    <div class="eyebrow">Confirm</div>
+    <h2>Delete registration for {{ reg.user.email if reg.user else '?' }}</h2>
+  </div>
+  <a class="link" href="{{ url_for('admin.registration_detail', reg_id=reg.id) }}">← cancel</a>
+</div>
+<p class="lede">
+  You are about to delete the registration by <strong>{{ reg.user.email if reg.user else '—' }}</strong>
+  for <strong>{{ reg.conference.title if reg.conference else '—' }}</strong>
+  ({{ site.currency_symbol }}{{ reg.amount }} · {{ reg.status }}).
+</p>
+<p class="lede">We emailed a 6-digit code to <strong>{{ current_user.email }}</strong>. Enter it below to permanently soft-delete this registration.</p>
+<form method="post" class="form" autocomplete="off">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="field">
+    <label for="code">Confirmation code</label>
+    <input class="input" id="code" name="code" inputmode="numeric" required>
+  </div>
+  <button class="btn btn-primary" type="submit">Delete registration</button>
+</form>
+{% endblock %}

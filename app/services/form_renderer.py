@@ -62,7 +62,14 @@ def validate_form(schema: dict | None, form_data: dict) -> list[str]:
             label = field.get("label", key)
             required = field.get("required", False)
             condition = field.get("condition")
-            value = form_data.get(key)
+            ftype = field.get("type", "text")
+
+            if ftype == "sub-event":
+                continue
+            if ftype == "registration-tier":
+                value = form_data.get("tier")
+            else:
+                value = form_data.get(key)
 
             # Skip validation if field is hidden by condition
             if condition and not _condition_met(condition, form_data):
@@ -74,7 +81,6 @@ def validate_form(schema: dict | None, form_data: dict) -> list[str]:
             if not required and (value is None or (isinstance(value, str) and not value.strip())):
                 continue
 
-            ftype = field.get("type", "text")
             options = field.get("options", [])
 
             if ftype in ("select", "radio") and options:

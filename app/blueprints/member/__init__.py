@@ -274,11 +274,14 @@ def submit_abstract(slug):
         ref_dois = request.form.getlist("ref_doi[]")
         references = []
         ref_keys = set()
+        seen_dois = set()
         for i, doi in enumerate(ref_dois):
             doi = _normalize_doi(doi)
-            if doi:
-                references.append({"key": i + 1, "doi": doi})
-                ref_keys.add(i + 1)
+            if doi and doi not in seen_dois:
+                key = len(references) + 1
+                references.append({"key": key, "doi": doi})
+                ref_keys.add(key)
+                seen_dois.add(doi)
 
         presenting_author_index = 0
         try:

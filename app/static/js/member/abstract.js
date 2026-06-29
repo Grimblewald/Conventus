@@ -132,6 +132,7 @@
       try {
         var existingRefs = JSON.parse(refsData.textContent);
         if (Array.isArray(existingRefs) && existingRefs.length > 0) {
+          refContainer.innerHTML = "";
           existingRefs.forEach(function (r) {
             var clone = refTmpl.content.firstElementChild.cloneNode(true);
             var doiInp = clone.querySelector("[data-ref-doi]");

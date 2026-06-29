@@ -220,8 +220,9 @@ def submit_abstract(slug):
         flash("Abstract submission is not open for this conference.", "error")
         return redirect(url_for("public.conference_detail", slug=c.slug))
 
-    # Enforce per-user abstract limit (exclude drafts)
-    if c.max_abstracts_per_user:
+    # Enforce per-user abstract limit (exclude drafts, skip when editing)
+    edit_id = request.args.get("edit", type=int)
+    if c.max_abstracts_per_user and not edit_id:
         existing_count = (
             Abstract.query
             .filter_by(user_id=current_user.id, conference_id=c.id)
@@ -239,8 +240,7 @@ def submit_abstract(slug):
     tracks = c.tracks_list()
     abstract_schema = c.abstract_form_schema
 
-    # Edit mode — load existing draft
-    edit_id = request.args.get("edit", type=int)
+    # Edit mode — load existing abstract
     draft = None
     if edit_id:
         draft = (Abstract.query

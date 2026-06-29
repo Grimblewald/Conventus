@@ -23,7 +23,7 @@ from ...services.slugs import slugify
 from ...services.uploads import (
     UploadError, save_image, save_pdf,
 )
-from ...services.citations import fetch_metadata, format_reference
+from ...services.citations import fetch_metadata, format_reference_compact
 
 
 # ---------------------------------------------------------------------------
@@ -1145,6 +1145,23 @@ def _abstract_fragment(label: str, abstract,
     lines.append("")
     lines.append(body)
 
+    # References (compact, before figure, small font)
+    refs = abstract.references or []
+    if refs:
+        lines.append("")
+        lines.append("\\textbf{\\small References}")
+        lines.append("\\begin{enumerate}")
+        lines.append("\\small")
+        for ref in refs:
+            meta = fetch_metadata(ref["doi"])
+            if meta:
+                cite = _latex_escape(format_reference_compact(meta))
+            else:
+                cite = ref["doi"].replace("_", "\\_")
+            doi_esc = ref["doi"].replace("_", "\\_")
+            lines.append(f"  \\item \\href{{https://doi.org/{doi_esc}}}{{{cite}}}")
+        lines.append("\\end{enumerate}")
+
     if abstract.figure_filename:
         out = _out_ext(abstract.figure_filename)
         lines.append("")
@@ -1153,26 +1170,11 @@ def _abstract_fragment(label: str, abstract,
         lines.append(
             "\\includegraphics[\n"
             "    width=\\textwidth,\n"
-            "    height=\\dimexpr\\textheight-\\pagetotal-2ex\\relax,\n"
+            "    height=\\dimexpr\\textheight-\\pagetotal-4ex\\relax,\n"
             "    keepaspectratio\n"
             f"  ]{{{folder}/figure{out}}}"
         )
         lines.append("\\end{center}")
-
-    refs = abstract.references or []
-    if refs:
-        lines.append("")
-        lines.append("\\textbf{References}")
-        lines.append("\\begin{enumerate}")
-        for ref in refs:
-            meta = fetch_metadata(ref["doi"])
-            if meta:
-                citation = _latex_escape(format_reference(meta))
-            else:
-                doi_esc = ref["doi"].replace("_", "\\_")
-                citation = f"\\href{{https://doi.org/{doi_esc}}}{{{doi_esc}}}"
-            lines.append(f"  \\item {citation}")
-        lines.append("\\end{enumerate}")
 
     lines.append("")
     lines.append("\\newpage")

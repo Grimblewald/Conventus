@@ -44,23 +44,14 @@ def fetch_metadata(doi: str) -> dict | None:
 
 
 def format_reference(ref_data: dict) -> str:
-    """Format a reference dict into a human-readable citation string.
+    """Format a reference dict into a full human-readable citation string.
 
     Compatible with both CrossRef metadata dicts and the stored
     ``{"key": 1, "doi": "..."}`` reference dicts.
 
-    ==== Format of CrossRef metadata dicts returned by fetch_metadata:
-    ```
-    {
-      "title": "...,"
-      "authors": "Kucsko G, Maurer PC, Yao NY, ...",
-      "journal": "Nature",
-      "year": "2013",
-      "volume": "500",
-      "pages": "54-58",
-      "doi": "10.1038/nature12373",
-    }
-    ```
+    Format::
+      Kucsko G, Maurer PC, Yao NY, ... Nanometre-scale thermometry
+      in a living cell. Nature 500, 54-58 (2013). DOI: 10.1038/nature12373
     """
     authors = ref_data.get("authors", "")
     title = ref_data.get("title", "")
@@ -88,6 +79,50 @@ def format_reference(ref_data: dict) -> str:
         parts.append(year)
     if doi:
         parts.append(f"DOI: {doi}")
+    return ". ".join(parts)
+
+
+def format_reference_compact(ref_data: dict) -> str:
+    """Format a reference as a compact one-liner for LaTeX booklets.
+
+    Format::
+      Kucsko et al. Nature, 2013.
+      (with the citation itself being a DOI hyperlink)
+
+    Uses only first author surname + et al., journal name, and year.
+    """
+    authors = ref_data.get("authors", "")
+    journal = ref_data.get("journal", "")
+    year = ref_data.get("year", "")
+    doi = ref_data.get("doi", "")
+
+    first_author = ""
+    if authors:
+        first_author = authors.split(",")[0].strip()
+        # Get surname (last word of first_author)
+        parts = first_author.split()
+        if parts:
+            # Check if there are other authors after the first
+            has_more = "," in authors
+            first_author = parts[-1]  # surname is the last word
+            if has_more:
+                first_author += " et al."
+
+    parts = []
+    if first_author:
+        parts.append(first_author)
+    if journal:
+        parts.append(journal)
+    if year:
+        if parts:
+            parts[-1] = f"{parts[-1]}, {year}"
+        else:
+            parts.append(year)
+    if doi:
+        if parts:
+            parts.append(f"{doi}")
+        else:
+            parts.append(doi)
     return ". ".join(parts)
 
 

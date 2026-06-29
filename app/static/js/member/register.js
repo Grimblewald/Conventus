@@ -18,7 +18,11 @@
         return true;
       }
       if (target.type === "checkbox") {
-        if (cond.value !== undefined) return target.checked === (String(cond.value) === "1" || cond.value === true);
+        if (cond.value !== undefined) {
+          var v = String(cond.value).toLowerCase();
+          var isTrue = (v === "true" || v === "1" || cond.value === true);
+          return target.checked === isTrue;
+        }
         if (cond.contains !== undefined) {
           var boxes = form.querySelectorAll("[name=\"" + field + "\"]:checked");
           for (var i = 0; i < boxes.length; i++) {

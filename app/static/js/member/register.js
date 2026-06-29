@@ -19,6 +19,13 @@
       }
       if (target.type === "checkbox") {
         if (cond.value !== undefined) return target.checked === (String(cond.value) === "1" || cond.value === true);
+        if (cond.contains !== undefined) {
+          var boxes = form.querySelectorAll("[name=\"" + field + "\"]:checked");
+          for (var i = 0; i < boxes.length; i++) {
+            if (boxes[i].value.indexOf(cond.contains) !== -1) return true;
+          }
+          return false;
+        }
       }
       return true;
     }

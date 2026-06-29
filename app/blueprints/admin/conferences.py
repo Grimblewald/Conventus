@@ -233,10 +233,19 @@ def conference_save(cid):
                     t.display_order = int(request.form.get(f"tier_order_{t.id}") or 0)
                 except ValueError:
                     pass
+            if f"tier_eb_amt_{t.id}" in request.form:
+                if request.form.get(f"tier_eb_{t.id}"):
+                    try:
+                        t.early_bird_amount = int(request.form.get(f"tier_eb_amt_{t.id}") or 0)
+                    except ValueError:
+                        pass
+                else:
+                    t.early_bird_amount = None
 
         # Add new price tiers
         new_names = request.form.getlist("new_tier_name[]")
         new_amounts = request.form.getlist("new_tier_amount[]")
+        new_eb_amounts = request.form.getlist("new_tier_eb_amt[]")
         new_descs = request.form.getlist("new_tier_desc[]")
         new_orders = request.form.getlist("new_tier_order[]")
         for i, name in enumerate(new_names):
@@ -254,10 +263,17 @@ def conference_save(cid):
                 order = int(new_orders[i] or 0)
             except (IndexError, ValueError):
                 pass
+            eb_amt = None
+            try:
+                raw_eb = (new_eb_amounts[i] if i < len(new_eb_amounts) else "0")
+                eb_amt = int(raw_eb) if raw_eb else None
+            except (IndexError, ValueError):
+                pass
             db.session.add(PriceTier(
                 conference_id=c.id,
                 name=name,
                 amount=amount,
+                early_bird_amount=eb_amt,
                 description=desc,
                 display_order=order,
             ))

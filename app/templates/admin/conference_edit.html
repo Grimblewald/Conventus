@@ -168,13 +168,17 @@
     <summary class="edit-section-summary">Price Tiers</summary>
     <div class="edit-section-body">
       <table class="table">
-        <thead><tr><th style="width:64px">Order</th><th>Name</th><th>Amount ({{ site.currency_code }})</th><th>Description</th><th style="width:70px"></th></tr></thead>
+        <thead><tr><th style="width:64px">Order</th><th>Name</th><th>Amount ({{ site.currency_code }})</th><th>Early Bird</th><th>EB Amt</th><th>Description</th><th style="width:70px"></th></tr></thead>
         <tbody id="tiers-tbody">
           {% for t in c.price_tiers %}
           <tr class="tier-row" data-tier-id="{{ t.id }}">
             <td><input class="input" name="tier_order_{{ t.id }}" value="{{ t.display_order }}" style="width:64px;"></td>
             <td><input class="input" name="tier_name_{{ t.id }}" value="{{ t.name }}"></td>
-            <td><input class="input" name="tier_amount_{{ t.id }}" value="{{ t.amount }}" style="width:120px;"></td>
+            <td><input class="input" name="tier_amount_{{ t.id }}" value="{{ t.amount }}" style="width:100px;"></td>
+            <td style="text-align:center;">
+              <input type="checkbox" name="tier_eb_{{ t.id }}" value="1" {% if t.early_bird_amount is not none %}checked{% endif %}>
+            </td>
+            <td><input class="input" name="tier_eb_amt_{{ t.id }}" value="{{ t.early_bird_amount or '' }}" style="width:100px;"></td>
             <td><input class="input" name="tier_desc_{{ t.id }}" value="{{ t.description }}"></td>
             <td>
               <input type="hidden" name="tier_delete_{{ t.id }}" value="">
@@ -188,7 +192,9 @@
         <tr class="tier-row tier-row--new">
           <td><input class="input" name="new_tier_order[]" value="" style="width:64px;"></td>
           <td><input class="input" name="new_tier_name[]" value=""></td>
-          <td><input class="input" name="new_tier_amount[]" value="" style="width:120px;"></td>
+          <td><input class="input" name="new_tier_amount[]" value="" style="width:100px;"></td>
+          <td style="text-align:center;"><input type="checkbox" name="new_tier_eb[]" value="1"></td>
+          <td><input class="input" name="new_tier_eb_amt[]" value="" style="width:100px;"></td>
           <td><input class="input" name="new_tier_desc[]" value=""></td>
           <td><button type="button" class="btn btn-quiet btn-sm js-remove-row">Remove</button></td>
         </tr>

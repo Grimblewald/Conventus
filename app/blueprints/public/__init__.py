@@ -191,14 +191,13 @@ def contact():
         }
         code = f"{secrets.randbelow(1_000_000):06d}"
         ttl = current_app.config["OTP_TTL_SECONDS"]
+        site_name = get_site_settings().site_name
         ok = send_mail(
             to=sender_email,
-            subject="Verify your contact form submission",
-            body=(f"Someone (hopefully you) used this address to send a "
-                  f"message via the contact form.\n\n"
-                  f"Your verification code: {code}\n\n"
+            subject=f"Your {site_name} contact form verification code",
+            body=(f"Your one-time verification code is: {code}\n\n"
                   f"It expires in {ttl // 60} minutes. "
-                  f"If you didn't request this, ignore the email."),
+                  f"If you didn't request this, you can safely ignore this email."),
         )
         if not ok:
             session.pop("contact_form", None)
@@ -294,12 +293,14 @@ def contact_resend():
 
     code = f"{secrets.randbelow(1_000_000):06d}"
     ttl = current_app.config["OTP_TTL_SECONDS"]
+    site_name = get_site_settings().site_name
     ok = send_mail(
         to=data["email"],
-        subject="Verify your contact form submission",
+        subject=f"Your {site_name} contact form verification code",
         body=(f"A new verification code has been requested.\n\n"
-              f"Your code: {code}\n\n"
-              f"It expires in {ttl // 60} minutes."),
+              f"Your one-time verification code is: {code}\n\n"
+              f"It expires in {ttl // 60} minutes. "
+              f"If you didn't request this, you can safely ignore this email."),
     )
     if not ok:
         flash("Failed to send verification code. Please try again.", "error")
@@ -419,6 +420,15 @@ def payment_webhook():
     except Exception as exc:
         current_app.logger.exception("Webhook error")
         return {"status": "error", "message": str(exc)}, 500
+
+
+@public_bp.route("/.well-known/security.txt")
+def security_txt():
+    return ("Contact: https://github.com/Grimblewald/Conventus/issues\n"
+            "Expires: 2027-01-01T00:00:00.000Z\n"
+            "Preferred-Languages: en\n"
+            "Canonical: https://github.com/Grimblewald/Conventus/security\n",
+            200, {"Content-Type": "text/plain; charset=utf-8"})
 
 
 @public_bp.route("/dev/reload")

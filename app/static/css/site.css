@@ -497,26 +497,39 @@ section.block.ink .table td {
 
 /* ---------------- Country search selector ---------------- */
 .country-select { position: relative; }
+.country-select input[type="text"]::placeholder {
+  color: var(--c-muted-text); font-style: italic;
+}
 .country-select-dropdown {
   display: none;
   position: absolute; top: 100%; left: 0; right: 0; z-index: 100;
   background: var(--c-card-bg);
   border: 1px solid var(--c-card-border);
-  border-radius: var(--rad-sm);
+  border-radius: var(--rad);
   max-height: 260px; overflow-y: auto;
-  box-shadow: var(--shadow);
-  margin-top: 2px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+  margin-top: 4px;
 }
 .country-select-item {
-  padding: 8px 14px; cursor: pointer; font-size: 14px;
+  padding: 9px 14px; cursor: pointer; font-size: 14px;
   font-family: var(--f-body);
   border-bottom: 1px solid var(--c-card-border);
   color: var(--c-page-text);
+  transition: background 0.1s ease;
 }
 .country-select-item:last-child { border-bottom: none; }
-.country-select-item:hover { background: color-mix(in oklab, var(--c-accent) 10%, transparent); }
-.country-select-item.muted { color: var(--c-muted-text); font-style: italic; cursor: default; }
-.country-select-item.muted:hover { background: transparent; }
+.country-select-item:hover,
+.country-select-item.hover {
+  background: color-mix(in oklab, var(--c-accent) 20%, transparent);
+  color: var(--c-accent);
+}
+.country-select-item.muted { color: var(--c-muted-text); font-style: italic; cursor: default; pointer-events: none; }
+.country-select-item.muted:hover { background: transparent; color: var(--c-muted-text); }
+.country-select-footer {
+  padding: 6px 14px; font-size: 11px;
+  color: var(--c-muted-text); text-align: center;
+  border-top: 1px solid var(--c-card-border);
+}
 
 /* Tier picker */
 .tiers { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }

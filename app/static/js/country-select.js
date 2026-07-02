@@ -35,19 +35,36 @@
             else input.value = selectedVal;
           }
 
+          var MAX_SHOWN = 5;
+
           function buildDropdown(filter) {
             var f = (filter || "").toLowerCase().trim();
             dropdown.innerHTML = "";
-            var shown = 0;
+
+            var matches = [];
             countries.forEach(function (c) {
-              var label = c.name + (c.code ? " (" + c.code + ")" : "");
               if (f) {
                 var found = c.name.toLowerCase().indexOf(f) !== -1
                   || (c.code && c.code.toLowerCase().indexOf(f) !== -1)
                   || c.alt.some(function (a) { return a.toLowerCase().indexOf(f) !== -1; });
                 if (!found) return;
               }
-              shown++;
+              matches.push(c);
+            });
+
+            if (!matches.length) {
+              var nd = document.createElement("div");
+              nd.className = "country-select-item muted";
+              nd.textContent = "No countries found";
+              dropdown.appendChild(nd);
+              return;
+            }
+
+            var total = matches.length;
+            var shown = matches.slice(0, MAX_SHOWN);
+
+            shown.forEach(function (c) {
+              var label = c.name + (c.code ? " (" + c.code + ")" : "");
               var div = document.createElement("div");
               div.className = "country-select-item";
               div.textContent = label;
@@ -59,11 +76,12 @@
               });
               dropdown.appendChild(div);
             });
-            if (!shown) {
-              var nd = document.createElement("div");
-              nd.className = "country-select-item muted";
-              nd.textContent = "No countries found";
-              dropdown.appendChild(nd);
+
+            if (total > MAX_SHOWN) {
+              var footer = document.createElement("div");
+              footer.className = "country-select-footer";
+              footer.textContent = "Top " + MAX_SHOWN + " of " + total + " matches \u2014 keep typing";
+              dropdown.appendChild(footer);
             }
           }
 

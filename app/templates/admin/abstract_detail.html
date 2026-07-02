@@ -7,6 +7,13 @@
 </div>
 <dl class="hero-meta">
   <div><dt>Conference</dt><dd>{{ a.conference.title if a.conference else '?' }}</dd></div>
+  <div><dt>Registration</dt><dd>
+    {% if a.registration and a.registration.deleted_at is none %}
+      <span style="color:var(--c-success);">&#10003; {{ a.registration.tier_name }}</span>
+    {% else %}
+      <span style="color:#d4a017;">&#9888; No registration linked</span>
+    {% endif %}
+  </dd></div>
   <div><dt>Track</dt><dd>{{ a.track or '—' }}</dd></div>
   <div><dt>Presentation</dt><dd>{{ a.presentation_type }}</dd></div>
   <div><dt>Keywords</dt><dd>{{ a.keywords or '—' }}</dd></div>

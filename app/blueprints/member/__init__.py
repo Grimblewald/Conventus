@@ -46,6 +46,7 @@ def dashboard():
         Abstract.query
         .filter_by(user_id=current_user.id)
         .filter(Abstract.deleted_at.is_(None))
+        .options(db.joinedload(Abstract.registration))
         .order_by(Abstract.created_at.desc())
         .all()
     )
@@ -380,6 +381,17 @@ def submit_abstract(slug):
         if not draft:
             db.session.add(a)
         db.session.commit()
+
+        # Auto-link abstract to an existing registration for this conference.
+        if a.registration_id is None:
+            reg = Registration.query.filter_by(
+                user_id=current_user.id,
+                conference_id=c.id,
+                deleted_at=None,
+            ).first()
+            if reg:
+                a.registration_id = reg.id
+                db.session.commit()
 
         if action == "preview":
             return redirect(url_for("member.preview_abstract", aid=a.id))

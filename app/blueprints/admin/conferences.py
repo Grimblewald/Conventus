@@ -575,6 +575,15 @@ def conference_add_abstract(cid):
 
         db.session.add(a)
         db.session.commit()
+
+        reg = Registration.query.filter_by(
+            user_id=user.id,
+            conference_id=c.id,
+            deleted_at=None,
+        ).first()
+        if reg:
+            a.registration_id = reg.id
+            db.session.commit()
         audit.record("abstract.admin_created",
                      target_kind="abstract", target_id=a.id,
                      summary=f"Added on behalf of {owner_email} for {c.slug}: {title}")
@@ -723,7 +732,9 @@ def abstracts():
     q = Abstract.query.filter(Abstract.deleted_at.is_(None))
     if status != "all":
         q = q.filter_by(status=status)
-    items = q.order_by(Abstract.created_at.desc()).all()
+    items = q.options(
+        db.joinedload(Abstract.registration),
+    ).order_by(Abstract.created_at.desc()).all()
     return render_template("admin/abstracts.html", items=items, status=status)
 
 

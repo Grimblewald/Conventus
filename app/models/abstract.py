@@ -19,6 +19,8 @@ class Abstract(db.Model):
                         nullable=False, index=True)
     conference_id = db.Column(db.Integer, db.ForeignKey("conferences.id"),
                               nullable=False, index=True)
+    registration_id = db.Column(db.Integer, db.ForeignKey("registrations.id"),
+                                nullable=True, index=True)
 
     title = db.Column(db.String(400), nullable=False)
     authors = db.Column(db.Text, nullable=False)
@@ -46,6 +48,7 @@ class Abstract(db.Model):
     conference = db.relationship("Conference")
     author = db.relationship("User", foreign_keys=[user_id], backref="abstracts")
     decided_by = db.relationship("User", foreign_keys=[decided_by_id])
+    registration = db.relationship("Registration", foreign_keys=[registration_id])
 
     @property
     def presenting_author(self) -> tuple[str, str]:

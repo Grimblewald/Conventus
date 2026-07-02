@@ -54,11 +54,9 @@
                 </select>
               {% elif field.type == 'country' %}
                 <label for="{{ fkey }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
-                <select class="select" id="{{ fkey }}" name="{{ fkey }}"{% if field.required and not field.condition %} required{% endif %}>
-                  <option value="">—</option>
-                  {% for c in ['Australia','New Zealand','United Kingdom','United States','Canada','Germany','France','Japan','China','India','Singapore','Malaysia','Indonesia','South Korea','Brazil','South Africa','Netherlands','Sweden','Switzerland','Italy','Spain','Thailand','Vietnam','Taiwan','Hong Kong','Philippines','Pakistan','Bangladesh','Sri Lanka','Iran','Turkey','United Arab Emirates','Saudi Arabia','Qatar','Oman','Kuwait','Jordan','Lebanon','Israel','Egypt','Morocco','Nigeria','Ghana','Kenya','Ethiopia','Tanzania','Uganda','Sudan','Zimbabwe','Russia','Ukraine','Poland','Romania','Hungary','Czech Republic','Croatia','Serbia','Slovakia','Slovenia','Greece','Austria','Belgium','Finland','Norway','Denmark','Iceland','Ireland','Portugal','Estonia','Latvia','Lithuania','Mexico','Argentina','Chile','Colombia','Iraq','Afghanistan','Armenia','Albania','Tunisia'] %}
-                    <option value="{{ c }}"{% if fval == c %} selected{% endif %}>{{ c }}</option>
-                  {% endfor %}
+                <select class="select" id="{{ fkey }}" name="{{ fkey }}" data-country-select
+                        {% if fval %}data-value="{{ fval }}"{% endif %}
+                        {% if field.required and not field.condition %} required{% endif %}>
                 </select>
               {% elif field.type == 'radio' %}
                 <span class="label">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</span>
@@ -177,5 +175,6 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/country-select.js') }}"></script>
 <script src="{{ url_for('static', filename='js/member/conditional.js') }}"></script>
 {% endblock %}

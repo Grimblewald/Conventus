@@ -495,6 +495,29 @@ section.block.ink .table td {
 .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
 .row-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 16px; }
 
+/* ---------------- Country search selector ---------------- */
+.country-select { position: relative; }
+.country-select-dropdown {
+  display: none;
+  position: absolute; top: 100%; left: 0; right: 0; z-index: 100;
+  background: var(--c-card-bg);
+  border: 1px solid var(--c-card-border);
+  border-radius: var(--rad-sm);
+  max-height: 260px; overflow-y: auto;
+  box-shadow: var(--shadow);
+  margin-top: 2px;
+}
+.country-select-item {
+  padding: 8px 14px; cursor: pointer; font-size: 14px;
+  font-family: var(--f-body);
+  border-bottom: 1px solid var(--c-card-border);
+  color: var(--c-page-text);
+}
+.country-select-item:last-child { border-bottom: none; }
+.country-select-item:hover { background: color-mix(in oklab, var(--c-accent) 10%, transparent); }
+.country-select-item.muted { color: var(--c-muted-text); font-style: italic; cursor: default; }
+.country-select-item.muted:hover { background: transparent; }
+
 /* Tier picker */
 .tiers { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px; }
 .tier {

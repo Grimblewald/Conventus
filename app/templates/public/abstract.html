@@ -12,6 +12,12 @@
     </div>
 
     {% set pa = a.presenting_author %}
+    {% if a.profile_picture_filename %}
+    <div style="text-align:center; margin-bottom:24px;">
+      <img src="{{ url_for('public.abstract_upload', name=a.profile_picture_filename) }}"
+           alt="{{ pa[0] }}" style="width:120px; height:120px; border-radius:50%; object-fit:cover;">
+    </div>
+    {% endif %}
     <div class="hero-meta" style="margin-bottom:24px;">
       <div>
         <dt>Presenting author</dt>

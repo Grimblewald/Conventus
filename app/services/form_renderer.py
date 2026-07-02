@@ -5,25 +5,24 @@ from Jinja templates iterating over schema sections.
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from markupsafe import Markup
 
 
-COUNTRY_LIST = (
-    "Afghanistan", "Albania", "Algeria", "Argentina", "Armenia", "Australia",
-    "Austria", "Bangladesh", "Belgium", "Brazil", "Canada", "Chile", "China",
-    "Colombia", "Croatia", "Czech Republic", "Denmark", "Egypt", "Estonia",
-    "Ethiopia", "Finland", "France", "Germany", "Ghana", "Greece",
-    "Hong Kong", "Hungary", "Iceland", "India", "Indonesia", "Iran", "Iraq",
-    "Ireland", "Israel", "Italy", "Japan", "Jordan", "Kenya", "Kuwait",
-    "Latvia", "Lebanon", "Lithuania", "Malaysia", "Mexico", "Morocco",
-    "Netherlands", "New Zealand", "Nigeria", "Norway", "Oman", "Pakistan",
-    "Philippines", "Poland", "Portugal", "Qatar", "Romania", "Russia",
-    "Saudi Arabia", "Serbia", "Singapore", "Slovakia", "Slovenia",
-    "South Africa", "South Korea", "Spain", "Sri Lanka", "Sudan", "Sweden",
-    "Switzerland", "Taiwan", "Tanzania", "Thailand", "Tunisia", "Turkey",
-    "Uganda", "Ukraine", "United Arab Emirates", "United Kingdom",
-    "United States", "Vietnam", "Zimbabwe",
-)
+_countries_cache = None
+
+
+def _load_countries() -> list[dict]:
+    """Lazy-load country data from static JSON (single source of truth)."""
+    global _countries_cache
+    if _countries_cache is not None:
+        return _countries_cache
+    json_path = Path(__file__).resolve().parent.parent / "static" / "data" / "countries.json"
+    with open(json_path) as f:
+        _countries_cache = json.load(f)
+    return _countries_cache
 
 
 def render_form(schema: dict | None, data: dict | None = None,
@@ -92,6 +91,11 @@ def validate_form(schema: dict | None, form_data: dict) -> list[str]:
                     if v and v.strip() and v not in options:
                         errors.append(f"Invalid option for {label}.")
                         break
+            elif ftype == "country":
+                if isinstance(value, str) and value.strip():
+                    names = {c["name"] for c in _load_countries()}
+                    if value.strip() not in names:
+                        errors.append(f"\"{value}\" is not a recognised country for {label}.")
 
     for se in schema.get("sub_events", []):
         sekey = se.get("key", "")
@@ -229,9 +233,10 @@ def _render_field(field: dict, value, errors: dict) -> str:
         )
 
     if ftype == "country":
+        countries = _load_countries()
         opts = "".join(
-            f'<option value="{c}"{" selected" if value == c else ""}>{c}</option>'
-            for c in COUNTRY_LIST
+            f'<option value="{c["name"]}"{" selected" if value == c["name"] else ""}>{c["name"]}</option>'
+            for c in countries
         )
         return (
             f'{field_wrap_open}'

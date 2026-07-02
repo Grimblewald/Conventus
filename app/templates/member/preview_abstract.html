@@ -14,11 +14,21 @@
       </div>
     </div>
 
+    {% set pa = a.presenting_author %}
+
+    <!-- Profile picture -->
+    {% if a.profile_picture_filename %}
+    <div style="text-align:center; margin-bottom:16px;">
+      <img src="{{ url_for('public.abstract_upload', name=a.profile_picture_filename) }}" alt="{{ pa[0] }}"
+           style="width:120px; height:120px; border-radius:50%; object-fit:cover;">
+    </div>
+    {% endif %}
+
     <!-- Title (centred, bold) -->
     <h1 style="text-align:center; margin-bottom:8px;">{{ a.title }}</h1>
 
     <!-- Authors (centred, presenting underlined) -->
-    {% set pa = a.presenting_author %}
+    {% set author_lines = a.authors.strip().split('\n') %}
     <p style="text-align:center; font-size:1.05rem; margin-bottom:4px;">
       {% set author_lines = a.authors.strip().split('\n') %}
       {% for line in author_lines %}

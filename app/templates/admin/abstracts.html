@@ -17,10 +17,15 @@
       <td><a href="{{ url_for('admin.abstract_detail', aid=a.id) }}">{{ a.title }}</a></td>
       <td>{{ a.conference.title if a.conference else '?' }}</td>
       <td style="text-align:center;">
-        {% if a.registration and a.registration.deleted_at is none %}
-          <span title="Registered{% if a.registration.tier_name %} — {{ a.registration.tier_name }}{% endif %}" style="color:var(--c-success);">&#10003;</span>
+        {% set reg = a.registration %}
+        {% if reg and reg.deleted_at is none %}
+          {% if reg.status == 'paid' %}
+            <span title="Registered &amp; paid{% if reg.tier_name %} — {{ reg.tier_name }}{% endif %}" style="color:var(--c-success);">&#10003;</span>
+          {% else %}
+            <span title="Registered ({{ reg.status }}){% if reg.tier_name %} — {{ reg.tier_name }}{% endif %}" style="color:#d4a017;">&#9888;</span>
+          {% endif %}
         {% else %}
-          <span title="Not registered for this conference" style="color:#d4a017;">&#9888;</span>
+          <span title="Not registered for this conference" style="color:#e74c3c;">&#10007;</span>
         {% endif %}
       </td>
       <td>{{ a.user.email if a.user else '?' }}</td>

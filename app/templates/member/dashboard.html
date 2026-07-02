@@ -44,10 +44,15 @@
           <tr>
             <td>{{ a.conference.title }}</td>
             <td style="text-align:center;">
-              {% if a.registration and a.registration.deleted_at is none %}
-                <span title="Registered for this conference" style="color:var(--c-success); font-weight:bold;">&#10003;</span>
+              {% set reg = a.registration %}
+              {% if reg and reg.deleted_at is none %}
+                {% if reg.status == 'paid' %}
+                  <span title="Registered &amp; paid" style="color:var(--c-success); font-weight:bold;">&#10003;</span>
+                {% else %}
+                  <span title="Registered ({{ reg.status }})" style="color:#d4a017; font-weight:bold;">&#9888;</span>
+                {% endif %}
               {% else %}
-                <span title="Not registered for this conference" style="color:#d4a017; font-weight:bold;">&#9888;</span>
+                <span title="Not registered for this conference" style="color:#e74c3c; font-weight:bold;">&#10007;</span>
               {% endif %}
             </td>
             <td>{{ a.title }}</td>

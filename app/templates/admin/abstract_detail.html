@@ -8,10 +8,15 @@
 <dl class="hero-meta">
   <div><dt>Conference</dt><dd>{{ a.conference.title if a.conference else '?' }}</dd></div>
   <div><dt>Registration</dt><dd>
-    {% if a.registration and a.registration.deleted_at is none %}
-      <span style="color:var(--c-success);">&#10003; {{ a.registration.tier_name }}</span>
+    {% set reg = a.registration %}
+    {% if reg and reg.deleted_at is none %}
+      {% if reg.status == 'paid' %}
+        <span style="color:var(--c-success);">&#10003; {{ reg.tier_name }} (paid)</span>
+      {% else %}
+        <span style="color:#d4a017;">&#9888; {{ reg.tier_name }} ({{ reg.status }})</span>
+      {% endif %}
     {% else %}
-      <span style="color:#d4a017;">&#9888; No registration linked</span>
+      <span style="color:#e74c3c;">&#10007; No registration linked</span>
     {% endif %}
   </dd></div>
   <div><dt>Track</dt><dd>{{ a.track or '—' }}</dd></div>

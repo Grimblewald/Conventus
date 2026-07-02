@@ -11,12 +11,11 @@
         sel.forEach(function (orig) {
           var wrapper = document.createElement("div");
           wrapper.className = "country-select";
-          wrapper.style.position = "relative";
 
           var input = document.createElement("input");
           input.className = "input";
           input.type = "text";
-          input.placeholder = "Search countries…";
+          input.placeholder = "Type to search…";
           input.autocomplete = "off";
 
           var dropdown = document.createElement("div");
@@ -36,6 +35,27 @@
           }
 
           var MAX_SHOWN = 5;
+
+          function scoreCountry(c, needle) {
+            if (!needle) return 0;
+            var nameLow = c.name.toLowerCase();
+            if (nameLow === needle) return 4;
+            if (nameLow.indexOf(needle) === 0) return 3;
+            if (nameLow.indexOf(needle) !== -1) return 2;
+            if (c.code && c.code.toLowerCase().indexOf(needle) !== -1) return 1;
+            return 0;
+          }
+
+          function sortMatches(matches, needle) {
+            if (!needle) return matches;
+            var n = needle.toLowerCase().trim();
+            return matches.sort(function (a, b) {
+              var sa = scoreCountry(a, n);
+              var sb = scoreCountry(b, n);
+              if (sa !== sb) return sb - sa;
+              return a.name.localeCompare(b.name);
+            });
+          }
 
           function buildDropdown(filter) {
             var f = (filter || "").toLowerCase().trim();
@@ -60,6 +80,7 @@
               return;
             }
 
+            matches = sortMatches(matches, f);
             var total = matches.length;
             var shown = matches.slice(0, MAX_SHOWN);
 
@@ -85,26 +106,33 @@
             }
           }
 
-          input.addEventListener("focus", function () {
+          function showDropdown() {
             buildDropdown(input.value);
-            dropdown.style.display = "";
-          });
+            dropdown.style.display = "block";
+          }
 
-          input.addEventListener("input", function () {
-            buildDropdown(input.value);
-            dropdown.style.display = "";
-          });
+          function hideDropdown() {
+            dropdown.style.display = "none";
+          }
+
+          input.addEventListener("focus", showDropdown);
+          input.addEventListener("input", showDropdown);
 
           input.addEventListener("blur", function () {
-            setTimeout(function () { dropdown.style.display = "none"; }, 150);
+            setTimeout(hideDropdown, 150);
           });
 
           input.addEventListener("keydown", function (e) {
-            if (e.key === "Escape") { dropdown.style.display = "none"; input.blur(); }
+            if (e.key === "Escape") { hideDropdown(); input.blur(); }
             if (e.key === "Enter") {
               var first = dropdown.querySelector(".country-select-item:not(.muted)");
               if (first) first.dispatchEvent(new MouseEvent("mousedown"));
               e.preventDefault();
+            }
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              var items = dropdown.querySelectorAll(".country-select-item:not(.muted)");
+              if (items.length) items[0].dispatchEvent(new MouseEvent("mousedown"));
             }
           });
 

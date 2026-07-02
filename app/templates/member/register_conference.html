@@ -54,7 +54,7 @@
                 </select>
               {% elif field.type == 'country' %}
                 <label for="{{ fkey }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
-                <select class="select" id="{{ fkey }}" name="{{ fkey }}" data-country-select
+                <select class="select" id="{{ fkey }}" name="{{ fkey }}" data-country-select style="display:none"
                         {% if fval %}data-value="{{ fval }}"{% endif %}
                         {% if field.required and not field.condition %} required{% endif %}>
                 </select>

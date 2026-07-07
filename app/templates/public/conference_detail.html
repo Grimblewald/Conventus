@@ -63,22 +63,7 @@
             </span>
           {% endif %}
         {% else %}
-          <span class="btn-stack">
-            <a class="btn btn-primary btn-lg" href="{{ url_for('auth.login') }}">Sign in to register</a>
-            <small></small>
-          </span>
-        {% endif %}
-        {% if c.booklet_filename %}
-          <span class="btn-stack">
-            <a class="btn btn-ghost btn-lg" href="{{ url_for('public.conference_upload', name=c.booklet_filename) }}">Programme booklet (PDF)</a>
-            <small></small>
-          </span>
-        {% endif %}
-        {% if c.organising_committee %}
-          <span class="btn-stack">
-            <button class="btn btn-ghost btn-lg" id="oc-toggle-btn" type="button">Organising Committee</button>
-            <small></small>
-          </span>
+          <a class="btn btn-primary btn-lg" href="{{ url_for('auth.login') }}">Sign in to register</a>
         {% endif %}
       </div>
     </div>
@@ -96,6 +81,18 @@
   <div class="container {% if c.sponsor_tiers %}conf-body-grid{% else %}container-narrow{% endif %}">
     <div>
       {% if c.summary %}<p class="lede">{{ c.summary }}</p>{% endif %}
+
+      {% if c.booklet_filename or c.organising_committee %}
+      <div class="hero-cta" style="margin-top:4px; margin-bottom:20px;">
+        {% if c.booklet_filename %}
+          <a class="btn btn-ghost" href="{{ url_for('public.conference_upload', name=c.booklet_filename) }}">Programme booklet (PDF)</a>
+        {% endif %}
+        {% if c.organising_committee %}
+          <button class="btn btn-ghost" id="oc-toggle-btn" type="button">Organising Committee</button>
+        {% endif %}
+      </div>
+      {% endif %}
+
       <div class="md">{{ c.body | md | safe }}</div>
       {% if c.tracks_list() %}
         <h3>Tracks</h3>

@@ -83,7 +83,7 @@
       {% if c.summary %}<p class="lede">{{ c.summary }}</p>{% endif %}
 
       {% if c.booklet_filename or c.organising_committee %}
-      <div class="hero-cta" style="margin-top:4px; margin-bottom:20px;">
+      <div style="display:flex; gap:12px; justify-content:center; margin-bottom:20px;">
         {% if c.booklet_filename %}
           <a class="btn btn-ghost" href="{{ url_for('public.conference_upload', name=c.booklet_filename) }}">Programme booklet (PDF)</a>
         {% endif %}

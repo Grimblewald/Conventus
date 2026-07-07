@@ -63,13 +63,22 @@
             </span>
           {% endif %}
         {% else %}
-          <a class="btn btn-primary btn-lg" href="{{ url_for('auth.login') }}">Sign in to register</a>
+          <span class="btn-stack">
+            <a class="btn btn-primary btn-lg" href="{{ url_for('auth.login') }}">Sign in to register</a>
+            <small></small>
+          </span>
         {% endif %}
         {% if c.booklet_filename %}
-          <a class="btn btn-ghost btn-lg" href="{{ url_for('public.conference_upload', name=c.booklet_filename) }}">Programme booklet (PDF)</a>
+          <span class="btn-stack">
+            <a class="btn btn-ghost btn-lg" href="{{ url_for('public.conference_upload', name=c.booklet_filename) }}">Programme booklet (PDF)</a>
+            <small></small>
+          </span>
         {% endif %}
         {% if c.organising_committee %}
-          <button class="btn btn-ghost btn-lg" id="oc-toggle-btn" type="button">Organising Committee</button>
+          <span class="btn-stack">
+            <button class="btn btn-ghost btn-lg" id="oc-toggle-btn" type="button">Organising Committee</button>
+            <small></small>
+          </span>
         {% endif %}
       </div>
     </div>

@@ -116,8 +116,11 @@
               <small>Closed</small>
             </span>
           {% endif %}
-          <a class="btn btn-quiet btn-lg"
-             href="{{ url_for('public.conference_detail', slug=featured.slug) }}">Programme details →</a>
+          <span class="btn-stack">
+            <a class="btn btn-quiet btn-lg"
+               href="{{ url_for('public.conference_detail', slug=featured.slug) }}">Programme details →</a>
+            <small></small>
+          </span>
         </div>
 
         {% if featured.sponsor_tiers %}

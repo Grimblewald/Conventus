@@ -82,9 +82,15 @@
               {% endif %}
             </span>
           {% elif featured.registration_status == "pending" %}
-            <span class="btn btn-primary btn-lg is-disabled">Opens in {{ featured.registration_countdown }}</span>
+            <span class="btn-stack">
+              <span class="btn btn-primary btn-lg is-disabled">Register</span>
+              <small>Opens in {{ featured.registration_countdown }}</small>
+            </span>
           {% else %}
-            <span class="btn btn-primary btn-lg is-disabled">Registration closed</span>
+            <span class="btn-stack">
+              <span class="btn btn-primary btn-lg is-disabled">Register</span>
+              <small>Closed</small>
+            </span>
           {% endif %}
 
           {# -- Abstracts -- #}
@@ -100,9 +106,15 @@
               {% endif %}
             </span>
           {% elif featured.abstract_status == "pending" %}
-            <span class="btn btn-ghost btn-lg is-disabled">Opens in {{ featured.abstract_countdown }}</span>
+            <span class="btn-stack">
+              <span class="btn btn-ghost btn-lg is-disabled">Submit an abstract</span>
+              <small>Opens in {{ featured.abstract_countdown }}</small>
+            </span>
           {% else %}
-            <span class="btn btn-ghost btn-lg is-disabled">Abstracts closed</span>
+            <span class="btn-stack">
+              <span class="btn btn-ghost btn-lg is-disabled">Submit an abstract</span>
+              <small>Closed</small>
+            </span>
           {% endif %}
           <a class="btn btn-quiet btn-lg"
              href="{{ url_for('public.conference_detail', slug=featured.slug) }}">Programme details →</a>

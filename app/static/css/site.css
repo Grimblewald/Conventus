@@ -252,7 +252,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
   color: var(--c-muted-text); font-size: 11px; margin-bottom: 4px; font-weight: 600;
 }
 .hero-meta dd { margin: 0; font-weight: 500; font-size: 14px; }
-.hero-cta { display: flex; gap: 12px; margin-top: 28px; flex-wrap: wrap; }
+.hero-cta { display: flex; gap: 12px; margin-top: 28px; flex-wrap: wrap; align-items: flex-end; }
 .hero-visual {
   position: relative; aspect-ratio: 4 / 3;
   border-radius: var(--rad-lg); overflow: hidden;

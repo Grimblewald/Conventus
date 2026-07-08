@@ -11,7 +11,10 @@ The factory:
 """
 from __future__ import annotations
 
+import base64
+import hashlib
 import logging
+import re
 from datetime import date, datetime
 from pathlib import Path
 
@@ -32,6 +35,27 @@ from .extensions import (
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+def _inline_script_hashes() -> list[str]:
+    """Compute SHA256 hashes for every inline <script> block in templates.
+
+    Returns CSP-compatible 'sha256-...' tokens, allowing removal of
+    'unsafe-inline' from script-src without breaking legitimate scripts.
+    Skips <script type="application/json"> data blocks.
+    """
+    templates_root = Path(__file__).parent / "templates"
+    hashes = []
+    for f in sorted(templates_root.rglob("*.html")):
+        for m in re.finditer(
+            r"<script\b(?!.*\bsrc=)[^>]*>(.*?)</script>",
+            f.read_text(), re.DOTALL,
+        ):
+            body = m.group(1).strip()
+            if body and "application/json" not in m.group(0):
+                h = hashlib.sha256(body.encode()).digest()
+                hashes.append(f"'sha256-{base64.b64encode(h).decode()}'")
+    return hashes
+
 
 def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
     app = Flask(
@@ -103,7 +127,7 @@ def _init_extensions(app: Flask) -> None:
         "default-src": "'self'",
         "img-src": ["'self'", "data:"],
         "media-src": ["'self'", "data:"],
-        "script-src": ["'self'", "'unsafe-inline'"],
+        "script-src": ["'self'"] + _inline_script_hashes(),
         "style-src": ["'self'", "'unsafe-inline'"],   # inline CSS vars only
         "font-src": "'self'",
         "connect-src": "'self'",

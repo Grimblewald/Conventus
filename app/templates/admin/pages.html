@@ -6,6 +6,7 @@
   <a class="btn btn-primary btn-sm" href="{{ url_for('admin.page_new') }}">+ New page</a>
 </div>
 {% if items %}
+<div style="overflow-x:auto;">
 <table class="table">
   <thead><tr><th>Title</th><th>Slug</th><th>Published</th><th>Updated</th><th></th></tr></thead>
   <tbody>
@@ -25,5 +26,6 @@
     {% endfor %}
   </tbody>
 </table>
+</div>
 {% else %}<p class="muted">No pages yet.</p>{% endif %}
 {% endblock %}

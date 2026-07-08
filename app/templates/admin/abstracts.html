@@ -9,6 +9,7 @@
   {% endfor %}
 </div>
 {% if items %}
+<div style="overflow-x:auto;">
 <table class="table">
   <thead><tr><th>Title</th><th>Conference</th><th>Reg</th><th>Author</th><th>Status</th><th>Submitted</th></tr></thead>
   <tbody>
@@ -35,5 +36,6 @@
     {% endfor %}
   </tbody>
 </table>
+</div>
 {% else %}<p class="muted">Nothing here.</p>{% endif %}
 {% endblock %}

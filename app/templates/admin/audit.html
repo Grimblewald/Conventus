@@ -9,6 +9,7 @@
     <input class="input" id="actor" name="actor" value="{{ actor }}"></div>
   <button class="btn btn-primary btn-sm" type="submit">Filter</button>
 </form>
+<div style="overflow-x:auto;">
 <table class="table">
   <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Summary</th></tr></thead>
   <tbody>
@@ -23,6 +24,7 @@
     {% endfor %}
   </tbody>
 </table>
+</div>
 <p class="muted" style="margin-top:14px;">
   Page {{ page }} · {{ rows|length }} of {{ total }} row(s)
   {% if total > page * per_page %}

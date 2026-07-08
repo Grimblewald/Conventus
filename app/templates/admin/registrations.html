@@ -28,6 +28,7 @@
 </div>
 
 {% if regs %}
+<div style="overflow-x:auto;">
 <table class="table">
   <thead><tr><th>User</th><th>Conference</th><th>Tier</th><th>Amount</th><th>Status</th><th>Payment sent</th><th>Date</th><th></th></tr></thead>
   <tbody>
@@ -56,6 +57,7 @@
     {% endfor %}
   </tbody>
 </table>
+</div>
 {% else %}
 <p class="muted">No registrations found.</p>
 {% endif %}

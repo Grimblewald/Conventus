@@ -6,6 +6,7 @@
 </div>
 
 {% if items %}
+<div style="overflow-x:auto;">
 <table class="table">
   <thead><tr><th>Title</th><th>Dates</th><th>City</th><th>Status</th><th></th></tr></thead>
   <tbody>
@@ -25,6 +26,7 @@
     {% endfor %}
   </tbody>
 </table>
+</div>
 {% else %}<p class="muted">No conferences yet.</p>{% endif %}
 
 {% if can('conf.create') %}

@@ -6,6 +6,7 @@
 </div>
 
 {% if boards %}
+<div style="overflow-x:auto;">
 <table class="table">
   <thead><tr><th>Label</th><th>Term</th><th>Members</th><th>Archived</th><th></th></tr></thead>
   <tbody>
@@ -26,6 +27,7 @@
     {% endfor %}
   </tbody>
 </table>
+</div>
 {% else %}
 <p class="muted">No past boards yet.</p>
 {% endif %}

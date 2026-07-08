@@ -12,6 +12,7 @@
 <form method="post" action="{{ url_for('admin.committee_reorder') }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <p style="font-size:13px; color: var(--c-muted-text);">Drag the rows to reorder — the order column saves on submit.</p>
+  <div style="overflow-x:auto;">
   <table class="table">
     <thead><tr><th>#</th><th>Member</th><th>Role</th><th>Affiliation</th><th></th></tr></thead>
     <tbody class="reorder-list">
@@ -30,6 +31,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
   <button class="btn btn-primary btn-sm" type="submit">Save order</button>
 </form>
 {% else %}<p class="muted">No committee members yet.</p>{% endif %}

@@ -6,6 +6,7 @@
 <form method="post" class="form form-wide">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="action" value="save">
+  <div style="overflow-x:auto;">
   <table class="table">
     <thead><tr><th style="width:60px">Order</th><th>Label</th><th>Target</th><th>Visible</th><th>New tab</th><th></th></tr></thead>
     <tbody>
@@ -34,6 +35,7 @@
       {% endfor %}
     </tbody>
   </table>
+  </div>
   <button class="btn btn-primary" type="submit">Save navigation</button>
 </form>
 

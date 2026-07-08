@@ -18,6 +18,7 @@
 
 <h3 style="margin-top:36px;">Current</h3>
 {% if items %}
+<div style="overflow-x:auto;">
 <table class="table">
   <thead><tr><th>Title</th><th>Kind</th><th>Pinned</th><th>Posted</th><th></th></tr></thead>
   <tbody>
@@ -40,5 +41,6 @@
     {% endfor %}
   </tbody>
 </table>
+</div>
 {% else %}<p class="muted">No announcements yet.</p>{% endif %}
 {% endblock %}

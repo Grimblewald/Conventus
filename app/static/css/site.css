@@ -593,6 +593,11 @@ section.block.ink .table td {
 }
 .flash.success { background: color-mix(in oklab, #2f7d4f 12%, transparent); color: #234d36; border-color: color-mix(in oklab, #2f7d4f 30%, transparent); }
 .flash.error   { background: color-mix(in oklab, #a1324c 12%, transparent); color: #6f2335; border-color: color-mix(in oklab, #a1324c 30%, transparent); }
+.flash.warning { background: color-mix(in oklab, #d4a017 12%, transparent); color: #7a5c10; border-color: color-mix(in oklab, #d4a017 30%, transparent); }
+.flash.info    { background: color-mix(in oklab, #2e7eb4 12%, transparent); color: #1a4a6b; border-color: color-mix(in oklab, #2e7eb4 30%, transparent); }
+
+/* Required field marker */
+.req { color: var(--c-accent); font-weight: 700; margin-left: 2px; }
 
 /* ---------------- Footer ---------------- */
 .site-footer {

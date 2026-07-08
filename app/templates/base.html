@@ -103,7 +103,7 @@
 <div class="flash-wrap">
   {% with msgs = get_flashed_messages(with_categories=true) %}
     {% for cat, m in msgs %}
-      <div class="flash {{ cat }}">{{ m }}</div>
+      <div class="flash {{ cat }}" role="alert">{{ m }}</div>
     {% endfor %}
   {% endwith %}
 </div>

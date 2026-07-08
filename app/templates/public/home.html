@@ -231,6 +231,15 @@
 </section>
 {% endif %}
 
+{% if not featured and not upcoming and not announcements and not site.intro_paragraph and not site.tagline and not site.closing_statement %}
+<section class="block">
+  <div class="container container-narrow" style="text-align:center;">
+    <h2>Welcome to {{ site.site_name }}</h2>
+    <p class="lede">Upcoming events and announcements will appear here soon.</p>
+  </div>
+</section>
+{% endif %}
+
 {% endblock %}
 
 {% block scripts %}

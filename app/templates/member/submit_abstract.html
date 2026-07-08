@@ -182,6 +182,19 @@
     </script>
   </div>
 </section>
+
+<script>
+(function() {
+  var form = document.querySelector('form');
+  if (!form) return;
+  form.addEventListener('submit', function() {
+    var btns = form.querySelectorAll('button[type="submit"]');
+    btns.forEach(function(b) {
+      if (!b.disabled) { b.disabled = true; b.style.opacity = '0.6'; }
+    });
+  });
+})();
+</script>
 {% endblock %}
 
 {% block scripts %}

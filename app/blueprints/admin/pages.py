@@ -77,7 +77,7 @@ def page_edit(pid):
 
 
 @admin_bp.route("/pages/<int:pid>/delete", methods=["POST"])
-@requires_permission("pages.edit")
+@requires_permission("pages.edit", "pages.delete")
 def page_delete(pid):
     p = Page.query.get_or_404(pid)
     p.deleted_at = datetime.utcnow()

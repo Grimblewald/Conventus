@@ -1,15 +1,60 @@
 """CrossRef DOI metadata fetching and reference formatting."""
 from __future__ import annotations
 
+import json
 import logging
+from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.error import URLError
-import json
 
 log = logging.getLogger(__name__)
 
 CROSSREF_API = "https://api.crossref.org/works/{doi}"
 _CACHE: dict[str, dict | None] = {}
+_CACHE_FILE: Path | None = None
+_CACHE_DIRTY = False
+
+
+def _init_cache() -> Path:
+    """Return path to persistent cache file, creating dir if needed."""
+    global _CACHE_FILE
+    if _CACHE_FILE is not None:
+        return _CACHE_FILE
+    try:
+        from flask import current_app
+        folder = Path(current_app.config["UPLOAD_FOLDER"]) / ".citation-cache"
+    except RuntimeError:
+        folder = Path(".citation-cache")
+    folder.mkdir(parents=True, exist_ok=True)
+    _CACHE_FILE = folder / "cache.json"
+    return _CACHE_FILE
+
+
+def _load_cache():
+    """Load persisted cache into memory on first access."""
+    global _CACHE, _CACHE_DIRTY
+    if _CACHE:
+        return
+    cache_file = _init_cache()
+    if cache_file.exists():
+        try:
+            _CACHE = json.loads(cache_file.read_text())
+            log.debug("Loaded %d cached citations", len(_CACHE))
+        except (json.JSONDecodeError, OSError):
+            _CACHE = {}
+    _CACHE_DIRTY = False
+
+
+def _save_cache():
+    """Persist in-memory cache to disk if dirty."""
+    global _CACHE_DIRTY
+    if not _CACHE_DIRTY or _CACHE_FILE is None:
+        return
+    try:
+        _CACHE_FILE.write_text(json.dumps(_CACHE, indent=2))
+        _CACHE_DIRTY = False
+    except OSError as e:
+        log.warning("Failed to save citation cache: %s", e)
 
 
 def fetch_metadata(doi: str) -> dict | None:
@@ -18,9 +63,10 @@ def fetch_metadata(doi: str) -> dict | None:
     Returns a dict with keys: title, authors, journal, year, volume,
     pages, doi, or None if the lookup fails.
 
-    Cache is process-local — clears on restart.  Polite to CrossRef by
-    using a short-lived in-memory cache.
+    Results are cached to disk and survive server restarts.
     """
+    global _CACHE_DIRTY
+    _load_cache()
     doi = doi.strip()
     if doi in _CACHE:
         return _CACHE[doi]
@@ -33,13 +79,19 @@ def fetch_metadata(doi: str) -> dict | None:
         msg = data.get("message")
         if not msg or data.get("status") != "ok":
             _CACHE[doi] = None
+            _CACHE_DIRTY = True
+            _save_cache()
             return None
         result = _parse_crossref(msg)
         _CACHE[doi] = result
+        _CACHE_DIRTY = True
+        _save_cache()
         return result
     except (URLError, json.JSONDecodeError, OSError) as e:
         log.warning("CrossRef lookup failed for %s: %s", doi, e)
         _CACHE[doi] = None
+        _CACHE_DIRTY = True
+        _save_cache()
         return None
 
 

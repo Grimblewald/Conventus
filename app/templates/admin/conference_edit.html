@@ -76,9 +76,9 @@
       <fieldset class="toggle-fieldset">
         <legend>Abstract submissions</legend>
         <label class="check-label">
-          <input type="checkbox" name="not_accepting_abstracts" id="not_accepting_abstracts"
-                 {% if not c.is_accepting_abstracts %}checked{% endif %}>
-          Not accepting abstracts
+          <input type="checkbox" name="is_accepting_abstracts" id="is_accepting_abstracts"
+                 {% if c.is_accepting_abstracts %}checked{% endif %}>
+          Accepting abstracts
         </label>
         <div class="field" id="abstracts_reopen_row" style="{% if c.is_accepting_abstracts %}display:none;{% endif %} margin-bottom:0;">
           <label for="abstracts_reopen_date">Auto-reopen on</label>
@@ -90,9 +90,9 @@
       <fieldset class="toggle-fieldset">
         <legend>Registrations</legend>
         <label class="check-label">
-          <input type="checkbox" name="not_accepting_registrations" id="not_accepting_registrations"
-                 {% if not c.is_accepting_registrations %}checked{% endif %}>
-          Not accepting registrations
+          <input type="checkbox" name="is_accepting_registrations" id="is_accepting_registrations"
+                 {% if c.is_accepting_registrations %}checked{% endif %}>
+          Accepting registrations
         </label>
         <div class="field" id="registrations_reopen_row" style="{% if c.is_accepting_registrations %}display:none;{% endif %} margin-bottom:0;">
           <label for="registrations_reopen_date">Auto-reopen on</label>

@@ -45,6 +45,8 @@ BUILT_IN_PERMISSIONS: tuple[tuple[str, str, str, str], ...] = (
      "Download abstract bundles as ZIP/CSV."),
     ("abs.compile_booklet", "Abstracts",     "Compile abstract booklet",
      "Generate a LaTeX booklet zip of all accepted abstracts for a conference."),
+    ("abs.delete",          "Abstracts",     "Delete abstracts",
+     "Soft-delete abstracts (requires OTP confirmation)."),
 
     # Announcements
     ("ann.publish",         "Announcements", "Publish announcements",
@@ -61,6 +63,8 @@ BUILT_IN_PERMISSIONS: tuple[tuple[str, str, str, str], ...] = (
     # Pages & navigation
     ("pages.edit",          "Site content",  "Edit static pages",
      "Edit About, custom pages, privacy, code of conduct, terms."),
+    ("pages.delete",        "Site content",  "Delete pages",
+     "Soft-delete static pages (recoverable)."),
     ("nav.edit",            "Site content",  "Edit navigation menu",
      "Add, remove, or reorder top-level navigation links."),
     ("footer.edit",         "Site content",  "Edit footer",

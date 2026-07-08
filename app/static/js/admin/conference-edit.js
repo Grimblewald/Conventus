@@ -12,19 +12,19 @@
   }
 
   document.addEventListener("DOMContentLoaded", function () {
-    // Reopen date toggles
-    var notAbs = document.getElementById("not_accepting_abstracts");
+    // Reopen date toggles — shown when submissions are paused
+    var isAbs = document.getElementById("is_accepting_abstracts");
     var absRow = document.getElementById("abstracts_reopen_row");
-    if (notAbs && absRow) {
-      notAbs.addEventListener("change", function () {
-        absRow.style.display = this.checked ? "" : "none";
+    if (isAbs && absRow) {
+      isAbs.addEventListener("change", function () {
+        absRow.style.display = this.checked ? "none" : "";
       });
     }
-    var notReg = document.getElementById("not_accepting_registrations");
+    var isReg = document.getElementById("is_accepting_registrations");
     var regRow = document.getElementById("registrations_reopen_row");
-    if (notReg && regRow) {
-      notReg.addEventListener("change", function () {
-        regRow.style.display = this.checked ? "" : "none";
+    if (isReg && regRow) {
+      isReg.addEventListener("change", function () {
+        regRow.style.display = this.checked ? "none" : "";
       });
     }
 

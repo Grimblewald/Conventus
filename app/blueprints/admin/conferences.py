@@ -142,8 +142,8 @@ def conference_save(cid):
         if c.is_featured:
             _unfeature_others(c.id)
         c.is_draft = bool(request.form.get("is_draft"))
-        c.is_accepting_abstracts = not bool(request.form.get("not_accepting_abstracts"))
-        c.is_accepting_registrations = not bool(request.form.get("not_accepting_registrations"))
+        c.is_accepting_abstracts = bool(request.form.get("is_accepting_abstracts"))
+        c.is_accepting_registrations = bool(request.form.get("is_accepting_registrations"))
         c.external_registration_url = (request.form.get("external_registration_url") or "").strip() or None
         c.external_abstract_url = (request.form.get("external_abstract_url") or "").strip() or None
         raw_max = (request.form.get("max_abstracts_per_user") or "").strip()
@@ -761,7 +761,7 @@ def abstract_detail(aid):
 # ---------------------------------------------------------------------------
 
 @admin_bp.route("/abstracts/<int:aid>/delete-request", methods=["POST"])
-@requires_permission("abs.review")
+@requires_permission("abs.review", "abs.delete")
 def abstract_delete_request(aid):
     a = Abstract.query.get_or_404(aid)
     if a.deleted_at is not None:
@@ -793,7 +793,7 @@ def abstract_delete_request(aid):
 
 
 @admin_bp.route("/abstracts/<int:aid>/delete-confirm", methods=["GET", "POST"])
-@requires_permission("abs.review")
+@requires_permission("abs.review", "abs.delete")
 def abstract_delete_confirm(aid):
     a = Abstract.query.get_or_404(aid)
     if a.deleted_at is not None:

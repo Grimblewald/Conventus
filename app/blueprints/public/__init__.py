@@ -13,7 +13,7 @@ from flask import (
 )
 from flask_login import current_user
 
-from ...extensions import db, limiter
+from ...extensions import csrf, db, limiter
 from ...models import (
     Announcement, CommitteeMember, Conference, OTPCode, Page, PastBoard, User,
     Abstract, SPEAKER_STATUSES,
@@ -394,6 +394,7 @@ def favicon():
 
 
 @public_bp.route("/payments/webhook", methods=["POST"])
+@csrf.exempt
 @limiter.exempt
 def payment_webhook():
     """Receive payment provider webhooks. Provider selected by PAYMENT_GATEWAY env var."""
@@ -413,13 +414,12 @@ def payment_webhook():
             if reg and reg.status == "pending":
                 reg.status = "paid"
                 db.session.commit()
-                log = current_app.logger
-                log.info("Payment webhook: reg %d marked paid (%s)",
+                current_app.logger.info("Payment webhook: reg %d marked paid (%s)",
                          result.registration_id, result.transaction_id)
         return {"status": "ok" if result.success else "ignored"}, 200
-    except Exception as exc:
-        current_app.logger.exception("Webhook error")
-        return {"status": "error", "message": str(exc)}, 500
+    except Exception:
+        current_app.logger.exception("Webhook processing failed")
+        return {"status": "error", "message": "Payment processing error"}, 500
 
 
 @public_bp.route("/.well-known/security.txt")

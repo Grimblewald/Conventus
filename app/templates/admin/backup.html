@@ -13,7 +13,8 @@
   <div>
     <h3>Create Backup</h3>
     <p class="muted">Download a complete snapshot of the site — database, all uploaded images and files, plus instance configuration. Everything needed to replicate this site elsewhere or recover from a problem.</p>
-    <form id="backup-create-form" method="post" action="{{ url_for('admin.backup_create') }}">
+    <form id="backup-create-form" method="post" action="{{ url_for('admin.backup_create') }}"
+          data-chunk-url="{{ url_for('admin.backup_download_chunk', upload_id='UID', index=0) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="btn btn-primary" type="submit" id="backup-btn">Download backup</button>
       <span id="backup-progress" style="display:none; margin-left:10px; font-size:13px; color:var(--c-muted-text);"></span>
@@ -27,7 +28,9 @@
     <h3>Restore Backup</h3>
     <p class="muted">Upload a previously-downloaded backup zip. This will <strong>overwrite</strong> the current database, all uploaded files, and instance flags. A safety backup is taken automatically before the restore begins.</p>
     <p class="muted" style="color:var(--c-page-text);">You'll be emailed a confirmation code before changes are applied.</p>
-    <form id="backup-restore-form" method="post" enctype="multipart/form-data">
+    <form id="backup-restore-form" method="post" enctype="multipart/form-data"
+          data-chunk-url="{{ url_for('admin.backup_restore_chunk') }}"
+          data-finalize-url="{{ url_for('admin.backup_restore_finalize') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="field">
         <label for="backup_file">Backup zip</label>
@@ -99,7 +102,7 @@
               return;
             }
             downloadProg.textContent = "Chunk " + (fetched + 1) + "/" + info.chunk_count;
-            var url = "{{ url_for('admin.backup_download_chunk', upload_id='UID', index=0) }}"
+            var url = downloadForm.dataset.chunkUrl
               .replace("UID", info.upload_id).replace("/0", "/" + fetched);
             fetch(url).then(function (r) {
               if (!r.ok) throw new Error("Chunk " + fetched + " failed");
@@ -153,7 +156,7 @@
           restoreProg.textContent = "Validating...";
           var finalForm = new FormData();
           finalForm.append("upload_id", uploadId);
-          fetch("{{ url_for('admin.backup_restore_finalize') }}", {
+          fetch(restoreForm.dataset.finalizeUrl, {
             method: "POST",
             headers: { "X-CSRFToken": csrfToken },
             body: finalForm,
@@ -188,7 +191,7 @@
           formData.append("checksum", hashHex);
           formData.append("chunk", blob, "chunk_" + chunkIndex);
 
-          return uploadChunk(formData, "{{ url_for('admin.backup_restore_chunk') }}");
+          return uploadChunk(formData, restoreForm.dataset.chunkUrl);
         }).then(function (r) {
           if (!r.ok) return r.json().then(function (d) { throw new Error(d.error || "Chunk failed"); });
           return r.json();

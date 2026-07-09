@@ -50,11 +50,17 @@ def _inline_script_hashes() -> list[str]:
     hashes = []
     for f in sorted(templates_root.rglob("*.html")):
         for m in re.finditer(
-            r"<script\b(?![^>]*\bsrc=)[^>]*>(.*?)</script>",
+            r"<script\b([^>]*)>(.*?)</script>",
             f.read_text(), re.DOTALL,
         ):
-            body = m.group(1)
-            if body.strip() and "application/json" not in m.group(0):
+            attrs, body = m.group(1), m.group(2)
+            if re.search(r"\bsrc\s*=", attrs):
+                continue
+            # Skip data blocks by their type attribute only — a script
+            # whose *body* mentions application/json must still be hashed.
+            if re.search(r"""\btype\s*=\s*["']?application/json""", attrs):
+                continue
+            if body.strip():
                 h = hashlib.sha256(body.encode()).digest()
                 hashes.append(f"'sha256-{base64.b64encode(h).decode()}'")
     return hashes

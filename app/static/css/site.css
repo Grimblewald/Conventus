@@ -241,7 +241,11 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
 .hero-eyebrow::before {
   content: ""; width: 24px; height: 1.5px; background: var(--c-accent);
 }
-.hero h1 { font-size: 3.4rem; font-weight: 500; }
+.hero h1 { font-size: 3.4rem; font-weight: 500; line-height: 1.12; text-wrap: balance; }
+.hero h1 em {
+  display: block; font-size: 0.5em; font-weight: 400;
+  line-height: 1.35; margin-top: 14px; color: var(--c-muted-text);
+}
 .hero-meta {
   display: flex; flex-wrap: wrap; gap: 36px; margin: 28px 0 20px;
   font-family: var(--f-ui); font-size: 13px;

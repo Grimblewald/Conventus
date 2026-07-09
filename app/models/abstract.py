@@ -15,8 +15,10 @@ class Abstract(db.Model):
     __tablename__ = "abstracts"
 
     id = db.Column(db.Integer, primary_key=True)
+    # Nullable: admin-entered abstracts (invited/plenary speakers) have no
+    # author account — the `authors` text field carries attribution.
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"),
-                        nullable=False, index=True)
+                        nullable=True, index=True)
     conference_id = db.Column(db.Integer, db.ForeignKey("conferences.id"),
                               nullable=False, index=True)
     registration_id = db.Column(db.Integer, db.ForeignKey("registrations.id"),
@@ -35,6 +37,7 @@ class Abstract(db.Model):
 
     figure_filename = db.Column(db.String(240))
     profile_picture_filename = db.Column(db.String(240))
+    website_url = db.Column(db.String(300), default="")
     status = db.Column(db.String(40), default="submitted", nullable=False)
     reviewer_notes = db.Column(db.Text, default="")
     decided_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
@@ -72,6 +75,22 @@ class Abstract(db.Model):
         recs = [r.recommendation for r in self.reviews
                 if r.status == "completed" and r.recommendation]
         return dict(Counter(recs))
+
+    @staticmethod
+    def clean_website(raw: str | None) -> str:
+        """Normalize an optional presenter website URL.
+
+        Returns "" for blank input, prefixes https:// when no scheme is
+        given, and raises ValueError for input that can't be a URL.
+        """
+        url = (raw or "").strip()
+        if not url:
+            return ""
+        if not url.startswith(("http://", "https://")):
+            url = "https://" + url
+        if " " in url or "." not in url or len(url) > 300:
+            raise ValueError("Website must be a valid URL (max 300 characters).")
+        return url
 
     @property
     def presenting_author(self) -> tuple[str, str]:

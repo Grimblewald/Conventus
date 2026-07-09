@@ -14,6 +14,22 @@ _CACHE: dict[str, dict | None] = {}
 _CACHE_FILE: Path | None = None
 _CACHE_DIRTY = False
 
+_DOI_URL_PREFIXES = [
+    "https://doi.org/", "http://doi.org/",
+    "https://dx.doi.org/", "http://dx.doi.org/",
+    "doi.org/", "dx.doi.org/",
+]
+
+
+def normalize_doi(raw: str) -> str:
+    """Strip doi.org URL prefixes so only the bare DOI remains."""
+    doi = raw.strip()
+    for prefix in _DOI_URL_PREFIXES:
+        if doi.lower().startswith(prefix.lower()):
+            doi = doi[len(prefix):]
+            break
+    return doi.strip()
+
 
 def _init_cache() -> Path:
     """Return path to persistent cache file, creating dir if needed."""

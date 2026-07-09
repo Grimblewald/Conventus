@@ -3,10 +3,18 @@
 {% block admin %}
 <div class="section-head">
   <div><div class="eyebrow">Abstract</div><h2>{{ a.title }}</h2></div>
-  <a class="link" href="{{ url_for('admin.abstracts') }}">← back</a>
+  <div>
+    {% if current_user.has_permission('abs.edit') %}
+    <a class="btn btn-ghost btn-sm" href="{{ url_for('admin.abstract_edit', aid=a.id) }}">Edit abstract</a>
+    {% endif %}
+    <a class="link" href="{{ url_for('admin.abstracts') }}">← back</a>
+  </div>
 </div>
 <dl class="hero-meta">
   <div><dt>Conference</dt><dd>{{ a.conference.title if a.conference else '?' }}</dd></div>
+  <div><dt>Author account</dt><dd>
+    {% if a.author %}{{ a.author.email }}{% else %}<span class="muted">none (admin-entered)</span>{% endif %}
+  </dd></div>
   <div><dt>Registration</dt><dd>
     {% set reg = a.registration %}
     {% if reg and reg.deleted_at is none %}
@@ -22,6 +30,9 @@
   <div><dt>Track</dt><dd>{{ a.track or '—' }}</dd></div>
   <div><dt>Presentation</dt><dd>{{ a.presentation_type }}</dd></div>
   <div><dt>Keywords</dt><dd>{{ a.keywords or '—' }}</dd></div>
+  {% if a.website_url %}
+  <div><dt>Website</dt><dd><a href="{{ a.website_url }}" target="_blank" rel="noopener nofollow">{{ a.website_url }}</a></dd></div>
+  {% endif %}
 </dl>
 <h3>Authors</h3>
 <p>

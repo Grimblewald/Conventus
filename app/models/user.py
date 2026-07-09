@@ -41,6 +41,9 @@ BUILT_IN_PERMISSIONS: tuple[tuple[str, str, str, str], ...] = (
     # Abstracts
     ("abs.review",          "Abstracts",     "Review abstract submissions",
      "Read, decide on, and add reviewer notes to submitted abstracts."),
+    ("abs.edit",            "Abstracts",     "Create and edit abstracts",
+     "Create abstracts without an author account (for invited and plenary "
+     "speakers) and edit any abstract's content, authors, and track."),
     ("abs.export",          "Abstracts",     "Export abstracts",
      "Download abstract bundles as ZIP/CSV."),
     ("abs.compile_booklet", "Abstracts",     "Compile abstract booklet",

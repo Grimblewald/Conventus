@@ -20,9 +20,9 @@ from ...models.content import get_site_settings
 from ...security import audit
 from ...services.mail import send_mail
 from ...services.payments import payment_url_for, send_payment_email
-from ...services.uploads import UploadError, save_figure, save_image
+from ...services.uploads import UploadError, remove_upload, save_figure, save_image
 from ...services.form_renderer import validate_form
-from ...services.citations import fetch_metadata, format_reference
+from ...services.citations import fetch_metadata, format_reference, normalize_doi
 
 
 member_bp = Blueprint("member", __name__)
@@ -189,21 +189,6 @@ def register_conf(slug):
 # Abstract submission
 # ---------------------------------------------------------------------------
 
-_DOI_URL_PREFIXES = [
-    "https://doi.org/", "http://doi.org/",
-    "https://dx.doi.org/", "http://dx.doi.org/",
-    "doi.org/", "dx.doi.org/",
-]
-
-
-def _normalize_doi(raw: str) -> str:
-    doi = raw.strip()
-    for prefix in _DOI_URL_PREFIXES:
-        if doi.lower().startswith(prefix.lower()):
-            doi = doi[len(prefix):]
-            break
-    return doi.strip()
-
 
 def _validate_reference(key: int, doi: str, body: str) -> list[str]:
     errors: list[str] = []
@@ -269,6 +254,13 @@ def submit_abstract(slug):
         ptype = (request.form.get("presentation_type") or "Either").strip()
         keywords = (request.form.get("keywords") or "").strip()
         coi = (request.form.get("coi") or "").strip()
+        try:
+            website_url = Abstract.clean_website(request.form.get("website_url"))
+        except ValueError as e:
+            website_url = ""
+            errors_early = [str(e)]
+        else:
+            errors_early = []
 
         # Collect custom field data
         custom_data: dict = {}
@@ -286,7 +278,7 @@ def submit_abstract(slug):
         ref_keys = set()
         seen_dois = set()
         for i, doi in enumerate(ref_dois):
-            doi = _normalize_doi(doi)
+            doi = normalize_doi(doi)
             if doi and doi not in seen_dois:
                 key = len(references) + 1
                 references.append({"key": key, "doi": doi})
@@ -300,7 +292,7 @@ def submit_abstract(slug):
         except ValueError:
             pass
 
-        errors: list[str] = []
+        errors: list[str] = list(errors_early)
 
         if not is_draft:
             # Full validation for submit
@@ -349,6 +341,7 @@ def submit_abstract(slug):
         a.presentation_type = ptype
         a.keywords = keywords
         a.coi = coi
+        a.website_url = website_url
         a.custom_data = custom_data if custom_data else None
         a.presenting_author_index = presenting_author_index
         a.references = references if references else None
@@ -361,7 +354,7 @@ def submit_abstract(slug):
         f = request.files.get("figure")
         if f and f.filename:
             try:
-                a.figure_filename = save_figure(
+                new_fig = save_figure(
                     f,
                     upload_folder=current_app.config["UPLOAD_FOLDER"],
                     max_bytes=current_app.config["MAX_FIGURE_BYTES"],
@@ -371,6 +364,10 @@ def submit_abstract(slug):
                 return render_template("member/submit_abstract.html",
                                        c=c, tracks=tracks, form=request.form,
                                        abstract_schema=abstract_schema, draft=draft)
+            if a.figure_filename:
+                remove_upload(current_app.config["UPLOAD_FOLDER"],
+                              a.figure_filename)
+            a.figure_filename = new_fig
 
         pic = request.files.get("profile_picture")
         if pic and pic.filename:
@@ -380,12 +377,15 @@ def submit_abstract(slug):
                                  subdir="abstracts", prefix="profile-",
                                  max_bytes=current_app.config["MAX_HERO_BYTES"],
                                  target_size=400, force_webp=True)
-                a.profile_picture_filename = rel.split("/", 1)[-1]
             except UploadError as e:
                 flash(str(e), "error")
                 return render_template("member/submit_abstract.html",
                                        c=c, tracks=tracks, form=request.form,
                                        abstract_schema=abstract_schema, draft=draft)
+            if a.profile_picture_filename:
+                remove_upload(current_app.config["UPLOAD_FOLDER"],
+                              f"abstracts/{a.profile_picture_filename}")
+            a.profile_picture_filename = rel.split("/", 1)[-1]
 
         if not draft:
             db.session.add(a)
@@ -423,6 +423,7 @@ def submit_abstract(slug):
             "presentation_type": draft.presentation_type,
             "keywords": draft.keywords,
             "coi": draft.coi,
+            "website_url": draft.website_url,
             "presenting_author_index": draft.presenting_author_index,
             **{k: v for k, v in (draft.custom_data or {}).items()},
         }

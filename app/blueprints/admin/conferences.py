@@ -15,15 +15,15 @@ from flask_login import current_user
 from . import admin_bp
 from ...extensions import db
 from ...models import Abstract, Conference, ConferenceReviewer, OTPCode, OrganisingCommitteeMember, Registration, ReviewAssignment, Sponsor, SponsorTier, SubEvent, User
-from ...models.abstract import SPEAKER_STATUSES
+from ...models.abstract import ALL_STATUSES, SPEAKER_STATUSES
 from ...models.conference import PriceTier
 from ...security import requires_permission, audit
 from ...services.mail import send_mail
 from ...services.slugs import slugify
 from ...services.uploads import (
-    UploadError, save_image, save_pdf, remove_upload,
+    UploadError, save_image, save_pdf, save_figure, remove_upload,
 )
-from ...services.citations import fetch_metadata, format_reference_compact
+from ...services.citations import fetch_metadata, format_reference_compact, normalize_doi
 
 
 # ---------------------------------------------------------------------------
@@ -739,7 +739,9 @@ def abstracts():
     if status != "all":
         q = q.filter_by(status=status)
     if search:
-        q = q.join(Abstract.author).filter(
+        # Outer join: admin-entered abstracts have no author account but
+        # must still match on title/authors text.
+        q = q.outerjoin(Abstract.author).filter(
             db.or_(
                 Abstract.title.ilike(f"%{search}%"),
                 Abstract.authors.ilike(f"%{search}%"),
@@ -811,6 +813,162 @@ def abstract_detail(aid):
     return render_template("admin/abstract_detail.html", a=a,
                            review_list=review_list,
                            conf_reviewers=conf_reviewers)
+
+
+# ---------------------------------------------------------------------------
+# Abstract create/edit (`abs.edit`) — admin-entered abstracts have no
+# author account; the authors text field carries attribution.
+# ---------------------------------------------------------------------------
+
+def _apply_abstract_form(a: Abstract) -> list[str]:
+    """Copy the posted edit form onto `a`. Returns validation errors."""
+    errors: list[str] = []
+    a.title = (request.form.get("title") or "").strip()
+    a.authors = (request.form.get("authors") or "").strip()
+    a.body = (request.form.get("body") or "").strip()
+    a.track = (request.form.get("track") or "").strip()
+    a.presentation_type = (request.form.get("presentation_type") or "Either").strip()
+    a.keywords = (request.form.get("keywords") or "").strip()
+    a.coi = (request.form.get("coi") or "").strip()
+    if not (a.title and a.authors and a.body):
+        errors.append("Title, authors, and body are required.")
+
+    try:
+        a.website_url = Abstract.clean_website(request.form.get("website_url"))
+    except ValueError as e:
+        errors.append(str(e))
+
+    status = (request.form.get("status") or "").strip()
+    if status:
+        if status in ALL_STATUSES:
+            a.status = status
+        else:
+            errors.append(f"Unknown status '{status}'.")
+
+    try:
+        a.presenting_author_index = int(
+            request.form.get("presenting_author_index", "0") or "0")
+    except ValueError:
+        a.presenting_author_index = 0
+
+    # References — one DOI (or doi.org URL) per line
+    refs: list[dict] = []
+    seen: set[str] = set()
+    for line in (request.form.get("references") or "").splitlines():
+        doi = normalize_doi(line)
+        if doi and doi not in seen:
+            refs.append({"key": len(refs) + 1, "doi": doi})
+            seen.add(doi)
+    a.references = refs or None
+
+    # Field validation failed: bail before touching any files, so a
+    # rollback can't leave the DB pointing at a removed upload.
+    if errors:
+        return errors
+
+    # Uploads — save new files first; old files are removed only at the
+    # end, once every upload has succeeded, so a failed submit can't
+    # leave the DB pointing at a deleted file.
+    removals: list[str] = []
+
+    f = request.files.get("figure")
+    if f and f.filename:
+        try:
+            new_fig = save_figure(
+                f, upload_folder=current_app.config["UPLOAD_FOLDER"],
+                max_bytes=current_app.config["MAX_FIGURE_BYTES"])
+        except UploadError as e:
+            errors.append(str(e))
+        else:
+            if a.figure_filename:
+                removals.append(a.figure_filename)
+            a.figure_filename = new_fig
+    elif request.form.get("remove_figure") and a.figure_filename:
+        removals.append(a.figure_filename)
+        a.figure_filename = None
+
+    pic = request.files.get("profile_picture")
+    if pic and pic.filename:
+        try:
+            rel = save_image(
+                pic, upload_folder=current_app.config["UPLOAD_FOLDER"],
+                subdir="abstracts", prefix="profile-",
+                max_bytes=current_app.config["MAX_HERO_BYTES"],
+                target_size=400, force_webp=True)
+        except UploadError as e:
+            errors.append(str(e))
+        else:
+            if a.profile_picture_filename:
+                removals.append(f"abstracts/{a.profile_picture_filename}")
+            a.profile_picture_filename = rel.split("/", 1)[-1]
+    elif request.form.get("remove_profile_picture") and a.profile_picture_filename:
+        removals.append(f"abstracts/{a.profile_picture_filename}")
+        a.profile_picture_filename = None
+
+    if not errors:
+        for name in removals:
+            remove_upload(current_app.config["UPLOAD_FOLDER"], name)
+
+    return errors
+
+
+@admin_bp.route("/abstracts/new", methods=["GET", "POST"])
+@requires_permission("abs.edit")
+def abstract_new():
+    conferences = (Conference.query
+                   .filter(Conference.deleted_at.is_(None))
+                   .order_by(Conference.start_date.desc())
+                   .all())
+    if request.method == "POST":
+        cid = request.form.get("conference_id", type=int)
+        c = next((x for x in conferences if x.id == cid), None)
+        a = Abstract(user_id=None, conference_id=cid, status="submitted")
+        errors = _apply_abstract_form(a)
+        if c is None:
+            errors.insert(0, "Choose a conference.")
+        if errors:
+            for err in errors:
+                flash(err, "error")
+            return render_template("admin/abstract_edit.html", a=a,
+                                   conferences=conferences,
+                                   statuses=ALL_STATUSES, is_new=True)
+        db.session.add(a)
+        db.session.commit()
+        audit.record("abstract.created",
+                     target_kind="abstract", target_id=a.id,
+                     summary=f"Admin-entered for {c.slug}: {a.title}")
+        flash("Abstract created.", "success")
+        return redirect(url_for("admin.abstract_detail", aid=a.id))
+    return render_template("admin/abstract_edit.html", a=None,
+                           conferences=conferences,
+                           statuses=ALL_STATUSES, is_new=True)
+
+
+@admin_bp.route("/abstracts/<int:aid>/edit", methods=["GET", "POST"])
+@requires_permission("abs.edit")
+def abstract_edit(aid):
+    a = Abstract.query.get_or_404(aid)
+    if a.deleted_at is not None:
+        flash("This abstract has been deleted.", "error")
+        return redirect(url_for("admin.abstracts"))
+    if request.method == "POST":
+        errors = _apply_abstract_form(a)
+        if errors:
+            db.session.rollback()
+            for err in errors:
+                flash(err, "error")
+            return render_template("admin/abstract_edit.html", a=a,
+                                   conferences=None,
+                                   statuses=ALL_STATUSES, is_new=False)
+        db.session.commit()
+        audit.record("abstract.edited",
+                     target_kind="abstract", target_id=a.id,
+                     summary=f"{current_user.email} edited \"{a.title}\"")
+        flash("Abstract updated.", "success")
+        return redirect(url_for("admin.abstract_detail", aid=a.id))
+    return render_template("admin/abstract_edit.html", a=a,
+                           conferences=None,
+                           statuses=ALL_STATUSES, is_new=False)
 
 
 # ---------------------------------------------------------------------------

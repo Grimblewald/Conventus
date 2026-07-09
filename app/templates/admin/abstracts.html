@@ -1,7 +1,12 @@
 {% extends "admin/_base.html" %}
 {% block title %}Abstracts · Admin{% endblock %}
 {% block admin %}
-<div class="section-head"><div><div class="eyebrow">Submissions</div><h2>Abstracts</h2></div></div>
+<div class="section-head">
+  <div><div class="eyebrow">Submissions</div><h2>Abstracts</h2></div>
+  {% if current_user.has_permission('abs.edit') %}
+  <a class="btn btn-primary btn-sm" href="{{ url_for('admin.abstract_new') }}">+ Add abstract</a>
+  {% endif %}
+</div>
 
 <div style="margin-bottom:14px;">
   <div style="display:flex; gap:8px; margin-bottom:10px;">

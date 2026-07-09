@@ -1,0 +1,132 @@
+{% extends "admin/_base.html" %}
+{% block title %}{{ 'New abstract' if is_new else 'Edit abstract' }} · Admin{% endblock %}
+{% block admin %}
+<div class="section-head">
+  <div>
+    <div class="eyebrow">Abstract</div>
+    <h2>{{ 'New abstract' if is_new else 'Edit: ' ~ a.title }}</h2>
+  </div>
+  <a class="link" href="{{ url_for('admin.abstract_detail', aid=a.id) if a and a.id else url_for('admin.abstracts') }}">← back</a>
+</div>
+
+{% if is_new %}
+<p class="muted">Admin-entered abstracts have no author account — use this for
+invited and plenary speakers, or submissions received by email. Attribution
+comes from the authors field below.</p>
+{% endif %}
+
+<form method="post" enctype="multipart/form-data" style="max-width:760px;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  {% if is_new %}
+  <div class="field">
+    <label for="conference_id">Conference <span class="req">*</span></label>
+    <select class="select" id="conference_id" name="conference_id" required>
+      <option value="">— select —</option>
+      {% for conf in conferences %}
+        <option value="{{ conf.id }}"{% if a and a.conference_id == conf.id %} selected{% endif %}>{{ conf.title }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% endif %}
+
+  <div class="field">
+    <label for="title">Title <span class="req">*</span></label>
+    <input class="input" id="title" name="title" required value="{{ a.title if a else '' }}">
+  </div>
+
+  <div class="field">
+    <label for="authors">Authors <span class="req">*</span></label>
+    <textarea class="input" id="authors" name="authors" rows="4" required
+              placeholder="Jane Doe|1|Example University">{{ a.authors if a else '' }}</textarea>
+    <div class="help">One author per line: <code>Name|affiliation number|Affiliation</code>. Repeat the same number for shared affiliations.</div>
+  </div>
+
+  <div class="field">
+    <label for="presenting_author_index">Presenting author (line number, first line = 0)</label>
+    <input class="input" id="presenting_author_index" name="presenting_author_index"
+           type="number" min="0" value="{{ a.presenting_author_index or 0 if a else 0 }}" style="max-width:120px;">
+  </div>
+
+  <div class="field">
+    <label for="track">Track</label>
+    <input class="input" id="track" name="track" value="{{ a.track if a else '' }}"
+           placeholder="Must match one of the conference's tracks">
+  </div>
+
+  <div class="field">
+    <label for="presentation_type">Presentation</label>
+    <select class="select" id="presentation_type" name="presentation_type">
+      {% for opt in ['Either', 'Oral', 'Poster'] %}
+        <option {% if a and a.presentation_type == opt %}selected{% endif %}>{{ opt }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="field">
+    <label for="status">Status</label>
+    <select class="select" id="status" name="status">
+      {% for s in statuses %}
+        <option value="{{ s }}"{% if a and a.status == s %} selected{% endif %}>{{ s|capitalize }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="field">
+    <label for="keywords">Keywords</label>
+    <input class="input" id="keywords" name="keywords" value="{{ a.keywords if a else '' }}"
+           placeholder="comma, separated, keywords">
+  </div>
+
+  <div class="field">
+    <label for="body">Body <span class="req">*</span></label>
+    <textarea class="input" id="body" name="body" rows="14" required>{{ a.body if a else '' }}</textarea>
+    <div class="help">Markdown supported. Cite references as [1], [2], … matching the list below.</div>
+  </div>
+
+  <div class="field">
+    <label for="references">References (one DOI per line)</label>
+    <textarea class="input" id="references" name="references" rows="4"
+              placeholder="10.1000/example.doi">{% if a and a.references %}{% for ref in a.references %}{{ ref.doi }}
+{% endfor %}{% endif %}</textarea>
+  </div>
+
+  <div class="field">
+    <label for="coi">Conflicts of interest</label>
+    <textarea class="input" id="coi" name="coi" rows="2">{{ a.coi if a else '' }}</textarea>
+  </div>
+
+  <div class="field">
+    <label for="website_url">Presenter website</label>
+    <input class="input" id="website_url" name="website_url" type="text"
+           value="{{ a.website_url if a else '' }}" placeholder="https://their-lab.example.org">
+  </div>
+
+  <div class="field">
+    <label for="figure">Figure (PNG, JPG, TIFF or PDF)</label>
+    <input class="input" id="figure" name="figure" type="file" accept=".png,.jpg,.jpeg,.tif,.tiff,.pdf">
+    {% if a and a.figure_filename %}
+    <div class="help">
+      Current: {{ a.figure_filename.split('/')[-1] }} — uploading replaces it, or
+      <label style="display:inline;"><input type="checkbox" name="remove_figure" value="1"> remove</label>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="field">
+    <label for="profile_picture">Presenter profile picture (PNG, JPG, or WebP)</label>
+    <input class="input" id="profile_picture" name="profile_picture" type="file" accept=".png,.jpg,.jpeg,.webp">
+    {% if a and a.profile_picture_filename %}
+    <div class="help">
+      Current: {{ a.profile_picture_filename }} — uploading replaces it, or
+      <label style="display:inline;"><input type="checkbox" name="remove_profile_picture" value="1"> remove</label>
+    </div>
+    {% endif %}
+  </div>
+
+  <div style="margin-top:18px; display:flex; gap:8px;">
+    <button class="btn btn-primary" type="submit">{{ 'Create abstract' if is_new else 'Save changes' }}</button>
+    <a class="btn btn-ghost" href="{{ url_for('admin.abstract_detail', aid=a.id) if a and a.id else url_for('admin.abstracts') }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

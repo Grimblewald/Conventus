@@ -23,6 +23,9 @@
         <dt>Presenting author</dt>
         <dd>{{ pa[0] }}{% if pa[1] %}, {{ pa[1] }}{% endif %}</dd>
       </div>
+      {% if a.website_url %}
+      <div><dt>Website</dt><dd><a href="{{ a.website_url }}" target="_blank" rel="noopener nofollow">{{ a.website_url | replace('https://', '') | replace('http://', '') }}</a></dd></div>
+      {% endif %}
       {% if a.track %}
       <div><dt>Track</dt><dd>{{ a.track }}</dd></div>
       {% endif %}

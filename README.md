@@ -87,12 +87,27 @@ The recommended host is a small Linux VPS rented from **[Binary Lane][bl]** as i
 | `uv run python -m app update` | Backup DB → `git pull` → migrate → restart service |
 | `uv run python -m app revert` | Restore last backup → git reset → restart |
 | `uv run python -m app backup` | Manual database + uploads backup |
+| `uv run python -m app syncpages` | Sync `content/pages/*.md` to the database |
 | `uv run python -m app register-service` | Install systemd user units |
 | `uv run python -m app uninstall-service` | Remove systemd user units |
 
 The `update` command is designed to be run while the site is live.
 Backups are stored in `var/backups/`.  If an update goes sideways, `revert`
 restores the exact state from before the last `update`.
+
+### Managing page content with git
+
+Static pages (Privacy Policy, Terms & Conditions, Code of Conduct, etc.)
+are stored as Markdown files in `content/pages/`.  The filename (minus the
+`.md` extension) becomes the page slug on the live site.  Edit them
+locally, track them in git, and sync to the database with one command:
+
+```bash
+uv run python -m app syncpages
+```
+
+This uses the admin API to create or update every page listed in the
+directory.  No manual copy-paste into the admin UI required.
 
 ## Local development
 

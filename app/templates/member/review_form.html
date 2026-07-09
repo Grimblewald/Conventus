@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}Review · {{ a.title }}{% endblock %}
+{% block content %}
+<section class="block">
+  <div class="container" style="max-width:800px;">
+    <div class="section-head">
+      <div>
+        <div class="eyebrow">{{ a.conference.date_range if a.conference else '' }}</div>
+        <h2>{{ a.title }}</h2>
+      </div>
+      <a class="link" href="{{ url_for('member.dashboard') }}">← dashboard</a>
+    </div>
+
+    {% set pa = a.presenting_author %}
+    <div class="hero-meta" style="margin-bottom:24px;">
+      <div><dt>Track</dt><dd>{{ a.track or '—' }}</dd></div>
+      <div><dt>Presentation</dt><dd>{{ a.presentation_type }}</dd></div>
+      <div><dt>Presenting author</dt><dd>{{ pa[0] }}{% if pa[1] %}, {{ pa[1] }}{% endif %}</dd></div>
+    </div>
+
+    <h3>Authors</h3>
+    <p>{{ a.authors | fmt_authors }}</p>
+
+    <h3>Abstract</h3>
+    <div style="font-size:0.95rem; line-height:1.6; text-align:justify; margin-bottom:24px;">
+      {% for paragraph in a.body.strip().split('\n\n') %}
+        {% if paragraph.strip() %}
+        <p style="margin-bottom:12px;">{{ paragraph.strip() }}</p>
+        {% endif %}
+      {% endfor %}
+    </div>
+
+    {% if a.figure_filename %}
+    <h3>Figure</h3>
+    <div style="text-align:center; margin-bottom:24px;">
+      <img src="{{ url_for('member.abstract_figure', aid=a.id) }}"
+           alt="Figure" style="max-width:100%; max-height:360px; border:1px solid var(--c-card-border); border-radius:var(--rad);">
+    </div>
+    {% endif %}
+
+    {% if a.references %}
+    <h3>References</h3>
+    <ol style="font-size:0.85rem; line-height:1.5; padding-left:20px;">
+      {% for ref in a.references %}
+      <li><a href="https://doi.org/{{ ref.doi }}" target="_blank" rel="noopener">{{ ref.doi }}</a></li>
+      {% endfor %}
+    </ol>
+    {% endif %}
+
+    <hr style="margin:24px 0;">
+
+    {% if a.user_id == current_user.id %}
+    <div class="flash warning" style="margin-bottom:20px;">
+      <strong>Self-review:</strong> You are the author of this abstract. Reviews of your own work cannot be considered independent. Please recuse yourself.
+    </div>
+    {% endif %}
+
+    {% if ra.status == 'completed' %}
+    <div class="hero-meta" style="margin-bottom:20px;">
+      <div><dt>Score</dt><dd><strong>{{ ra.score }}</strong>/100</dd></div>
+      <div><dt>Recommendation</dt><dd><strong>{{ ra.recommendation }}</strong></dd></div>
+      <div><dt>Submitted</dt><dd>{{ ra.submitted_at.strftime('%-d %b %Y %H:%M') }}</dd></div>
+    </div>
+    <p class="muted">This review has been submitted. Contact the organising committee if you need to amend it.</p>
+    {% elif ra.status == 'declined' %}
+    <div class="flash error" style="margin-bottom:20px;">
+      You recused yourself from this review{% if ra.decline_reason %}: <em>{{ ra.decline_reason }}</em>{% endif %}.
+    </div>
+    {% endif %}
+
+    {% if ra.status != 'completed' or current_user.has_permission('abs.review') %}
+    <form method="post" class="form form-wide">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+      <div class="field">
+        <label for="score">Score (0–100)</label>
+        <input class="input" id="score" name="score" type="range" min="0" max="100"
+               value="{{ ra.score if ra.score is not none else 50 }}"
+               oninput="document.getElementById('score-val').textContent = this.value"
+               style="max-width:400px;">
+        <span id="score-val" style="font-weight:600; margin-left:8px;">{{ ra.score if ra.score is not none else 50 }}</span>
+        <div class="help">0 = reject outright, 50 = borderline, 100 = exceptional</div>
+      </div>
+
+      <div class="field">
+        <span class="label">Recommendation</span>
+        <div style="display:flex; gap:16px;">
+          <label class="check-label">
+            <input type="radio" name="recommendation" value="accept"
+                   {% if ra.recommendation == 'accept' %}checked{% endif %}> Accept
+          </label>
+          <label class="check-label">
+            <input type="radio" name="recommendation" value="revise"
+                   {% if ra.recommendation == 'revise' %}checked{% endif %}> Revise
+          </label>
+          <label class="check-label">
+            <input type="radio" name="recommendation" value="reject"
+                   {% if ra.recommendation == 'reject' %}checked{% endif %}> Reject
+          </label>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="comments_author">Comments to author</label>
+        <textarea class="textarea" id="comments_author" name="comments_author" rows="6"
+                  placeholder="What worked well? What could be improved? Be constructive.">{{ ra.comments_author }}</textarea>
+        <div class="help">Visible to the author after decisions are finalised.</div>
+      </div>
+
+      <div class="field">
+        <label for="comments_chair">Private notes to chair</label>
+        <textarea class="textarea" id="comments_chair" name="comments_chair" rows="4"
+                  placeholder="Any concerns, conflicts, or context for the committee.">{{ ra.comments_chair }}</textarea>
+        <div class="help">Only visible to the organising committee.</div>
+      </div>
+
+      <div style="display:flex; gap:8px; justify-content:space-between; align-items:center;">
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-ghost" type="submit" name="action" value="draft">Save draft</button>
+          <button class="btn btn-primary" type="submit" name="action" value="submit">Submit review</button>
+        </div>
+        {% if ra.status == 'pending' %}
+        <button class="btn btn-quiet btn-sm" type="button"
+                onclick="document.getElementById('recuse-form').style.display='block'">
+          Recuse yourself
+        </button>
+        {% endif %}
+      </div>
+    </form>
+
+    {% if ra.status == 'pending' %}
+    <div id="recuse-form" style="display:none; margin-top:16px; padding:16px; border:1px solid var(--c-card-border); border-radius:var(--rad);">
+      <form method="post" action="{{ url_for('member.review_recuse', assignment_id=ra.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <p style="margin-bottom:8px;"><strong>Recuse yourself from this review</strong></p>
+        <p class="muted" style="margin-bottom:12px;">
+          Return this abstract to the assignment pool. You won't be assigned to it again.
+          Please explain why so the committee can reassign appropriately.
+        </p>
+        <div class="field">
+          <textarea class="textarea" name="decline_reason" rows="3"
+                    placeholder="e.g. I have a conflict of interest, not my area of expertise, or insufficient time."></textarea>
+        </div>
+        <button class="btn btn-quiet" type="submit">Confirm recusal</button>
+      </form>
+    </div>
+    {% endif %}
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

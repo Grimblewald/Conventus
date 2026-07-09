@@ -15,7 +15,7 @@ from flask import (
 from flask_login import current_user, login_required
 
 from ...extensions import db
-from ...models import Abstract, Conference, OTPCode, Registration
+from ...models import Abstract, Conference, OTPCode, Registration, ReviewAssignment
 from ...models.content import get_site_settings
 from ...security import audit
 from ...services.mail import send_mail
@@ -50,7 +50,16 @@ def dashboard():
         .order_by(Abstract.created_at.desc())
         .all()
     )
-    return render_template("member/dashboard.html", regs=regs, abstracts=abs_)
+    my_reviews = (
+        ReviewAssignment.query
+        .filter_by(reviewer_id=current_user.id)
+        .filter(ReviewAssignment.status != "declined")
+        .options(db.joinedload(ReviewAssignment.abstract))
+        .order_by(ReviewAssignment.created_at.desc())
+        .all()
+    )
+    return render_template("member/dashboard.html",
+                           regs=regs, abstracts=abs_, my_reviews=my_reviews)
 
 
 @member_bp.route("/profile", methods=["GET", "POST"])
@@ -548,6 +557,65 @@ def abstract_figure(aid):
     folder = Path(current_app.config["UPLOAD_FOLDER"]) / "abstracts"
     name = a.figure_filename.split("/", 1)[-1]
     return send_from_directory(folder, name)
+
+
+# ---------------------------------------------------------------------------
+# Review form — reviewers score and comment on assigned abstracts
+# ---------------------------------------------------------------------------
+
+@member_bp.route("/review/<int:assignment_id>", methods=["GET", "POST"])
+@login_required
+def review_form(assignment_id):
+    ra = (ReviewAssignment.query
+          .options(db.joinedload(ReviewAssignment.abstract))
+          .get_or_404(assignment_id))
+    if ra.reviewer_id != current_user.id:
+        abort(403)
+
+    a = ra.abstract
+    if request.method == "POST":
+        action = (request.form.get("action") or "").strip()
+        ra.score = int(request.form.get("score", 0))
+        ra.recommendation = (request.form.get("recommendation") or "").strip() or None
+        ra.comments_author = (request.form.get("comments_author") or "").strip()
+        ra.comments_chair = (request.form.get("comments_chair") or "").strip()
+
+        if action == "submit":
+            if ra.score is None or ra.score < 0 or ra.score > 100:
+                flash("Please provide a score between 0 and 100.", "error")
+                return render_template("member/review_form.html", ra=ra, a=a)
+            if not ra.recommendation:
+                flash("Please select a recommendation.", "error")
+                return render_template("member/review_form.html", ra=ra, a=a)
+            ra.status = "completed"
+            ra.submitted_at = datetime.utcnow()
+            db.session.commit()
+            flash("Review submitted. Thank you.", "success")
+            return redirect(url_for("member.dashboard"))
+        else:
+            ra.status = "pending"
+            db.session.commit()
+            flash("Draft saved.", "success")
+
+    return render_template("member/review_form.html", ra=ra, a=a)
+
+
+@member_bp.route("/review/<int:assignment_id>/recuse", methods=["POST"])
+@login_required
+def review_recuse(assignment_id):
+    ra = ReviewAssignment.query.get_or_404(assignment_id)
+    if ra.reviewer_id != current_user.id:
+        abort(403)
+    if ra.status != "pending":
+        flash("You can only recuse from a pending review.", "error")
+        return redirect(url_for("member.review_form", assignment_id=ra.id))
+
+    reason = (request.form.get("decline_reason") or "").strip()
+    ra.decline_reason = reason
+    ra.status = "declined"
+    db.session.commit()
+    flash("You have been removed from this review. Thank you for letting us know.", "success")
+    return redirect(url_for("member.dashboard"))
 
 
 # ---------------------------------------------------------------------------

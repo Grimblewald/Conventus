@@ -68,6 +68,10 @@
         <input class="input" id="registration_deadline" name="registration_deadline" type="date" value="{{ c.registration_deadline.isoformat() if c.registration_deadline else '' }}" style="max-width:240px;">
         <div class="help">Registrations close automatically after this date.</div>
       </div>
+      <div class="field"><label for="review_deadline">Review deadline</label>
+        <input class="input" id="review_deadline" name="review_deadline" type="date" value="{{ c.review_deadline.isoformat() if c.review_deadline else '' }}" style="max-width:240px;">
+        <div class="help">Optional. Reviewers should submit their reviews by this date.</div>
+      </div>
       <div class="field">
         <label for="max_abstracts_per_user">Max abstracts per user</label>
         <input class="input" id="max_abstracts_per_user" name="max_abstracts_per_user" type="number" min="1" value="{{ c.max_abstracts_per_user or '' }}" style="max-width:120px;" placeholder="Unlimited">
@@ -101,6 +105,11 @@
           <div class="help">Optional. When this date passes, registrations reopen automatically.</div>
         </div>
       </fieldset>
+      <div class="field">
+        <label for="reviewers_per_paper">Reviewers per paper</label>
+        <input class="input" id="reviewers_per_paper" name="reviewers_per_paper" type="number" min="1" max="10" value="{{ c.reviewers_per_paper or 2 }}" style="max-width:100px;">
+        <div class="help">Number of reviewers assigned to each submitted abstract.</div>
+      </div>
     </div>
   </details>
 
@@ -487,6 +496,19 @@
   </div>
 </details>
 
+{% if can('abs.review') %}
+<details class="edit-section">
+  <summary class="edit-section-summary">Peer Review</summary>
+  <div class="edit-section-body">
+    <p class="muted" style="margin-top:0;">Manage reviewers, allocate abstracts, and monitor review progress.</p>
+    <div style="display:flex; gap:8px; margin-top:8px;">
+      <a class="btn btn-primary btn-sm" href="{{ url_for('admin.conference_reviewers', cid=c.id) }}">Manage reviewers</a>
+      <a class="btn btn-ghost btn-sm" href="{{ url_for('admin.conference_reviews', cid=c.id) }}">Review progress →</a>
+    </div>
+  </div>
+</details>
+{% endif %}
+
 {% if can('abs.compile_booklet') %}
 <details class="edit-section">
   <summary class="edit-section-summary">Abstract Booklet</summary>
@@ -522,7 +544,10 @@
         <div class="help">A faint, full-page watermark behind every abstract.</div>
       </div>
 
-      <button class="btn btn-primary" type="submit" style="margin-top:8px;">Compile abstract booklet</button>
+      <div style="display:flex; gap:8px; margin-top:8px;">
+        <button class="btn btn-ghost btn-sm" type="submit" name="booklet_action" value="latex">Download LaTeX source (.zip)</button>
+        <button class="btn btn-primary btn-sm" type="submit" name="booklet_action" value="pdf">Compile booklet PDF</button>
+      </div>
     </form>
   </div>
 </details>

@@ -2,18 +2,37 @@
 {% block title %}Abstracts · Admin{% endblock %}
 {% block admin %}
 <div class="section-head"><div><div class="eyebrow">Submissions</div><h2>Abstracts</h2></div></div>
-<div style="margin-bottom:14px; display:flex; gap:8px;">
-  {% for s in ['submitted', 'accepted', 'rejected', 'revise', 'plenary', 'keynote', 'invited', 'all'] %}
-    <a class="btn btn-{% if status == s %}primary{% else %}ghost{% endif %} btn-sm"
-       href="{{ url_for('admin.abstracts', status=s) }}">{{ s|capitalize }}</a>
-  {% endfor %}
+
+<div style="margin-bottom:14px;">
+  <div style="display:flex; gap:8px; margin-bottom:10px;">
+    {% for s in ['submitted', 'accepted', 'rejected', 'revise', 'plenary', 'keynote', 'invited', 'all'] %}
+      <a class="btn btn-{% if status == s %}primary{% else %}ghost{% endif %} btn-sm"
+         href="{{ url_for('admin.abstracts', status=s, search=search, conference_id=conf_id) }}">{{ s|capitalize }}</a>
+    {% endfor %}
+  </div>
+  <form method="get" style="display:flex; gap:8px; align-items:center;">
+    <input type="hidden" name="status" value="{{ status }}">
+    <input class="input" name="search" value="{{ search }}" placeholder="Search title, author name, or email…" style="max-width:320px;">
+    <select class="select" name="conference_id" style="max-width:240px;">
+      <option value="">All conferences</option>
+      {% for conf in conferences %}
+        <option value="{{ conf.id }}"{% if conf_id == conf.id %} selected{% endif %}>{{ conf.title }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn btn-ghost btn-sm" type="submit">Filter</button>
+    {% if search or conf_id %}
+    <a class="btn btn-quiet btn-sm" href="{{ url_for('admin.abstracts', status=status) }}">Clear</a>
+    {% endif %}
+  </form>
 </div>
+
 {% if items %}
 <div style="overflow-x:auto;">
 <table class="table">
-  <thead><tr><th>Title</th><th>Conference</th><th>Reg</th><th>Author</th><th>Status</th><th>Submitted</th></tr></thead>
+  <thead><tr><th>Title</th><th>Conference</th><th>Reg</th><th>Author</th><th>Reviews</th><th>Status</th><th>Submitted</th></tr></thead>
   <tbody>
     {% for a in items %}
+    {% set review_count = a.reviews | selectattr('status', 'equalto', 'completed') | list | length %}
     <tr>
       <td><a href="{{ url_for('admin.abstract_detail', aid=a.id) }}">{{ a.title }}</a></td>
       <td>{{ a.conference.title if a.conference else '?' }}</td>
@@ -30,6 +49,13 @@
         {% endif %}
       </td>
       <td>{{ a.author.email if a.author else '?' }}</td>
+      <td style="text-align:center;">
+        {% if review_count %}
+          <span style="color:var(--c-success); font-weight:600;">{{ review_count }}</span>
+        {% else %}
+          <span class="muted">—</span>
+        {% endif %}
+      </td>
       <td><span class="status" data-v="{{ a.status }}">{{ a.status }}</span></td>
       <td>{{ a.created_at.strftime('%-d %b %Y') }}</td>
     </tr>

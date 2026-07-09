@@ -24,6 +24,7 @@ from .past_board import PastBoard, PastBoardMember
 from .form_template import FormTemplate
 from .sub_event import SubEvent
 from .audit import AuditLog
+from .reviews import ConferenceReviewer, ReviewAssignment
 
 __all__ = [
     "db",

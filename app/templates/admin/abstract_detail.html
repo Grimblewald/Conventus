@@ -52,6 +52,60 @@
 {% endif %}
 {% if a.coi %}<h3>Conflicts of interest</h3><p>{{ a.coi }}</p>{% endif %}
 
+{% if conf_reviewers %}
+<hr>
+<details class="edit-section" style="margin-bottom:16px;">
+  <summary class="edit-section-summary" style="font-size:15px;">Assign reviewer</summary>
+  <div class="edit-section-body" style="padding-top:12px;">
+    <p class="muted">Manually assign a reviewer from this conference's reviewer pool.</p>
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="assign-reviewer">
+      <div style="display:flex; gap:8px; align-items:end;">
+        <select class="select" name="reviewer_id" style="max-width:360px;">
+          <option value="">— Select reviewer —</option>
+            {% for cr in conf_reviewers %}
+              {% set assigned_count = cr.user.review_assignments | length %}
+              {% set already = review_list | selectattr('reviewer_id', 'equalto', cr.user_id) | list %}
+              <option value="{{ cr.user_id }}"{% if already or cr.user_id == a.user_id %} disabled{% endif %}>
+                {{ cr.user.email if cr.user else cr.user_id }}
+                ({{ assigned_count }} total)
+                {% if already %} — already assigned
+                {% elif cr.user_id == a.user_id %} — author
+                {% endif %}
+              </option>
+            {% endfor %}
+        </select>
+        <button class="btn btn-primary btn-sm" type="submit">Assign</button>
+      </div>
+    </form>
+  </div>
+</details>
+{% endif %}
+
+{% if review_list %}
+<hr>
+<h3>Reviewer feedback</h3>
+<table class="table" style="font-size:13px;">
+  <thead><tr><th>Reviewer</th><th style="text-align:center;">Score</th><th style="text-align:center;">Recommendation</th><th>Comments to author</th><th>Notes to chair</th><th>Status</th></tr></thead>
+  <tbody>
+    {% for r in review_list %}
+    <tr>
+      <td>{{ r.reviewer.email if r.reviewer else '?' }}</td>
+      <td style="text-align:center;">{{ r.score if r.score is not none else '—' }}</td>
+      <td style="text-align:center;">{{ r.recommendation or '—' }}</td>
+      <td style="font-size:12px; max-width:300px;">{{ r.comments_author or '—' }}</td>
+      <td style="font-size:12px; max-width:300px;">{{ r.comments_chair or '—' }}</td>
+      <td><span class="status" data-v="{{ r.status }}">{{ r.status }}</span></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% if a.mean_score is not none %}
+<p class="muted" style="font-size:12px;">Mean score: <strong>{{ a.mean_score }}</strong></p>
+{% endif %}
+{% endif %}
+
 <hr>
 <form method="post" class="form form-wide">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

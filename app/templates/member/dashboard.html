@@ -78,6 +78,28 @@
     {% else %}
       <p class="muted">No abstracts submitted yet.</p>
     {% endif %}
+
+    {% if my_reviews %}
+    <h3 style="margin-top:36px;">Reviews assigned to you</h3>
+    <table class="table">
+      <thead><tr><th>Conference</th><th>Title</th><th>Score</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        {% for ra in my_reviews %}
+        <tr>
+          <td>{{ ra.abstract.conference.title if ra.abstract else '?' }}</td>
+          <td>{{ ra.abstract.title if ra.abstract else '?' }}</td>
+          <td style="text-align:center;">
+            {% if ra.score is not none %}{{ ra.score }}{% else %}<span class="muted">—</span>{% endif %}
+          </td>
+          <td><span class="status" data-v="{{ ra.status }}">{{ ra.status }}</span></td>
+          <td>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('member.review_form', assignment_id=ra.id) }}">Review</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
   </div>
 </section>
 {% endblock %}

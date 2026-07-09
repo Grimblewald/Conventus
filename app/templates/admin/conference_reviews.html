@@ -1,0 +1,145 @@
+{% extends "admin/_base.html" %}
+{% block title %}Review Progress · {{ c.title }} · Admin{% endblock %}
+{% block admin %}
+<div class="section-head">
+  <div>
+    <div class="eyebrow">{{ c.title }}</div>
+    <h2>Review Progress</h2>
+  </div>
+  <div style="display:flex; gap:8px;">
+    <a class="link" href="{{ url_for('admin.conference_reviewers', cid=c.id) }}">← reviewers</a>
+    <a class="link" href="{{ url_for('admin.conference_edit', cid=c.id) }}">← conference</a>
+  </div>
+</div>
+
+<div style="margin-bottom:16px; display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+  <form method="post" action="{{ url_for('admin.conference_bulk_decision', cid=c.id) }}" style="display:flex; gap:8px; align-items:center;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label style="font-size:13px;">Threshold:</label>
+    <input class="input" name="threshold" id="threshold-input" type="number" min="0" max="100" value="{{ threshold_info.value if threshold_info else 70 }}" style="width:70px;">
+    <button class="btn btn-primary btn-sm" name="action" value="accept" type="submit">Accept above</button>
+    <button class="btn btn-ghost btn-sm" name="action" value="revise" type="submit">Revise below</button>
+    <button class="btn btn-quiet btn-sm" name="action" value="reject" type="submit">Reject below</button>
+  </form>
+  <span class="muted" style="font-size:12px;">Only affects abstracts with all {{ n_per_paper }} reviews completed.</span>
+</div>
+
+<div style="margin-bottom:20px; display:flex; gap:16px; align-items:center; flex-wrap:wrap;">
+  <form method="get" style="display:flex; gap:6px; align-items:center;">
+    <input type="hidden" name="target" value="">
+    <label style="font-size:12px;">Preview:</label>
+    <input class="input" name="threshold" type="number" min="0" max="100" placeholder="Score" style="width:70px;">
+    <button class="btn btn-ghost btn-sm" type="submit">Check</button>
+  </form>
+  <span style="font-size:12px; color:var(--c-muted-text);">or</span>
+  <form method="get" style="display:flex; gap:6px; align-items:center;">
+    <label style="font-size:12px;">Accept top</label>
+    <input class="input" name="target" type="number" min="1" placeholder="N" style="width:70px;">
+    <span style="font-size:12px; color:var(--c-muted-text);">abstracts</span>
+    <button class="btn btn-ghost btn-sm" type="submit">Find threshold</button>
+  </form>
+  <span style="font-size:12px; color:var(--c-muted-text);">{{ scored_count }} abstracts with all {{ n_per_paper }} reviews · {{ already_accepted }} already accepted</span>
+</div>
+
+{% if threshold_info %}
+<div class="flash info" style="margin-bottom:16px;">
+  {% if threshold_info.from_target %}
+    To accept the top <strong>{{ threshold_info.accepted }}</strong> abstracts, set threshold to <strong>{{ threshold_info.value }}</strong>
+    (out of {{ threshold_info.total_scored }} fully-reviewed).
+    <a href="?threshold={{ threshold_info.value }}" style="margin-left:8px;">use this threshold →</a>
+  {% else %}
+    At threshold <strong>{{ threshold_info.value }}</strong>: <strong>{{ threshold_info.accepted }}</strong> of {{ threshold_info.total_scored }} fully-reviewed abstracts would be accepted.
+  {% endif %}
+</div>
+{% endif %}
+
+{% if abstracts %}
+<table class="table">
+  <thead>
+    <tr>
+      <th>Title</th>
+      <th>Track</th>
+      <th style="text-align:center;">Reviews</th>
+      <th style="text-align:center;">Mean</th>
+      <th style="text-align:center;">Scores</th>
+      <th>Recommendations</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for a in abstracts %}
+    {% set completed = a.reviews | selectattr('status', 'equalto', 'completed') | list %}
+    <tr>
+      <td><a href="{{ url_for('admin.abstract_detail', aid=a.id) }}">{{ a.title }}</a></td>
+      <td>{{ a.track or '—' }}</td>
+      <td style="text-align:center;">
+        <span class="status" data-v="{{ 'accepted' if completed|length >= (c.reviewers_per_paper or 2) else 'pending' }}">
+          {{ completed|length }}/{{ c.reviewers_per_paper or 2 }}
+        </span>
+      </td>
+      <td style="text-align:center; font-weight:600;">
+        {% if completed %}
+          {{ a.mean_score }}
+        {% else %}
+          <span class="muted">—</span>
+        {% endif %}
+      </td>
+      <td style="text-align:center; font-size:12px;">
+        {% for r in completed %}
+          {{ r.score }}{% if not loop.last %}, {% endif %}
+        {% else %}
+          <span class="muted">—</span>
+        {% endfor %}
+      </td>
+      <td style="font-size:12px;">
+        {% set tally = a.recommendation_tally %}
+        {% if tally %}
+          {% for rec, count in tally.items() %}
+            <span style="display:inline-block; margin-right:8px;">{{ rec }}: {{ count }}</span>
+          {% endfor %}
+        {% else %}
+          <span class="muted">—</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">No submitted abstracts for this conference.</p>
+{% endif %}
+
+{% if under_assigned %}
+<hr style="margin:28px 0;">
+<h3>Under-assigned abstracts</h3>
+<p class="muted" style="margin-bottom:16px;">
+  These abstracts have fewer than {{ n_per_paper }} reviewers assigned.
+  Below are at-capacity reviewers who may be willing to take an extra review.
+  Click <strong>assign</strong> to override the capacity limit for a specific reviewer.
+</p>
+<table class="table">
+  <thead><tr><th>Abstract</th><th>Assigned</th><th>At-capacity reviewers</th></tr></thead>
+  <tbody>
+    {% for a, count, overbooked in under_assigned %}
+    <tr>
+      <td><a href="{{ url_for('admin.abstract_detail', aid=a.id) }}">{{ a.title }}</a></td>
+      <td style="text-align:center;"><span class="status" data-v="pending">{{ count }}/{{ n_per_paper }}</span></td>
+      <td>
+        {% for cr, assigned_count in overbooked %}
+        <form method="post" action="{{ url_for('admin.conference_accept_overflow', cid=c.id) }}"
+              style="display:inline-block; margin-right:8px; margin-bottom:4px;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="abstract_id" value="{{ a.id }}">
+          <input type="hidden" name="reviewer_id" value="{{ cr.user_id }}">
+          <button class="btn btn-quiet btn-sm" type="submit"
+                  title="Currently {{ assigned_count }} reviews assigned (max {{ cr.max_reviews }})">
+            + {{ cr.user.email if cr.user else cr.user_id }}
+          </button>
+        </form>
+        {% endfor %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

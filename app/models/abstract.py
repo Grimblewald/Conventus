@@ -49,6 +49,29 @@ class Abstract(db.Model):
     author = db.relationship("User", foreign_keys=[user_id], backref="abstracts")
     decided_by = db.relationship("User", foreign_keys=[decided_by_id])
     registration = db.relationship("Registration", foreign_keys=[registration_id])
+    reviews = db.relationship("ReviewAssignment", lazy="selectin",
+                              back_populates="abstract")
+
+    @property
+    def review_scores(self) -> list[int]:
+        """Submitted review scores, excluding pending/draft reviews."""
+        return [r.score for r in self.reviews
+                if r.status == "completed" and r.score is not None]
+
+    @property
+    def mean_score(self) -> float | None:
+        scores = self.review_scores
+        if not scores:
+            return None
+        return round(sum(scores) / len(scores), 1)
+
+    @property
+    def recommendation_tally(self) -> dict[str, int]:
+        """Count of completed review recommendations."""
+        from collections import Counter
+        recs = [r.recommendation for r in self.reviews
+                if r.status == "completed" and r.recommendation]
+        return dict(Counter(recs))
 
     @property
     def presenting_author(self) -> tuple[str, str]:

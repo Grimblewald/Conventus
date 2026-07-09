@@ -14,7 +14,7 @@ from flask_login import current_user
 
 from . import admin_bp
 from ...extensions import db
-from ...models import Abstract, Conference, OTPCode, OrganisingCommitteeMember, Registration, Sponsor, SponsorTier, SubEvent, User
+from ...models import Abstract, Conference, ConferenceReviewer, OTPCode, OrganisingCommitteeMember, Registration, ReviewAssignment, Sponsor, SponsorTier, SubEvent, User
 from ...models.abstract import SPEAKER_STATUSES
 from ...models.conference import PriceTier
 from ...security import requires_permission, audit
@@ -103,6 +103,7 @@ _DATE_FIELDS = (
     "start_date", "end_date",
     "abstract_deadline", "early_bird_deadline", "registration_deadline",
     "abstracts_reopen_date", "registrations_reopen_date",
+    "review_deadline",
 )
 
 
@@ -148,6 +149,8 @@ def conference_save(cid):
         c.external_abstract_url = (request.form.get("external_abstract_url") or "").strip() or None
         raw_max = (request.form.get("max_abstracts_per_user") or "").strip()
         c.max_abstracts_per_user = int(raw_max) if raw_max else None
+        raw_rpp = (request.form.get("reviewers_per_paper") or "").strip()
+        c.reviewers_per_paper = int(raw_rpp) if raw_rpp else 2
 
         for fld in _DATE_FIELDS:
             raw = (request.form.get(fld) or "").strip()
@@ -729,20 +732,72 @@ def conference_delete_confirm(cid):
 @requires_permission("abs.review")
 def abstracts():
     status = request.args.get("status", "submitted")
+    search = (request.args.get("search") or "").strip()
+    conf_id = request.args.get("conference_id", type=int)
+
     q = Abstract.query.filter(Abstract.deleted_at.is_(None))
     if status != "all":
         q = q.filter_by(status=status)
+    if search:
+        q = q.join(Abstract.author).filter(
+            db.or_(
+                Abstract.title.ilike(f"%{search}%"),
+                Abstract.authors.ilike(f"%{search}%"),
+                User.email.ilike(f"%{search}%"),
+                User.full_name.ilike(f"%{search}%"),
+            )
+        )
+    if conf_id:
+        q = q.filter(Abstract.conference_id == conf_id)
+
     items = q.options(
         db.joinedload(Abstract.registration),
+        db.joinedload(Abstract.author),
     ).order_by(Abstract.created_at.desc()).all()
-    return render_template("admin/abstracts.html", items=items, status=status)
+
+    conferences = (Conference.query
+                   .filter(Conference.deleted_at.is_(None))
+                   .order_by(Conference.start_date.desc())
+                   .all())
+    return render_template("admin/abstracts.html", items=items, status=status,
+                           search=search, conf_id=conf_id,
+                           conferences=conferences)
 
 
 @admin_bp.route("/abstracts/<int:aid>", methods=["GET", "POST"])
 @requires_permission("abs.review")
 def abstract_detail(aid):
     a = Abstract.query.get_or_404(aid)
+    review_list = list(a.reviews) if a.reviews else []
+    conf_reviewers = (ConferenceReviewer.query
+                      .filter_by(conference_id=a.conference_id, is_active=True)
+                      .options(db.joinedload(ConferenceReviewer.user))
+                      .all())
+    conf_reviewers.sort(key=lambda cr: (
+        ReviewAssignment.query.filter_by(reviewer_id=cr.user_id).count(),
+    ))
+
     if request.method == "POST":
+        action = request.form.get("action", "")
+        if action == "assign-reviewer":
+            reviewer_id = int(request.form.get("reviewer_id", 0))
+            if reviewer_id == a.user_id:
+                flash("Cannot assign an author as their own reviewer.", "error")
+                return redirect(url_for("admin.abstract_detail", aid=a.id))
+            existing = ReviewAssignment.query.filter_by(
+                abstract_id=a.id, reviewer_id=reviewer_id).first()
+            if existing:
+                flash("This reviewer is already assigned to this abstract.", "error")
+            else:
+                ra = ReviewAssignment(
+                    abstract_id=a.id, reviewer_id=reviewer_id,
+                    status="pending",
+                )
+                db.session.add(ra)
+                db.session.commit()
+                flash("Reviewer assigned.", "success")
+            return redirect(url_for("admin.abstract_detail", aid=a.id))
+
         a.status = (request.form.get("status") or a.status).strip()
         a.reviewer_notes = (request.form.get("reviewer_notes") or "").strip()
         a.decided_by_id = current_user.id
@@ -753,7 +808,9 @@ def abstract_detail(aid):
                      summary=f"{a.title}: {a.status}")
         flash("Decision recorded.", "success")
         return redirect(url_for("admin.abstracts"))
-    return render_template("admin/abstract_detail.html", a=a)
+    return render_template("admin/abstract_detail.html", a=a,
+                           review_list=review_list,
+                           conf_reviewers=conf_reviewers)
 
 
 # ---------------------------------------------------------------------------
@@ -821,6 +878,355 @@ def abstract_delete_confirm(aid):
         flash(f"Deleted abstract \"{title}\".", "success")
         return redirect(url_for("admin.abstracts"))
     return render_template("admin/abstract_delete_confirm.html", a=a)
+
+
+# ---------------------------------------------------------------------------
+# Review system — reviewer management, allocation, overview
+# ---------------------------------------------------------------------------
+
+@admin_bp.route("/conferences/<int:cid>/reviewers", methods=["GET", "POST"])
+@requires_permission("abs.review", "conf.edit")
+def conference_reviewers(cid):
+    c = Conference.query.get_or_404(cid)
+    tracks = c.tracks_list()
+    if request.method == "POST":
+        email = (request.form.get("email") or "").strip().lower()
+        expertise = ", ".join(request.form.getlist("expertise"))
+        max_reviews = int(request.form.get("max_reviews", 5))
+        user = User.query.filter_by(email=email, deleted_at=None).first()
+        if not user:
+            flash("No user found with that email address.", "error")
+            return redirect(url_for("admin.conference_reviewers", cid=c.id))
+        existing = ConferenceReviewer.query.filter_by(
+            conference_id=c.id, user_id=user.id).first()
+        if existing:
+            flash(f"{user.full_name or user.email} is already a reviewer.", "error")
+            return redirect(url_for("admin.conference_reviewers", cid=c.id))
+        cr = ConferenceReviewer(
+            conference_id=c.id, user_id=user.id,
+            expertise=expertise, max_reviews=max_reviews,
+        )
+        db.session.add(cr)
+        db.session.commit()
+        flash(f"Added {user.full_name or user.email} as reviewer.", "success")
+        return redirect(url_for("admin.conference_reviewers", cid=c.id))
+
+    crs = (ConferenceReviewer.query
+           .filter_by(conference_id=c.id)
+           .order_by(ConferenceReviewer.created_at.desc())
+           .all())
+    users = {cr.user_id: cr.user for cr in crs}
+    return render_template("admin/conference_reviewers.html", c=c,
+                           reviewers=crs, users=users, tracks=tracks)
+
+
+@admin_bp.route("/conferences/<int:cid>/reviewers/<int:rid>/edit", methods=["POST"])
+@requires_permission("abs.review", "conf.edit")
+def conference_reviewer_edit(cid, rid):
+    cr = ConferenceReviewer.query.filter_by(id=rid, conference_id=cid).first_or_404()
+    cr.expertise = ", ".join(request.form.getlist("expertise"))
+    cr.max_reviews = int(request.form.get("max_reviews", 5))
+    cr.is_active = bool(request.form.get("is_active"))
+    db.session.commit()
+    flash("Reviewer updated.", "success")
+    return redirect(url_for("admin.conference_reviewers", cid=cid))
+
+
+@admin_bp.route("/conferences/<int:cid>/reviewers/<int:rid>/remove", methods=["POST"])
+@requires_permission("abs.review", "conf.edit")
+def conference_reviewer_remove(cid, rid):
+    cr = ConferenceReviewer.query.filter_by(id=rid, conference_id=cid).first_or_404()
+    conf_abstract_ids = [a.id for a in Abstract.query.filter_by(conference_id=cid).all()]
+    if conf_abstract_ids:
+        ReviewAssignment.query.filter(
+            ReviewAssignment.reviewer_id == cr.user_id,
+            ReviewAssignment.abstract_id.in_(conf_abstract_ids),
+            ReviewAssignment.status == "pending",
+        ).delete(synchronize_session=False)
+    db.session.delete(cr)
+    db.session.commit()
+    flash("Reviewer removed. Any pending assignments were deleted.", "success")
+    return redirect(url_for("admin.conference_reviewers", cid=cid))
+
+
+@admin_bp.route("/conferences/<int:cid>/allocate-reviews", methods=["POST"])
+@requires_permission("abs.review", "conf.edit")
+def conference_allocate_reviews(cid):
+    c = Conference.query.get_or_404(cid)
+    n_per_paper = c.reviewers_per_paper or 2
+
+    active_reviewers = (ConferenceReviewer.query
+                        .filter_by(conference_id=c.id, is_active=True)
+                        .all())
+    if not active_reviewers:
+        flash("No active reviewers assigned to this conference.", "error")
+        return redirect(url_for("admin.conference_reviewers", cid=c.id))
+
+    abstracts = (Abstract.query
+                 .filter_by(conference_id=c.id, deleted_at=None)
+                 .filter(Abstract.status == "submitted")
+                 .all())
+    if not abstracts:
+        flash("No submitted abstracts to allocate.", "info")
+        return redirect(url_for("admin.conference_reviewers", cid=c.id))
+
+    allocated = 0
+    failed_no_candidates = 0
+    failed_at_capacity = 0
+    failed_author_only = 0
+
+    for a in abstracts:
+        existing_count = (ReviewAssignment.query
+                          .filter_by(abstract_id=a.id).count())
+        if existing_count >= n_per_paper:
+            continue
+
+        needed = n_per_paper - existing_count
+
+        candidates = []
+        skipped_self = False
+        skipped_declined = 0
+        skipped_capacity = 0
+        for cr in active_reviewers:
+            if cr.user_id == a.user_id:
+                skipped_self = True
+                continue
+            declined_this = ReviewAssignment.query.filter_by(
+                abstract_id=a.id, reviewer_id=cr.user_id,
+                status="declined").first()
+            if declined_this:
+                skipped_declined += 1
+                continue
+            assigned_count = (ReviewAssignment.query
+                               .filter_by(reviewer_id=cr.user_id)
+                               .filter(ReviewAssignment.status != "declined")
+                               .count())
+            if assigned_count >= cr.max_reviews:
+                skipped_capacity += 1
+                continue
+
+            score = _expertise_match(cr.expertise, a.track)
+            current_count = (ReviewAssignment.query
+                             .filter_by(reviewer_id=cr.user_id,
+                                        status="pending").count())
+            candidates.append((cr, score, current_count))
+
+        candidates.sort(key=lambda x: (-x[1], x[2]))
+
+        for cr, _, _ in candidates[:needed]:
+            existing = ReviewAssignment.query.filter_by(
+                abstract_id=a.id, reviewer_id=cr.user_id).first()
+            if existing:
+                continue
+            ra = ReviewAssignment(
+                abstract_id=a.id, reviewer_id=cr.user_id,
+                status="pending",
+            )
+            db.session.add(ra)
+            allocated += 1
+
+        assigned_after = (ReviewAssignment.query
+                          .filter_by(abstract_id=a.id).count())
+        still_needed = n_per_paper - assigned_after
+        if still_needed > 0:
+            if not candidates:
+                if skipped_self and skipped_capacity >= len(active_reviewers) - 1:
+                    if len(active_reviewers) == 1:
+                        failed_author_only += 1
+                    else:
+                        failed_at_capacity += 1
+                else:
+                    failed_no_candidates += 1
+            else:
+                failed_at_capacity += 1
+
+    db.session.commit()
+
+    if allocated == 0 and abstracts:
+        flash(
+            f"Could not allocate any reviews. "
+            f"{failed_author_only} abstracts have only themselves as reviewer, "
+            f"{failed_no_candidates} have no eligible reviewers, "
+            f"{failed_at_capacity} have all reviewers at capacity.",
+            "error",
+        )
+    elif allocated > 0:
+        parts = [f"Allocated {allocated} review assignments across {len(abstracts)} abstracts."]
+        if failed_no_candidates:
+            parts.append(f"{failed_no_candidates} abstracts could not be allocated — no eligible reviewers (check expertise settings or recusals).")
+        if failed_at_capacity:
+            parts.append(f"{failed_at_capacity} abstracts could not be allocated — all reviewers at maximum capacity.")
+        if failed_author_only:
+            parts.append(f"{failed_author_only} abstracts could not be allocated — the only possible reviewer is the author.")
+        flash(" ".join(parts),
+              "warning" if (failed_no_candidates or failed_at_capacity or failed_author_only) else "success")
+    return redirect(url_for("admin.conference_reviewers", cid=c.id))
+
+
+def _expertise_match(expertise: str, track: str) -> int:
+    """Score how well reviewer expertise matches a track (0-100)."""
+    if not expertise or not track:
+        return 50
+    exp_tokens = set(expertise.lower().replace(",", " ").split())
+    track_tokens = set(track.lower().split())
+    if not exp_tokens or not track_tokens:
+        return 50
+    overlap = exp_tokens & track_tokens
+    if not overlap:
+        return 30
+    raw = min(100, int(100 * len(overlap) / max(len(exp_tokens), len(track_tokens))))
+    return max(30, raw)
+
+
+@admin_bp.route("/conferences/<int:cid>/reviews")
+@requires_permission("abs.review")
+def conference_reviews(cid):
+    c = Conference.query.get_or_404(cid)
+    n_per_paper = c.reviewers_per_paper or 2
+    abstracts = (Abstract.query
+                 .filter_by(conference_id=c.id, deleted_at=None)
+                 .filter(Abstract.status == "submitted")
+                 .order_by(Abstract.created_at.asc())
+                 .all())
+
+    active_reviewers = (ConferenceReviewer.query
+                        .filter_by(conference_id=c.id, is_active=True)
+                        .all())
+    reviewer_users = {cr.user_id: cr.user.email for cr in active_reviewers}
+    reviewer_users.update({cr.user_id: cr.user.full_name for cr in active_reviewers})
+
+    under_assigned = []
+    for a in abstracts:
+        ra_count = sum(1 for r in a.reviews if r.status != "declined")
+        if ra_count < n_per_paper:
+            overbooked = []
+            for cr in active_reviewers:
+                if cr.user_id == a.user_id:
+                    continue
+                declined = any(r.status == "declined" and r.reviewer_id == cr.user_id
+                              for r in a.reviews)
+                if declined:
+                    continue
+                assigned = sum(1 for r in a.reviews if r.reviewer_id == cr.user_id)
+                if assigned > 0:
+                    continue
+                over_count = ReviewAssignment.query.filter_by(
+                    reviewer_id=cr.user_id).count()
+                if over_count >= cr.max_reviews:
+                    overbooked.append((cr, over_count))
+            if overbooked:
+                under_assigned.append((a, ra_count, overbooked))
+
+    threshold_preview = request.args.get("threshold", type=int)
+    target_count = request.args.get("target", type=int)
+
+    scored = []
+    for a in abstracts:
+        completed = [r for r in a.reviews if r.status == "completed"]
+        if len(completed) >= n_per_paper and a.mean_score is not None:
+            scored.append((a, a.mean_score))
+    scored.sort(key=lambda x: -x[1])
+
+    threshold_info = None
+    if threshold_preview is not None:
+        accepted = sum(1 for _, ms in scored if ms >= threshold_preview)
+        threshold_info = {
+            "value": threshold_preview,
+            "accepted": accepted,
+            "total_scored": len(scored),
+        }
+    elif target_count is not None and scored:
+        target = max(1, min(target_count, len(scored)))
+        threshold_for_target = scored[target - 1][1] if target <= len(scored) else scored[-1][1]
+        threshold_info = {
+            "value": threshold_for_target,
+            "accepted": target,
+            "total_scored": len(scored),
+            "from_target": True,
+        }
+
+    return render_template("admin/conference_reviews.html", c=c,
+                           abstracts=abstracts,
+                           under_assigned=under_assigned,
+                           n_per_paper=n_per_paper,
+                           threshold_info=threshold_info,
+                           scored_count=len(scored),
+                           already_accepted=sum(
+                               1 for a in abstracts if a.status == "accepted"))
+
+
+@admin_bp.route("/conferences/<int:cid>/accept-overflow", methods=["POST"])
+@requires_permission("abs.review", "conf.edit")
+def conference_accept_overflow(cid):
+    c = Conference.query.get_or_404(cid)
+    abstract_id = int(request.form.get("abstract_id", 0))
+    reviewer_id = int(request.form.get("reviewer_id", 0))
+
+    a = Abstract.query.get_or_404(abstract_id)
+    if a.conference_id != c.id:
+        abort(404)
+
+    cr = ConferenceReviewer.query.filter_by(
+        conference_id=c.id, user_id=reviewer_id).first()
+    if not cr:
+        flash("Reviewer not found for this conference.", "error")
+        return redirect(url_for("admin.conference_reviews", cid=c.id))
+
+    existing = ReviewAssignment.query.filter_by(
+        abstract_id=a.id, reviewer_id=reviewer_id).first()
+    if existing:
+        flash("Assignment already exists.", "error")
+        return redirect(url_for("admin.conference_reviews", cid=c.id))
+
+    ra = ReviewAssignment(
+        abstract_id=a.id, reviewer_id=reviewer_id, status="pending",
+    )
+    db.session.add(ra)
+    db.session.commit()
+    flash(f"Assigned overflow review to {cr.user.email if cr.user else reviewer_id}.", "success")
+    return redirect(url_for("admin.conference_reviews", cid=c.id))
+
+
+@admin_bp.route("/conferences/<int:cid>/bulk-decision", methods=["POST"])
+@requires_permission("abs.review")
+def conference_bulk_decision(cid):
+    c = Conference.query.get_or_404(cid)
+    threshold = int(request.form.get("threshold", 70))
+    action = (request.form.get("action") or "").strip()
+
+    if action not in ("accept", "reject", "revise"):
+        flash("Invalid action.", "error")
+        return redirect(url_for("admin.conference_reviews", cid=c.id))
+
+    status_map = {"accept": "accepted", "reject": "rejected", "revise": "revise"}
+
+    changed = 0
+    abstracts = (Abstract.query
+                 .filter_by(conference_id=c.id, deleted_at=None)
+                 .filter(Abstract.status == "submitted")
+                 .options(db.joinedload(Abstract.reviews))
+                 .all())
+    for a in abstracts:
+        ms = a.mean_score
+        if ms is None:
+            continue
+        completed = [r for r in a.reviews if r.status == "completed"]
+        if len(completed) < (c.reviewers_per_paper or 2):
+            continue
+        if action == "accept" and ms >= threshold:
+            a.status = "accepted"
+            changed += 1
+        elif action == "reject" and ms < threshold:
+            a.status = "rejected"
+            changed += 1
+        elif action == "revise" and ms < threshold:
+            a.status = "revise"
+            changed += 1
+
+    db.session.commit()
+    verb = {"accept": "Accepted", "reject": "Rejected", "revise": "Sent for revision"}
+    flash(f"{verb.get(action, 'Updated')} {changed} abstracts.", "success")
+    return redirect(url_for("admin.conference_reviews", cid=c.id))
 
 
 # ---------------------------------------------------------------------------
@@ -899,6 +1305,10 @@ def conference_compile_booklet(cid):
         flash("No accepted abstracts to compile.", "error")
         return redirect(url_for("admin.abstracts"))
 
+    uploads_root = Path(current_app.config["UPLOAD_FOLDER"])
+    cache_dir = uploads_root / "abstracts" / ".booklet-cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
     cache_key = hashlib.sha256(
         ",".join(
             [f"{a.id}:{a.status}:{a.updated_at.isoformat()}" for a in abstracts]
@@ -910,24 +1320,26 @@ def conference_compile_booklet(cid):
         ).encode()
     ).hexdigest()
 
-    cache_dir = Path(current_app.config["UPLOAD_FOLDER"]) / "abstracts" / ".booklet-cache"
-    cache_dir.mkdir(parents=True, exist_ok=True)
     cache_file = cache_dir / f"{c.slug}-{cache_key[:12]}.zip"
+    pdf_cache_file = cache_dir / f"{c.slug}-{cache_key[:12]}.pdf"
 
     for old in cache_dir.glob(f"{c.slug}-*.zip"):
         if old != cache_file:
             old.unlink(missing_ok=True)
 
-    if cache_file.exists():
+    action = request.form.get("booklet_action", "latex")
+
+    if action == "pdf" and pdf_cache_file.exists():
+        return send_file(pdf_cache_file, as_attachment=True,
+                         download_name=f"booklet-{c.slug}.pdf")
+
+    if action != "pdf" and cache_file.exists():
         return send_file(cache_file, as_attachment=True,
                          download_name=f"abstracts-{c.slug}.zip")
-
-    uploads_root = Path(current_app.config["UPLOAD_FOLDER"])
 
     with tempfile.TemporaryDirectory() as tmp:
         src = Path(tmp)
 
-        # --- Booklet decoration images (header / footer / background) ---
         def _copy_booklet_image(col_name: str, label: str) -> str | None:
             filename = getattr(c, col_name, None)
             if not filename:
@@ -943,7 +1355,6 @@ def conference_compile_booklet(cid):
         footer_rel = _copy_booklet_image("booklet_footer_filename", "footer")
         bg_rel = _copy_booklet_image("booklet_background_filename", "background")
 
-        # --- Abstract subfolders ---
         inputs: list[str] = []
         for i, a in enumerate(abstracts, 1):
             label = f"{i:03d}"
@@ -970,14 +1381,44 @@ def conference_compile_booklet(cid):
         preamble = _booklet_preamble(c, inputs, header_rel, footer_rel, bg_rel)
         (src / "booklet.tex").write_text(preamble, encoding="utf-8")
 
-        zip_path = cache_file
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            for f in sorted(src.rglob("*")):
-                if f.is_file():
-                    zf.write(f, str(f.relative_to(src)))
+        if action == "pdf":
+            return _compile_pdf(src, c, pdf_cache_file)
+        else:
+            zip_path = cache_file
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                for f in sorted(src.rglob("*")):
+                    if f.is_file():
+                        zf.write(f, str(f.relative_to(src)))
+            return send_file(zip_path, as_attachment=True,
+                             download_name=f"abstracts-{c.slug}.zip")
 
-    return send_file(zip_path, as_attachment=True,
-                     download_name=f"abstracts-{c.slug}.zip")
+
+def _compile_pdf(src: Path, c: Conference, cache_file: Path):
+    import subprocess
+    tex_file = src / "booklet.tex"
+    try:
+        subprocess.run(
+            ["pdflatex", "-interaction=nonstopmode", "-output-directory",
+             str(src), str(tex_file)],
+            check=True, capture_output=True, timeout=120,
+        )
+        pdf = src / "booklet.pdf"
+        if pdf.exists():
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            import shutil
+            shutil.copy2(pdf, cache_file)
+            return send_file(cache_file, as_attachment=True,
+                             download_name=f"booklet-{c.slug}.pdf")
+        flash("PDF compilation produced no output. Check the LaTeX source for errors.", "error")
+    except subprocess.CalledProcessError as e:
+        flash(f"PDF compilation failed. See error details below.", "error")
+        return ("<pre>" + e.stderr.decode("utf-8", errors="replace")[:5000] + "</pre>", 200,
+                {"Content-Type": "text/html"})
+    except FileNotFoundError:
+        flash("pdflatex is not installed on this server. Install texlive to enable PDF compilation.", "error")
+    except subprocess.TimeoutExpired:
+        flash("PDF compilation timed out (2 minute limit). The booklet may be too large.", "error")
+    return redirect(url_for("admin.conference_edit", cid=c.id))
 
 
 # ---------------------------------------------------------------------------

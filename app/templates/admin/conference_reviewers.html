@@ -1,0 +1,111 @@
+{% extends "admin/_base.html" %}
+{% block title %}Reviewers · {{ c.title }} · Admin{% endblock %}
+{% block admin %}
+<div class="section-head">
+  <div>
+    <div class="eyebrow">{{ c.title }}</div>
+    <h2>Reviewers</h2>
+  </div>
+  <div style="display:flex; gap:8px;">
+    <a class="link" href="{{ url_for('admin.conference_edit', cid=c.id) }}">← conference</a>
+  </div>
+</div>
+
+<div style="display:flex; gap:16px; margin-bottom:24px;">
+  <div style="flex:1;">
+    <h3>Add reviewer</h3>
+    <form method="post" class="form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="field">
+        <label for="email">Email address</label>
+        <input class="input" id="email" name="email" type="email" required placeholder="reviewer@example.com">
+        <div class="help">User must already have an account on this site.</div>
+      </div>
+      <div class="field">
+        <span class="label">Expertise (select tracks)</span>
+        {% if tracks %}
+        <div style="display:flex; flex-wrap:wrap; gap:4px 16px; max-width:500px;">
+          {% for t in tracks %}
+          <label class="check-label" style="font-size:13px;">
+            <input type="checkbox" name="expertise" value="{{ t }}"> {{ t }}
+          </label>
+          {% endfor %}
+        </div>
+        {% else %}
+        <p class="muted">No tracks configured for this conference. Set tracks in the conference editor first.</p>
+        {% endif %}
+        <div class="help">Matched against abstract tracks during auto-allocation. Select all that apply.</div>
+      </div>
+      <div class="field">
+        <label for="max_reviews">Max reviews</label>
+        <input class="input" id="max_reviews" name="max_reviews" type="number" min="1" max="20" value="5" style="max-width:100px;">
+      </div>
+      <button class="btn btn-primary" type="submit">Add reviewer</button>
+    </form>
+  </div>
+
+  <div style="flex:1;">
+    <h3>Review settings</h3>
+    <dl>
+      <div><dt>Reviewers per paper</dt><dd>{{ c.reviewers_per_paper }}</dd></div>
+      <div><dt>Review deadline</dt><dd>{{ c.review_deadline.strftime('%-d %b %Y') if c.review_deadline else 'Not set' }}</dd></div>
+    </dl>
+    <div style="margin-top:12px;">
+      <form method="post" action="{{ url_for('admin.conference_allocate_reviews', cid=c.id) }}" style="display:inline;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-primary" type="submit">Allocate reviews</button>
+      </form>
+      <a class="btn btn-ghost btn-sm" href="{{ url_for('admin.conference_reviews', cid=c.id) }}">View review progress →</a>
+    </div>
+  </div>
+</div>
+
+{% if reviewers %}
+<h3>Current reviewers</h3>
+<table class="table">
+  <thead><tr><th>Name</th><th>Email</th><th>Expertise</th><th>Max</th><th>Active</th><th></th></tr></thead>
+  <tbody>
+    {% for cr in reviewers %}
+    {% set u = users.get(cr.user_id) %}
+    {% set cr_tracks = cr.expertise.split(', ') if cr.expertise else [] %}
+    <tr>
+      <td>{{ u.full_name if u else '?' }}</td>
+      <td>{{ u.email if u else '?' }}</td>
+      <td>
+        <form method="post" action="{{ url_for('admin.conference_reviewer_edit', cid=c.id, rid=cr.id) }}" style="display:flex; flex-direction:column; gap:4px;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          {% if tracks %}
+          <div style="display:flex; flex-wrap:wrap; gap:2px 10px; font-size:12px;">
+            {% for t in tracks %}
+            <label class="check-label" style="font-size:11px;">
+              <input type="checkbox" name="expertise" value="{{ t }}"{% if t in cr_tracks %} checked{% endif %}> {{ t }}
+            </label>
+            {% endfor %}
+          </div>
+          {% endif %}
+          <div style="display:flex; gap:6px; align-items:center; margin-top:2px;">
+            <input type="number" name="max_reviews" value="{{ cr.max_reviews }}" min="1" max="20" style="width:50px; font-size:12px;">
+            <label class="check-label" style="font-size:11px; white-space:nowrap;">
+              <input type="checkbox" name="is_active" value="1"{% if cr.is_active %} checked{% endif %}> Active
+            </label>
+            <button class="btn btn-quiet btn-sm" type="submit">Save</button>
+          </div>
+        </form>
+      </td>
+      <td style="text-align:center;">{{ cr.max_reviews }}</td>
+      <td style="text-align:center;">{% if cr.is_active %}✓{% else %}—{% endif %}</td>
+      <td>
+        <form method="post" action="{{ url_for('admin.conference_reviewer_remove', cid=c.id, rid=cr.id) }}"
+              data-confirm="Remove this reviewer? Any pending review assignments will be deleted." style="display:inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-quiet btn-sm" type="submit">Remove</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">No reviewers added yet. Use the form above to add one.</p>
+{% endif %}
+{% endblock %}

@@ -43,3 +43,6 @@ migrations/__pycache__/
 /backups
 AGENTS.md
 TODO.md
+old_booklets/
+emails/
+emails-monolith.txt

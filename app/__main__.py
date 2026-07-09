@@ -5,6 +5,7 @@ Commands:
     update             backup, pull, migrate, restart
     revert             restore last backup
     backup             manual backup
+    syncpages          sync content/pages/*.md to database
     register-service   install systemd units
     uninstall-service  remove systemd units
 """
@@ -22,6 +23,7 @@ COMMANDS: dict[str, tuple[str, ...]] = {
     "update":             ("scripts/update.sh",),
     "revert":             ("scripts/update.sh", "--revert"),
     "backup":             ("scripts/backup.py",),
+    "syncpages":          ("scripts/sync_pages.py",),
     "register-service":   ("scripts/register-service.sh",),
     "uninstall-service":  ("scripts/remove-service.sh",),
 }

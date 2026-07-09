@@ -54,6 +54,8 @@ class Conference(db.Model):
     early_bird_deadline = db.Column(db.Date)
     registration_deadline = db.Column(db.Date)
     max_abstracts_per_user = db.Column(db.Integer, nullable=True)
+    reviewers_per_paper = db.Column(db.Integer, default=2, nullable=False)
+    review_deadline = db.Column(db.Date, nullable=True)
 
     is_accepting_abstracts = db.Column(db.Boolean, default=True, nullable=False)
     is_accepting_registrations = db.Column(db.Boolean, default=True, nullable=False)
@@ -86,6 +88,12 @@ class Conference(db.Model):
         lazy="joined",
         cascade="all, delete-orphan",
         order_by="SponsorTier.display_order",
+    )
+    reviewers = db.relationship(
+        "ConferenceReviewer",
+        back_populates="conference",
+        lazy="dynamic",
+        cascade="all, delete-orphan",
     )
 
     @property

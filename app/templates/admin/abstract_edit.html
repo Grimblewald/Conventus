@@ -28,6 +28,16 @@ comes from the authors field below.</p>
       {% endfor %}
     </select>
   </div>
+
+  <div class="field">
+    <label for="owner_email">Author account email (optional)</label>
+    <input class="input" id="owner_email" name="owner_email" type="email"
+           placeholder="speaker@university.edu">
+    <div class="help">Leave blank for no account (invited/plenary speakers).
+      If given, the abstract is attached to that account — created
+      automatically if it doesn't exist — so the speaker can log in and
+      see it on their dashboard.</div>
+  </div>
   {% endif %}
 
   <div class="field">

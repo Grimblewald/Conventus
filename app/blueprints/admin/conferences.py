@@ -520,86 +520,6 @@ def conference_save(cid):
 
 
 # ---------------------------------------------------------------------------
-# Manual abstract submission (on behalf of a speaker)
-# ---------------------------------------------------------------------------
-
-@admin_bp.route("/conferences/<int:cid>/add-abstract", methods=["POST"])
-@requires_permission("conf.edit")
-def conference_add_abstract(cid):
-    c = Conference.query.get_or_404(cid)
-    try:
-        owner_email = (request.form.get("owner_email") or "").strip().lower()
-        if not owner_email:
-            raise ValueError("Abstract owner email is required.")
-        full_name = (request.form.get("full_name") or "").strip()
-        title = (request.form.get("abs_title") or "").strip()
-        authors = (request.form.get("abs_authors") or "").strip()
-        body = (request.form.get("abs_body") or "").strip()
-        track = (request.form.get("abs_track") or "").strip()
-        status = (request.form.get("abs_status") or "accepted").strip()
-        if not title:
-            raise ValueError("Title is required.")
-        if not authors:
-            if full_name:
-                authors = f"{full_name}||"
-            else:
-                raise ValueError("Authors field is required.")
-
-        user = User.query.filter_by(email=owner_email).first()
-        if not user:
-            user = User(email=owner_email, full_name=full_name or owner_email,
-                        role_name="unregistered")
-            db.session.add(user)
-            db.session.flush()
-
-        a = Abstract(
-            user_id=user.id,
-            conference_id=c.id,
-            title=title,
-            authors=authors,
-            body=body or "",
-            track=track,
-            status=status,
-            decided_by_id=current_user.id,
-        )
-
-        pic = request.files.get("abs_profile_picture")
-        if pic and pic.filename:
-            rel = save_image(
-                pic,
-                upload_folder=current_app.config["UPLOAD_FOLDER"],
-                subdir="abstracts",
-                prefix="profile-",
-                max_bytes=current_app.config["MAX_HERO_BYTES"],
-                target_size=400,
-                force_webp=True,
-            )
-            a.profile_picture_filename = rel.split("/", 1)[-1]
-
-        db.session.add(a)
-        db.session.commit()
-
-        reg = Registration.query.filter_by(
-            user_id=user.id,
-            conference_id=c.id,
-            deleted_at=None,
-        ).first()
-        if reg:
-            a.registration_id = reg.id
-            db.session.commit()
-        audit.record("abstract.admin_created",
-                     target_kind="abstract", target_id=a.id,
-                     summary=f"Added on behalf of {owner_email} for {c.slug}: {title}")
-        flash(f"Abstract \"{title}\" added for {owner_email}.", "success")
-    except UploadError as e:
-        flash(str(e), "error")
-    except Exception as e:
-        db.session.rollback()
-        flash(f"Could not add abstract: {e}", "error")
-    return redirect(url_for("admin.conference_edit", cid=c.id))
-
-
-# ---------------------------------------------------------------------------
 # Price tiers (one-screen editor inside conference_edit)
 # ---------------------------------------------------------------------------
 
@@ -926,6 +846,20 @@ def abstract_new():
         errors = _apply_abstract_form(a)
         if c is None:
             errors.insert(0, "Choose a conference.")
+
+        # Optional author account: attach by email (created if missing).
+        # Left blank, the abstract is admin-entered with no account.
+        owner_email = (request.form.get("owner_email") or "").strip().lower()
+        if owner_email and not errors:
+            user = User.query.filter_by(email=owner_email).first()
+            if not user:
+                user = User(email=owner_email,
+                            full_name=a.presenting_author[0] or owner_email,
+                            role_name="unregistered")
+                db.session.add(user)
+                db.session.flush()
+            a.user_id = user.id
+
         if errors:
             for err in errors:
                 flash(err, "error")
@@ -934,9 +868,20 @@ def abstract_new():
                                    statuses=ALL_STATUSES, is_new=True)
         db.session.add(a)
         db.session.commit()
+
+        # Auto-link to the account's registration, as the member flow does.
+        if a.user_id and a.registration_id is None:
+            reg = Registration.query.filter_by(
+                user_id=a.user_id, conference_id=c.id,
+                deleted_at=None).first()
+            if reg:
+                a.registration_id = reg.id
+                db.session.commit()
+
         audit.record("abstract.created",
                      target_kind="abstract", target_id=a.id,
-                     summary=f"Admin-entered for {c.slug}: {a.title}")
+                     summary=f"Admin-entered for {c.slug} "
+                             f"({owner_email or 'no account'}): {a.title}")
         flash("Abstract created.", "success")
         return redirect(url_for("admin.abstract_detail", aid=a.id))
     return render_template("admin/abstract_edit.html", a=None,

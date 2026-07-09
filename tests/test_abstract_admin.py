@@ -58,6 +58,23 @@ class TestAdminCreate:
             # Scheme was auto-prefixed
             assert a.website_url == "https://example-lab.org/plenary"
 
+    def test_create_with_owner_email_attaches_account(self, seeded,
+                                                      admin_client,
+                                                      conference, app):
+        resp = admin_client.post(
+            "/admin/abstracts/new",
+            data=_form(conference, title="Attached to account",
+                       owner_email="speaker@test.example.org"),
+            follow_redirects=True)
+        assert resp.status_code == 200
+        with app.app_context():
+            from app.models import User
+            a = Abstract.query.filter_by(title="Attached to account").first()
+            assert a is not None and a.user_id is not None
+            u = User.query.get(a.user_id)
+            assert u.email == "speaker@test.example.org"
+            assert u.role_name == "unregistered"
+
     def test_create_requires_conference(self, seeded, admin_client):
         resp = admin_client.post("/admin/abstracts/new", data=_form(),
                                  follow_redirects=True)

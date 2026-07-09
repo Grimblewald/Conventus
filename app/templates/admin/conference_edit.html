@@ -441,61 +441,6 @@
   </div>
 </form>
 
-<details class="edit-section">
-  <summary class="edit-section-summary">Add Abstract on Behalf of Speaker</summary>
-  <div class="edit-section-body">
-    <form method="post" action="{{ url_for('admin.conference_add_abstract', cid=c.id) }}"
-          class="form form-wide" enctype="multipart/form-data">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="row-2">
-        <div class="field">
-          <label for="owner_email">Abstract owner email</label>
-          <input class="input" id="owner_email" name="owner_email" type="email" required placeholder="speaker@university.edu">
-          <div class="help">If no account exists, one will be created automatically.</div>
-        </div>
-        <div class="field">
-          <label for="abs_full_name">Full name</label>
-          <input class="input" id="abs_full_name" name="full_name" placeholder="Prof. Jane Smith">
-        </div>
-      </div>
-      <div class="row-2">
-        <div class="field">
-          <label for="abs_title">Title</label>
-          <input class="input" id="abs_title" name="abs_title" required>
-        </div>
-        <div class="field">
-          <label for="abs_status">Status</label>
-          <select class="select" id="abs_status" name="abs_status">
-            {% for s in ['plenary', 'keynote', 'invited', 'accepted'] %}
-              <option value="{{ s }}">{{ s|capitalize }}</option>
-            {% endfor %}
-          </select>
-        </div>
-      </div>
-      <div class="field">
-        <label for="abs_authors">Authors (one per line: Name|index|Affiliation)</label>
-        <textarea class="textarea" id="abs_authors" name="abs_authors" rows="2" placeholder="Jane Smith|1|University of Sydney"></textarea>
-        <div class="help">Leave empty to auto-fill from full name above.</div>
-      </div>
-      <div class="field">
-        <label for="abs_body">Abstract body</label>
-        <textarea class="textarea" id="abs_body" name="abs_body" rows="4"></textarea>
-      </div>
-      <div class="row-2">
-        <div class="field">
-          <label for="abs_track">Track</label>
-          <input class="input" id="abs_track" name="abs_track">
-        </div>
-        <div class="field">
-          <label for="abs_profile_picture">Profile picture</label>
-          <input class="input" id="abs_profile_picture" name="abs_profile_picture" type="file" accept=".png,.jpg,.jpeg,.webp">
-        </div>
-      </div>
-      <button class="btn btn-primary" type="submit">Add abstract</button>
-    </form>
-  </div>
-</details>
-
 {% if can('abs.review') %}
 <details class="edit-section">
   <summary class="edit-section-summary">Peer Review</summary>

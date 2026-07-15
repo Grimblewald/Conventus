@@ -14,19 +14,22 @@
         {% if c.early_bird_deadline %}<div><dt>Early-bird</dt><dd>{{ c.early_bird_deadline.strftime('%-d %B %Y') }}</dd></div>{% endif %}
       </dl>
       <div class="hero-cta">
-        {% if current_user.is_authenticated %}
           {# -- Registration -- #}
           {% if c.external_registration_url %}
             <span class="btn-stack">
               <a class="btn btn-primary btn-lg" href="{{ c.external_registration_url }}" target="_blank" rel="noopener">Register ↗</a>
             </span>
           {% elif c.registration_status == "open" %}
-            <span class="btn-stack">
-              <a class="btn btn-primary btn-lg" href="{{ url_for('member.register_conf', slug=c.slug) }}">Register</a>
-              {% if c.registration_countdown %}
-                <small>Closes in {{ c.registration_countdown }}</small>
-              {% endif %}
-            </span>
+            {% if current_user.is_authenticated %}
+              <span class="btn-stack">
+                <a class="btn btn-primary btn-lg" href="{{ url_for('member.register_conf', slug=c.slug) }}">Register</a>
+                {% if c.registration_countdown %}
+                  <small>Closes in {{ c.registration_countdown }}</small>
+                {% endif %}
+              </span>
+            {% else %}
+              <a class="btn btn-primary btn-lg" href="{{ url_for('auth.login') }}">Sign in to register</a>
+            {% endif %}
           {% elif c.registration_status == "pending" %}
             <span class="btn-stack">
               <span class="btn btn-primary btn-lg is-disabled">Register</span>
@@ -45,12 +48,16 @@
               <a class="btn btn-ghost btn-lg" href="{{ c.external_abstract_url }}" target="_blank" rel="noopener">Submit an abstract ↗</a>
             </span>
           {% elif c.abstract_status == "open" %}
-            <span class="btn-stack">
-              <a class="btn btn-ghost btn-lg" href="{{ url_for('member.submit_abstract', slug=c.slug) }}">Submit an abstract</a>
-              {% if c.abstract_countdown %}
-                <small>Closes in {{ c.abstract_countdown }}</small>
-              {% endif %}
-            </span>
+            {% if current_user.is_authenticated %}
+              <span class="btn-stack">
+                <a class="btn btn-ghost btn-lg" href="{{ url_for('member.submit_abstract', slug=c.slug) }}">Submit an abstract</a>
+                {% if c.abstract_countdown %}
+                  <small>Closes in {{ c.abstract_countdown }}</small>
+                {% endif %}
+              </span>
+            {% else %}
+              <a class="btn btn-ghost btn-lg" href="{{ url_for('auth.login') }}">Sign in to submit an abstract</a>
+            {% endif %}
           {% elif c.abstract_status == "pending" %}
             <span class="btn-stack">
               <span class="btn btn-ghost btn-lg is-disabled">Submit an abstract</span>
@@ -62,9 +69,6 @@
               <small>Closed</small>
             </span>
           {% endif %}
-        {% else %}
-          <a class="btn btn-primary btn-lg" href="{{ url_for('auth.login') }}">Sign in to register</a>
-        {% endif %}
       </div>
     </div>
     <div class="hero-visual">

@@ -29,10 +29,10 @@
       --c-button-bg:    {{ site.palette_button_bg }};
       --c-button-text:  {{ site.palette_button_text }};
 
-      --f-heading: {{ FONT_STACKS[site.font_heading]['stack'] if site.font_heading in FONT_STACKS else FONT_STACKS['modern_serif']['stack'] }};
-      --f-body:    {{ FONT_STACKS[site.font_body]['stack'] if site.font_body in FONT_STACKS else FONT_STACKS['system_sans']['stack'] }};
-      --f-link:    {{ FONT_STACKS[site.font_link]['stack'] if site.font_link in FONT_STACKS else FONT_STACKS['system_sans']['stack'] }};
-      --f-ui:      {{ FONT_STACKS[site.font_ui]['stack'] if site.font_ui in FONT_STACKS else FONT_STACKS['system_sans']['stack'] }};
+      --f-heading: {{ (FONT_STACKS[site.font_heading]['stack'] if site.font_heading in FONT_STACKS else FONT_STACKS['modern_serif']['stack']) | safe }};
+      --f-body:    {{ (FONT_STACKS[site.font_body]['stack'] if site.font_body in FONT_STACKS else FONT_STACKS['system_sans']['stack']) | safe }};
+      --f-link:    {{ (FONT_STACKS[site.font_link]['stack'] if site.font_link in FONT_STACKS else FONT_STACKS['system_sans']['stack']) | safe }};
+      --f-ui:      {{ (FONT_STACKS[site.font_ui]['stack'] if site.font_ui in FONT_STACKS else FONT_STACKS['system_sans']['stack']) | safe }};
     }
   </style>
   {% block head_extra %}{% endblock %}

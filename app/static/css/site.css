@@ -410,6 +410,18 @@ section.block.ink .table td {
   list-style: none; padding: 0; margin: 12px 0 0; display: flex; gap: 12px;
   font-family: var(--f-ui); font-size: 13px;
 }
+.committee-card ul.links a {
+  display: inline-flex; align-items: center;
+}
+.committee-card ul.links svg {
+  width: 20px; height: 20px; display: block;
+}
+.committee-card ul.links img {
+  width: 20px; height: 20px; display: block;
+}
+.committee-card ul.links .icon-bg {
+  opacity: 0.12;
+}
 
 /* ---------------- Speaker cards (compact) ---------------- */
 .speaker-card {

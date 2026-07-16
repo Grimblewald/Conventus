@@ -301,6 +301,11 @@ def backup_create():
                  target_kind="system", target_id=0,
                  summary=f"Backup created: {zip_path.name}")
 
+    # Only the latest backup's chunks are kept — clean up any stale session first.
+    chunks_dir = Path(current_app.root_path).parent / "backups" / ".chunks"
+    if chunks_dir.exists():
+        shutil.rmtree(chunks_dir)
+
     # Always split into chunks — avoids client-side JSON-vs-binary sniffing.
     upload_id = secrets.token_hex(12)
     chunk_count, total_hash = _split_file(zip_path, upload_id)

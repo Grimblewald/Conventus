@@ -15,7 +15,7 @@ from ...extensions import db
 from ...models import (
     Abstract, Announcement, Conference, OTPCode, Registration, User,
 )
-from ...security import staff_required, can
+from ...security import requires_permission, staff_required, can
 from ...services.mail import send_mail
 from ...services.updater import latest_status
 
@@ -81,7 +81,7 @@ def index():
 # ---------------------------------------------------------------------------
 
 @admin_bp.route("/registrations")
-@staff_required
+@requires_permission("registrations.view")
 def registrations():
     conference_id = request.args.get("conference_id", type=int)
     status_filter = request.args.get("status", "all")
@@ -107,7 +107,7 @@ def registrations():
 
 
 @admin_bp.route("/registrations/<int:reg_id>/status", methods=["POST"])
-@staff_required
+@requires_permission("registrations.edit")
 def registration_status(reg_id):
     reg = Registration.query.get_or_404(reg_id)
     new_status = (request.form.get("status") or "").strip()
@@ -125,7 +125,7 @@ def registration_status(reg_id):
 
 
 @admin_bp.route("/registrations/<int:reg_id>")
-@staff_required
+@requires_permission("registrations.view")
 def registration_detail(reg_id):
     reg = Registration.query.get_or_404(reg_id)
     conference = reg.conference
@@ -139,7 +139,7 @@ def registration_detail(reg_id):
 
 
 @admin_bp.route("/registrations/<int:reg_id>/delete-request", methods=["POST"])
-@staff_required
+@requires_permission("registrations.edit")
 def registration_delete_request(reg_id):
     reg = Registration.query.get_or_404(reg_id)
     if reg.deleted_at is not None:
@@ -173,7 +173,7 @@ def registration_delete_request(reg_id):
 
 
 @admin_bp.route("/registrations/<int:reg_id>/delete-confirm", methods=["GET", "POST"])
-@staff_required
+@requires_permission("registrations.edit")
 def registration_delete_confirm(reg_id):
     reg = Registration.query.get_or_404(reg_id)
     if reg.deleted_at is not None:

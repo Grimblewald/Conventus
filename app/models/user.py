@@ -87,6 +87,12 @@ BUILT_IN_PERMISSIONS: tuple[tuple[str, str, str, str], ...] = (
     ("sponsors.edit",       "Conferences",   "Manage sponsors",
      "Add, edit, and reorder sponsor tiers and logos per conference."),
 
+    # Registrations
+    ("registrations.view",  "Registrations", "View registrations",
+     "List and view details of all conference registrations."),
+    ("registrations.edit",  "Registrations", "Manage registrations",
+     "Change payment status and delete registrations."),
+
     # Members
     ("users.view",          "Members",       "View member directory",
      "List all registered users with role and affiliation."),

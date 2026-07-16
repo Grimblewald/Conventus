@@ -6,7 +6,9 @@
     {% if can('conf.create') or can('conf.edit') or can('conf.delete') %}
       <li><a href="{{ url_for('admin.conferences') }}">Conferences</a></li>
     {% endif %}
-    <li><a href="{{ url_for('admin.registrations') }}">Registrations</a></li>
+    {% if can('registrations.view') %}
+      <li><a href="{{ url_for('admin.registrations') }}">Registrations</a></li>
+    {% endif %}
     {% if can('ann.publish') %}
       <li><a href="{{ url_for('admin.announcements') }}">Announcements</a></li>
     {% endif %}

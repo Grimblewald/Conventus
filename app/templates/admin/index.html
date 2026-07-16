@@ -9,7 +9,9 @@
   <div class="stat"><span class="n">{{ stats.members }}</span><span class="l">Members</span></div>
   <div class="stat"><span class="n">{{ stats.conferences }}</span><span class="l">Conferences</span></div>
   <div class="stat"><span class="n">{{ stats.abstracts }}</span><span class="l">Abstracts</span></div>
+  {% if can('registrations.view') %}
   <div class="stat"><span class="n">{{ stats.registrations }}</span><span class="l">Registrations</span></div>
+  {% endif %}
 </div>
 
 {% if stats.pending_abstracts %}
@@ -30,6 +32,7 @@
       </ul>
     {% else %}<p class="muted">None yet.</p>{% endif %}
   </div>
+  {% if can('registrations.view') %}
   <div>
     <h3>Recent registrations</h3>
     {% if recent_regs %}
@@ -40,5 +43,6 @@
       </ul>
     {% else %}<p class="muted">None yet.</p>{% endif %}
   </div>
+  {% endif %}
 </div>
 {% endblock %}

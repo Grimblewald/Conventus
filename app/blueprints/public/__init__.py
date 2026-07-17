@@ -397,22 +397,26 @@ def favicon():
 @csrf.exempt
 @limiter.exempt
 def payment_webhook():
-    """Receive payment provider webhooks. Provider selected by PAYMENT_GATEWAY env var."""
-    import os
-    from ...models import Registration
-    from ...services.gateways import get_gateway
+    """Receive payment provider webhooks.
 
-    g = get_gateway(os.getenv("PAYMENT_GATEWAY", ""))
+    NOTE: verify_webhook signature changed to (request_body: bytes, headers: dict).
+    We pass request.data (raw POST body bytes), not parsed JSON.
+    """
+    from ...models import Registration
+    from ...services.payments import _active_gateway
+
+    g = _active_gateway()
     if not g:
         return {"status": "no gateway configured"}, 200
 
     try:
-        data = request.get_json(force=True, silent=True) or {}
-        result = g.verify_webhook(data, dict(request.headers))
+        result = g.verify_webhook(request.data, dict(request.headers))
         if result.success and result.registration_id:
             reg = db.session.get(Registration, result.registration_id)
             if reg and reg.status == "pending":
                 reg.status = "paid"
+                reg.transaction_id = result.transaction_id
+                reg.last_webhook_event = "paid"
                 db.session.commit()
                 current_app.logger.info("Payment webhook: reg %d marked paid (%s)",
                          result.registration_id, result.transaction_id)

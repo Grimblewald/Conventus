@@ -3,28 +3,28 @@
 Pluggable gateway architecture: register implementations via
 ``register_gateway()`` in ``app/services/gateways/``.
 
-The ``PAYMENT_GATEWAY`` env var selects the active gateway
-(default: ``"none"`` skips payment processing).
+The active gateway is determined by the PaymentGatewayConfig DB model
+(payment gateway configuration panel in the admin).
 """
 from __future__ import annotations
 
 import logging
-import os
 
 from flask import current_app, url_for
 
 from ..models.registration import Registration
-from .gateways import get_gateway
 from .mail import send_mail
 
 log = logging.getLogger(__name__)
 
 
 def _active_gateway():
-    name = os.getenv("PAYMENT_GATEWAY", "none")
-    if name == "none":
+    from ..models.content import get_active_payment_gateway
+    config = get_active_payment_gateway()
+    if not config or not config.is_enabled:
         return None
-    return get_gateway(name)
+    from .gateways.anz_worldline import ANZWorldlineGateway
+    return ANZWorldlineGateway(config)
 
 
 def initiate_payment(registration: Registration) -> str | None:

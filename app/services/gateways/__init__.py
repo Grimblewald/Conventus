@@ -6,6 +6,13 @@ from dataclasses import dataclass
 
 
 @dataclass
+class ConnectionTestResult:
+    success: bool = False
+    message: str = ""
+    details: str = ""
+
+
+@dataclass
 class CheckoutResult:
     """Result of initiating a payment checkout."""
     redirect_url: str | None = None
@@ -39,12 +46,16 @@ class PaymentGateway(ABC):
         """
 
     @abstractmethod
-    def verify_webhook(self, request_data: dict,
-                       headers: dict) -> WebhookResult:
+    def test_connection(self) -> ConnectionTestResult:
+        """Test that API credentials are valid by making a lightweight API call."""
+
+    @abstractmethod
+    def verify_webhook(self, request_body: bytes,
+                       headers: dict | None = None) -> WebhookResult:
         """Verify an incoming webhook and return the registration status.
 
         Args:
-            request_data: Parsed JSON body of the webhook.
+            request_body: Raw bytes of the webhook POST body.
             headers: HTTP headers for signature verification.
         Returns:
             WebhookResult with success status and registration_id.

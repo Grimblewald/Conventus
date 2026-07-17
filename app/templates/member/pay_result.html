@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Payment Result · {{ site.site_name }}{% endblock %}
+{% block content %}
+<section class="block">
+  <div class="container container-narrow">
+    <div class="section-head">
+      <div>
+        <div class="eyebrow">Payment</div>
+        <h2>{{ reg.conference.title }}</h2>
+      </div>
+    </div>
+
+    <div class="card" style="padding:24px;">
+      <table class="table">
+        <tr><th>Tier</th><td>{{ reg.tier_name }}</td></tr>
+        <tr><th>Amount</th><td>{{ site.currency_symbol }}{{ reg.amount }} {{ site.currency_code }}</td></tr>
+        <tr><th>Status</th><td><span class="status" data-v="{{ reg.status }}">{{ reg.status }}</span></td></tr>
+      </table>
+    </div>
+
+    <div class="card" style="padding:24px; margin-top:18px; {% if reg.status == 'paid' %}border-color:#4caf50;{% elif reg.status == 'processing' %}border-color:#ff9800;{% else %}border-color:var(--c-card-border);{% endif %}">
+      {% if reg.status == "paid" %}
+        <h3 style="margin-top:0; color:#4caf50;">Payment Successful</h3>
+        <p>Your payment has been received. You will receive an invoice by email shortly.</p>
+        {% if reg.transaction_id %}
+          <p class="muted">Transaction: {{ reg.transaction_id }}</p>
+        {% endif %}
+      {% elif reg.status == "processing" %}
+        <h3 style="margin-top:0; color:#ff9800;">Payment Processing</h3>
+        <p>Your payment is being processed. This may take a few moments.</p>
+        <p class="muted">You'll receive an email invoice once payment is confirmed. You can also check back here later.</p>
+      {% else %}
+        <h3 style="margin-top:0;">Payment Pending</h3>
+        <p>Your payment is still pending. If you completed the payment on ANZ Worldline's page, it may take a moment to appear.</p>
+        <p class="muted">
+          {% if reg.payment_sent_at %}
+            Payment link was emailed to you on {{ reg.payment_sent_at.strftime('%-d %B %Y') }}.
+          {% endif %}
+        </p>
+        <a href="{{ url_for('member.pay_registration', reg_id=reg.id) }}" class="btn" style="margin-top:12px;">Return to Payment Page</a>
+      {% endif %}
+    </div>
+
+    <a class="btn btn-ghost" href="{{ url_for('member.dashboard') }}" style="margin-top:24px;">← Back to dashboard</a>
+  </div>
+</section>
+{% endblock %}

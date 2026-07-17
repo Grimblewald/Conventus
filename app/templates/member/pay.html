@@ -19,21 +19,31 @@
       </table>
     </div>
 
-    <div class="card" style="padding:24px; margin-top:18px; background: var(--c-page-bg); border-color: #e8c954;">
-      <h3 style="margin-top:0;">Payment portal under construction</h3>
+    {% if redirect_url %}
+    <div class="card" style="padding:24px; margin-top:18px;">
+      <h3 style="margin-top:0;">Complete Your Payment</h3>
       <p>
-        This society has not yet connected a payment provider.
-        {% if reg.payment_sent_at %}
-          A payment link was emailed to you on {{ reg.payment_sent_at.strftime('%-d %B %Y') }}.
-        {% endif %}
+        You will be redirected to <strong>ANZ Worldline Payment Solutions</strong>
+        to complete your payment securely.
       </p>
-      <p class="muted">
-        The society administrator will notify you when online payments are available.
-        In the meantime, your registration is held and your place is reserved.
-      </p>
+      <ul style="margin:12px 0; padding-left:20px; color:var(--c-muted-text);">
+        <li>Card details are handled entirely by ANZ Worldline — we never see or store them.</li>
+        <li>After successful payment, you'll be returned to this website automatically.</li>
+        <li>You'll receive an email invoice once payment is confirmed.</li>
+      </ul>
+      <a href="{{ redirect_url }}" class="btn" style="display:inline-block; margin-top:12px;">
+        Proceed to Payment
+      </a>
     </div>
+    {% else %}
+    <div class="card" style="padding:24px; margin-top:18px; background:var(--c-page-bg); border-color:#e8c954;">
+      <h3 style="margin-top:0;">Payment portal not yet available</h3>
+      <p>This society has not connected a payment provider yet.</p>
+      <p class="muted">The society administrator will notify you when online payments are available. Your registration is held and your place is reserved.</p>
+    </div>
+    {% endif %}
 
-    <a class="btn btn-ghost" href="{{ url_for('member.dashboard') }}">← Back to dashboard</a>
+    <a class="btn btn-ghost" href="{{ url_for('member.dashboard') }}" style="margin-top:24px;">← Back to dashboard</a>
   </div>
 </section>
 {% endblock %}

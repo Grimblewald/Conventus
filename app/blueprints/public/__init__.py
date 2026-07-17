@@ -397,13 +397,10 @@ def favicon():
 @csrf.exempt
 @limiter.exempt
 def payment_webhook():
-    """Receive payment provider webhooks.
-
-    NOTE: verify_webhook signature changed to (request_body: bytes, headers: dict).
-    We pass request.data (raw POST body bytes), not parsed JSON.
-    """
+    """Receive payment provider webhooks. Provider selected from DB config."""
     from ...models import Registration
     from ...services.payments import _active_gateway
+    from ...services.invoice import send_invoice_email
 
     g = _active_gateway()
     if not g:
@@ -411,15 +408,37 @@ def payment_webhook():
 
     try:
         result = g.verify_webhook(request.data, dict(request.headers))
-        if result.success and result.registration_id:
+        if result.registration_id:
             reg = db.session.get(Registration, result.registration_id)
-            if reg and reg.status == "pending":
-                reg.status = "paid"
-                reg.transaction_id = result.transaction_id
-                reg.last_webhook_event = "paid"
-                db.session.commit()
-                current_app.logger.info("Payment webhook: reg %d marked paid (%s)",
-                         result.registration_id, result.transaction_id)
+            if reg:
+                reg.transaction_id = result.transaction_id or reg.transaction_id
+                reg.last_webhook_event = result.error or "unknown"
+
+                if result.success:
+                    if reg.status in ("pending", "processing", "failed"):
+                        reg.status = "paid"
+                        db.session.commit()
+                        current_app.logger.info(
+                            "Payment webhook: reg %d marked paid (%s)",
+                            result.registration_id, result.transaction_id)
+                        try:
+                            send_invoice_email(reg)
+                        except Exception:
+                            current_app.logger.exception("Invoice email failed for reg %d", reg.id)
+                    elif reg.status != "paid":
+                        db.session.commit()
+                else:
+                    if "rejected" in (result.error or ""):
+                        reg.status = "failed"
+                    elif "cancelled" in (result.error or ""):
+                        reg.status = "cancelled"
+                    elif "refund" in (result.error or "").lower():
+                        reg.status = "refunded"
+                        try:
+                            send_invoice_email(reg)
+                        except Exception:
+                            current_app.logger.exception("Refund invoice email failed")
+                    db.session.commit()
         return {"status": "ok" if result.success else "ignored"}, 200
     except Exception:
         current_app.logger.exception("Webhook processing failed")

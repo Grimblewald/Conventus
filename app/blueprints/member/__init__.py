@@ -633,4 +633,22 @@ def pay_registration(reg_id):
         flash("This registration is already paid.", "success")
         return redirect(url_for("member.dashboard"))
     site = get_site_settings()
-    return render_template("member/pay.html", reg=reg, site=site)
+    redirect_url = payment_url_for(reg)
+    return render_template("member/pay.html", reg=reg, site=site,
+                           redirect_url=redirect_url)
+
+
+@member_bp.route("/pay/<int:reg_id>/result")
+@login_required
+def pay_result(reg_id):
+    reg = Registration.query.get_or_404(reg_id)
+    if reg.user_id != current_user.id:
+        abort(403)
+    site = get_site_settings()
+
+    if reg.status in ("paid", "refunded", "processing"):
+        return render_template("member/pay_result.html", reg=reg, site=site,
+                               already_complete=True)
+
+    return render_template("member/pay_result.html", reg=reg, site=site,
+                           already_complete=False)

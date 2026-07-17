@@ -30,7 +30,8 @@
 {% if regs %}
 <div style="overflow-x:auto;">
 <table class="table">
-  <thead><tr><th>User</th><th>Conference</th><th>Tier</th><th>Amount</th><th>Status</th><th>Payment sent</th><th>Date</th><th></th></tr></thead>
+  <thead><tr><th>User</th><th>Conference</th><th>Tier</th><th>Amount</th><th>Status</th><th>Payment sent</th><th>Date</th>
+      {% if can('registrations.edit') %}<th></th>{% endif %}</tr></thead>
   <tbody>
     {% for r in regs %}
     <tr>
@@ -41,7 +42,7 @@
       <td><span class="status" data-v="{{ r.status }}">{{ r.status }}</span></td>
       <td>{{ r.payment_sent_at.strftime('%-d %b %Y') if r.payment_sent_at else '—' }}</td>
       <td>{{ r.created_at.strftime('%-d %b %Y') }}</td>
-        <td>
+        {% if can('registrations.edit') %}<td>
           <form method="post" action="{{ url_for('admin.registration_status', reg_id=r.id) }}" style="display:flex; gap:4px; align-items:center;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <select name="status" class="select" style="font-size:12px; padding:4px 8px; width:auto;">
@@ -52,7 +53,7 @@
             </select>
             <button class="btn btn-primary btn-sm" type="submit">Save</button>
           </form>
-        </td>
+        </td>{% endif %}
     </tr>
     {% endfor %}
   </tbody>

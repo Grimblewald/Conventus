@@ -108,6 +108,20 @@ BUILT_IN_PERMISSIONS: tuple[tuple[str, str, str, str], ...] = (
      "Create and restore full-site backup archives."),
 )
 
+# When key K is granted, every key in IMPLICIT_PERMISSIONS[K] is
+# also considered granted.  Enforced at both check-time (so a
+# user with registrations.edit can always see the list) and
+# save-time (so the Permissions panel keeps the DB consistent).
+IMPLICIT_PERMISSIONS: dict[str, tuple[str, ...]] = {
+    "registrations.edit": ("registrations.view",),
+    "users.edit":         ("users.view",),
+    "users.email_bulk":   ("users.view",),
+    "abs.delete":         ("abs.review",),
+    "ann.delete":         ("ann.publish",),
+    "pages.delete":       ("pages.edit",),
+    "conf.delete":        ("conf.view_drafts",),
+}
+
 
 # ---------------------------------------------------------------------------
 # User
@@ -198,7 +212,13 @@ class Role(db.Model):
     def has_permission(self, key: str) -> bool:
         if self.name == "admin":
             return True
-        return any(p.permission_key == key for p in self.permissions)
+        granted = {p.permission_key for p in self.permissions}
+        if key in granted:
+            return True
+        for g in granted:
+            if key in IMPLICIT_PERMISSIONS.get(g, ()):
+                return True
+        return False
 
 
 class RolePermission(db.Model):

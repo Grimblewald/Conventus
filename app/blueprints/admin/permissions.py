@@ -11,7 +11,7 @@ from . import admin_bp
 from ...extensions import db
 from ...models import Role, RolePermission
 from ...models.user import (
-    BUILT_IN_PERMISSIONS, EDITABLE_ROLE_NAMES,
+    BUILT_IN_PERMISSIONS, EDITABLE_ROLE_NAMES, IMPLICIT_PERMISSIONS,
 )
 from ...security import admin_required, audit
 
@@ -40,6 +40,9 @@ def permissions():
 
     if request.method == "POST":
         wanted = set(request.form.getlist("perm"))
+        # Granting a key also grants any permissions it implies.
+        for key in list(wanted):
+            wanted.update(IMPLICIT_PERMISSIONS.get(key, ()))
         existing = role.permission_keys()
 
         # Grant additions

@@ -7,7 +7,7 @@ common ones for `from app.models import db, User, ...` style imports.
 """
 from ..extensions import db
 
-from .user import User, Role, RolePermission, ROLE_NAMES, BUILT_IN_PERMISSIONS
+from .user import User, Role, RolePermission, ROLE_NAMES, BUILT_IN_PERMISSIONS, IMPLICIT_PERMISSIONS
 from .otp import OTPCode
 from .content import (
     SiteSettings, Page, NavItem, FooterColumn, FooterLink,
@@ -29,6 +29,7 @@ from .reviews import ConferenceReviewer, ReviewAssignment
 __all__ = [
     "db",
     "User", "Role", "RolePermission", "ROLE_NAMES", "BUILT_IN_PERMISSIONS",
+    "IMPLICIT_PERMISSIONS",
     "OTPCode",
     "SiteSettings", "Page", "NavItem", "FooterColumn", "FooterLink",
     "get_site_settings",

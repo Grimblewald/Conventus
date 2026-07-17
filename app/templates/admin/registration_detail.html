@@ -25,6 +25,7 @@
     </dl>
   </div>
 
+  {% if can('registrations.edit') %}
   <div class="card">
     <h4 style="margin-top:0;">Status</h4>
     <form method="post" action="{{ url_for('admin.registration_status', reg_id=reg.id) }}">
@@ -44,6 +45,7 @@
       </div>
     </form>
   </div>
+  {% endif %}
 </div>
 
 {% if reg.dietary or reg.accessibility %}
@@ -114,6 +116,7 @@
 </div>
 {% endif %}
 
+{% if can('registrations.edit') %}
 <div class="danger-zone">
   <form method="post" action="{{ url_for('admin.registration_delete_request', reg_id=reg.id) }}"
         data-confirm="Send a confirmation code to delete this registration?">
@@ -123,4 +126,5 @@
     <button class="btn btn-quiet" type="submit">Delete this registration →</button>
   </form>
 </div>
+{% endif %}
 {% endblock %}

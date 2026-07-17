@@ -412,9 +412,16 @@ def payment_webhook():
             reg = db.session.get(Registration, result.registration_id)
             if reg:
                 reg.transaction_id = result.transaction_id or reg.transaction_id
-                reg.last_webhook_event = result.error or "unknown"
+                reg.last_webhook_event = result.event_type or result.error or "unknown"
 
-                if result.success:
+                if result.event_type and "refund" in result.event_type.lower():
+                    reg.status = "refunded"
+                    db.session.commit()
+                    try:
+                        send_invoice_email(reg)
+                    except Exception:
+                        current_app.logger.exception("Refund invoice email failed for reg %d", reg.id)
+                elif result.success:
                     if reg.status in ("pending", "processing", "failed"):
                         reg.status = "paid"
                         db.session.commit()
@@ -432,12 +439,6 @@ def payment_webhook():
                         reg.status = "failed"
                     elif "cancelled" in (result.error or ""):
                         reg.status = "cancelled"
-                    elif "refund" in (result.error or "").lower():
-                        reg.status = "refunded"
-                        try:
-                            send_invoice_email(reg)
-                        except Exception:
-                            current_app.logger.exception("Refund invoice email failed")
                     db.session.commit()
         return {"status": "ok" if result.success else "ignored"}, 200
     except Exception:

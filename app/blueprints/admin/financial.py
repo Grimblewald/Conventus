@@ -15,7 +15,6 @@ from ...models import (
     get_payment_gateway_config, get_active_payment_gateway,
     get_invoice_template,
 )
-from ...models.user import IMPLICIT_PERMISSIONS
 from ...security import audit
 from ...security.permissions import can
 from ...services.mail import send_mail

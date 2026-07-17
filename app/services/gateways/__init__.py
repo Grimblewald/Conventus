@@ -27,6 +27,7 @@ class WebhookResult:
     registration_id: int | None = None
     transaction_id: str = ""
     error: str = ""
+    event_type: str = ""
 
 
 class PaymentGateway(ABC):

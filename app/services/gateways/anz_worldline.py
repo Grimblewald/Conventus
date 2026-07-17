@@ -163,13 +163,28 @@ class ANZWorldlineGateway(PaymentGateway):
             refunded_events = ("payment.refunded", "refund.refunded")
 
             if event_type in successful_events:
-                return WebhookResult(success=True, registration_id=reg_id, transaction_id=transaction_id)
+                return WebhookResult(
+                    success=True, registration_id=reg_id,
+                    transaction_id=transaction_id, event_type=event_type,
+                )
             elif event_type in refunded_events:
-                return WebhookResult(success=True, registration_id=reg_id, transaction_id=transaction_id)
+                return WebhookResult(
+                    success=True, registration_id=reg_id,
+                    transaction_id=transaction_id, event_type=event_type,
+                )
             elif event_type in failed_events:
-                return WebhookResult(success=False, registration_id=reg_id, transaction_id=transaction_id, error=f"Payment {event_type}")
+                return WebhookResult(
+                    success=False, registration_id=reg_id,
+                    transaction_id=transaction_id, error=f"Payment {event_type}",
+                    event_type=event_type,
+                )
             else:
-                return WebhookResult(success=False, registration_id=reg_id, transaction_id=transaction_id, error=f"Non-terminal event: {event_type}")
+                return WebhookResult(
+                    success=False, registration_id=reg_id,
+                    transaction_id=transaction_id,
+                    error=f"Non-terminal event: {event_type}",
+                    event_type=event_type,
+                )
 
         except Exception as e:
             log.exception("Webhook verification failed")

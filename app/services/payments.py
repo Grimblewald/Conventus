@@ -48,10 +48,7 @@ def initiate_payment(registration: Registration) -> str | None:
 
 
 def payment_url_for(registration: Registration) -> str:
-    """Return the URL a member visits to pay for their registration."""
-    redirect_url = initiate_payment(registration)
-    if redirect_url:
-        return redirect_url
+    """Return the URL a member visits to pay — always our confirmation page."""
     return url_for("member.pay_registration", reg_id=registration.id, _external=True)
 
 

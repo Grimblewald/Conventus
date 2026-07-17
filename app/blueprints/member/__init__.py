@@ -19,7 +19,7 @@ from ...models import Abstract, Conference, OTPCode, Registration, ReviewAssignm
 from ...models.content import get_site_settings
 from ...security import audit
 from ...services.mail import send_mail
-from ...services.payments import payment_url_for, send_payment_email
+from ...services.payments import initiate_payment, payment_url_for, send_payment_email
 from ...services.uploads import UploadError, remove_upload, save_figure, save_image
 from ...services.form_renderer import validate_form
 from ...services.citations import fetch_metadata, format_reference, normalize_doi
@@ -633,7 +633,7 @@ def pay_registration(reg_id):
         flash("This registration is already paid.", "success")
         return redirect(url_for("member.dashboard"))
     site = get_site_settings()
-    redirect_url = payment_url_for(reg)
+    redirect_url = initiate_payment(reg)
     return render_template("member/pay.html", reg=reg, site=site,
                            redirect_url=redirect_url)
 

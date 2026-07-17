@@ -98,17 +98,28 @@ def update_confirm():
         if not ok:
             flash(f"git pull failed: {output}", "error")
             return redirect(url_for("admin.update_page"))
+        flash("git pull succeeded.", "success")
 
         try:
             _run_migrations()
         except Exception as e:
             flash(f"Migrations failed: {e}", "error")
             return redirect(url_for("admin.update_page"))
+        flash("Database migrations applied.", "success")
+
+        try:
+            subprocess.run(
+                ["systemctl", "--user", "restart", "cloudflared-launch.service"],
+                check=False, capture_output=True, timeout=10,
+            )
+            flash("Site updated and restarting.", "success")
+        except Exception:
+            flash("Site updated, but restart failed. Run manually:"
+                  " systemctl --user restart cloudflared-launch.service", "success")
 
         audit.record("site.updated",
                      target_kind="system", target_id=0,
                      summary="Site updated via admin panel")
-        flash("Site updated. Run 'systemctl --user restart cloudflared-launch' to restart.", "success")
         return redirect(url_for("admin.index"))
 
     return render_template("admin/update_confirm.html")

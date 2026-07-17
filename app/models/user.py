@@ -103,6 +103,10 @@ BUILT_IN_PERMISSIONS: tuple[tuple[str, str, str, str], ...] = (
     ("users.export",        "Members",       "Export member directory",
      "Download a CSV of registered members."),
 
+    # Financial
+    ("financial.manage", "Financial", "Manage payment settings",
+     "Configure payment providers, test connections, manage invoices, and control sandbox/live mode."),
+
     # System
     ("system.backup",       "System",        "Backup & restore",
      "Create and restore full-site backup archives."),
@@ -120,6 +124,7 @@ IMPLICIT_PERMISSIONS: dict[str, tuple[str, ...]] = {
     "ann.delete":         ("ann.publish",),
     "pages.delete":       ("pages.edit",),
     "conf.delete":        ("conf.view_drafts",),
+    "financial.manage": ("registrations.view",),
 }
 
 

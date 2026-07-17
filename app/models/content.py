@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from cryptography.fernet import Fernet
+
 from ..extensions import db
 
 
@@ -107,6 +109,122 @@ def get_site_settings() -> "SiteSettings":
         db.session.add(s)
         db.session.commit()
     return s
+
+
+# ---------------------------------------------------------------------------
+# Payment gateway configuration
+# ---------------------------------------------------------------------------
+
+class PaymentGatewayConfig(db.Model):
+    __tablename__ = "payment_gateway_config"
+
+    id = db.Column(db.Integer, primary_key=True)
+    provider = db.Column(db.String(40), unique=True, nullable=False)
+    is_enabled = db.Column(db.Boolean, default=False, nullable=False)
+    is_test_mode = db.Column(db.Boolean, default=True, nullable=False)
+    merchant_id = db.Column(db.String(120), default="")
+    api_key_id = db.Column(db.String(120), default="")
+    api_secret_encrypted = db.Column(db.Text, default="")
+    webhooks_key_id = db.Column(db.String(120), default="")
+    webhooks_secret_encrypted = db.Column(db.Text, default="")
+    api_key_set_at = db.Column(db.DateTime, nullable=True)
+    expiry_warnings_sent = db.Column(db.JSON, default=None)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow,
+                           onupdate=datetime.utcnow, nullable=False)
+
+    def get_api_secret(self) -> str:
+        if not self.api_secret_encrypted:
+            return ""
+        try:
+            from flask import current_app
+            key = _fernet_key()
+            f = Fernet(key)
+            return f.decrypt(self.api_secret_encrypted.encode()).decode()
+        except Exception:
+            return ""
+
+    def set_api_secret(self, secret: str) -> None:
+        if not secret:
+            self.api_secret_encrypted = ""
+            return
+        f = Fernet(_fernet_key())
+        self.api_secret_encrypted = f.encrypt(secret.encode()).decode()
+
+    def get_webhooks_secret(self) -> str:
+        if not self.webhooks_secret_encrypted:
+            return ""
+        try:
+            f = Fernet(_fernet_key())
+            return f.decrypt(self.webhooks_secret_encrypted.encode()).decode()
+        except Exception:
+            return ""
+
+    def set_webhooks_secret(self, secret: str) -> None:
+        if not secret:
+            self.webhooks_secret_encrypted = ""
+            return
+        f = Fernet(_fernet_key())
+        self.webhooks_secret_encrypted = f.encrypt(secret.encode()).decode()
+
+
+def _fernet_key() -> bytes:
+    import hashlib
+    import base64
+    from flask import current_app
+    raw = current_app.config.get("SECRET_KEY", "fallback-key")
+    h = hashlib.sha256(raw.encode()).digest()
+    return base64.urlsafe_b64encode(h)
+
+
+def get_payment_gateway_config(provider: str) -> PaymentGatewayConfig | None:
+    return (
+        PaymentGatewayConfig.query
+        .filter_by(provider=provider)
+        .first()
+    )
+
+
+def get_active_payment_gateway() -> PaymentGatewayConfig | None:
+    return (
+        PaymentGatewayConfig.query
+        .filter_by(is_enabled=True)
+        .first()
+    )
+
+
+# ---------------------------------------------------------------------------
+# Invoice template
+# ---------------------------------------------------------------------------
+
+class InvoiceTemplate(db.Model):
+    __tablename__ = "invoice_template"
+
+    id = db.Column(db.Integer, primary_key=True)
+    subject = db.Column(db.String(200), default="Payment Receipt — {conference_title}")
+    body_text = db.Column(db.Text, default=(
+        "Dear {user_name},\n\n"
+        "Your payment for {conference_title} has been received.\n\n"
+        "Registration: {tier_name}\n"
+        "Amount: {currency_symbol}{amount} {currency_code}\n"
+        "Transaction ID: {transaction_id}\n\n"
+        "Thank you,\n{site_name}"
+    ))
+    body_html = db.Column(db.Text, nullable=True)
+    from_name = db.Column(db.String(120), default="")
+    from_email = db.Column(db.String(200), default="")
+    footer_text = db.Column(db.String(400), default="Thank you from {site_name}")
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow,
+                           onupdate=datetime.utcnow, nullable=False)
+
+
+def get_invoice_template() -> InvoiceTemplate:
+    t = db.session.get(InvoiceTemplate, 1)
+    if not t:
+        t = InvoiceTemplate(id=1)
+        db.session.add(t)
+        db.session.commit()
+    return t
 
 
 # ---------------------------------------------------------------------------

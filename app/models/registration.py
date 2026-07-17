@@ -26,6 +26,8 @@ class Registration(db.Model):
     sub_events = db.Column(db.JSON, default=None)
     status = db.Column(db.String(40), default="pending", nullable=False)
     payment_sent_at = db.Column(db.DateTime, nullable=True)
+    transaction_id = db.Column(db.String(120), nullable=True)
+    last_webhook_event = db.Column(db.String(80), nullable=True)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow,

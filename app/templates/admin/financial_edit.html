@@ -1,0 +1,67 @@
+{% extends "admin/_base.html" %}
+{% block title %}Configure ANZ Worldline · {{ site.site_name }} Admin{% endblock %}
+{% block admin_content %}
+<div class="section-head">
+  <div>
+    <div class="eyebrow">Financial</div>
+    <h2>Configure ANZ Worldline</h2>
+  </div>
+</div>
+
+<form method="POST" class="card" style="padding:24px;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <div class="form-group" style="margin-bottom:16px;">
+    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+      <input type="checkbox" name="is_enabled" value="1" {% if config.is_enabled %}checked{% endif %}>
+      <strong>Enable payment provider</strong>
+    </label>
+    <p class="muted" style="margin:4px 0 0 28px;">When enabled, users will be redirected to ANZ Worldline for payment.</p>
+  </div>
+
+  <div class="form-group" style="margin-bottom:16px;">
+    <label for="merchant_id"><strong>Merchant ID (PSPID)</strong></label>
+    <input type="text" id="merchant_id" name="merchant_id" class="input" value="{{ config.merchant_id or '' }}" placeholder="Your Worldline PSPID">
+  </div>
+
+  <div class="form-group" style="margin-bottom:16px;">
+    <label for="api_key_id"><strong>API Key ID</strong></label>
+    <input type="text" id="api_key_id" name="api_key_id" class="input" value="{{ config.api_key_id or '' }}" placeholder="From Merchant Portal → Developer → Payment API">
+  </div>
+
+  <div class="form-group" style="margin-bottom:16px;">
+    <label for="api_secret"><strong>API Secret</strong></label>
+    <input type="password" id="api_secret" name="api_secret" class="input" value="{% if config.api_secret_encrypted %}••••••••{% endif %}" placeholder="Enter new API secret to change">
+    <p class="muted">Leave blank to keep the current secret unchanged.</p>
+  </div>
+
+  <div class="form-group" style="margin-bottom:16px;">
+    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+      <input type="checkbox" name="is_new_key" value="1">
+      <span>Created within 24 hours?</span>
+    </label>
+    <p class="muted" style="margin:4px 0 0 28px;">Check this if you just generated a new API key in the Merchant Portal. Resets the expiry warning schedule.</p>
+  </div>
+
+  <hr style="margin:20px 0; border-color:var(--c-card-border);">
+
+  <h4>Webhooks</h4>
+  <p class="muted">Configured in Merchant Portal → Developer → Webhooks. Needed to receive payment status updates.</p>
+
+  <div class="form-group" style="margin-bottom:16px;">
+    <label for="webhooks_key_id"><strong>Webhooks Key ID</strong></label>
+    <input type="text" id="webhooks_key_id" name="webhooks_key_id" class="input" value="{{ config.webhooks_key_id or '' }}">
+  </div>
+
+  <div class="form-group" style="margin-bottom:16px;">
+    <label for="webhooks_secret"><strong>Webhooks Secret</strong></label>
+    <input type="password" id="webhooks_secret" name="webhooks_secret" class="input" value="{% if config.webhooks_secret_encrypted %}••••••••{% endif %}" placeholder="Enter new webhooks secret to change">
+    <p class="muted">Leave blank to keep the current secret unchanged.</p>
+  </div>
+
+  <div style="display:flex; gap:8px; margin-top:20px;">
+    <button type="submit" class="btn">Save Settings</button>
+    <a href="{{ url_for('admin.financial') }}" class="btn btn-ghost">Cancel</a>
+  </div>
+</form>
+{% endblock %}

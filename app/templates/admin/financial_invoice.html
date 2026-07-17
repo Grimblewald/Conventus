@@ -1,0 +1,52 @@
+{% extends "admin/_base.html" %}
+{% block title %}Invoice Template · {{ site.site_name }} Admin{% endblock %}
+{% block admin_content %}
+<div class="section-head">
+  <div>
+    <div class="eyebrow">Financial</div>
+    <h2>Invoice Template</h2>
+  </div>
+</div>
+
+<form method="POST" class="card" style="padding:24px;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <div class="form-group" style="margin-bottom:16px;">
+    <label for="subject"><strong>Email Subject</strong></label>
+    <input type="text" id="subject" name="subject" class="input" value="{{ invoice.subject or '' }}">
+    <p class="muted">Available: {conference_title} {site_name}</p>
+  </div>
+
+  <div class="form-group" style="margin-bottom:16px;">
+    <label for="from_name"><strong>From Name</strong></label>
+    <input type="text" id="from_name" name="from_name" class="input" value="{{ invoice.from_name or '' }}" placeholder="Leave blank to use site default">
+  </div>
+
+  <div class="form-group" style="margin-bottom:16px;">
+    <label for="from_email"><strong>From Email</strong></label>
+    <input type="text" id="from_email" name="from_email" class="input" value="{{ invoice.from_email or '' }}" placeholder="Leave blank to use site default">
+  </div>
+
+  <div class="form-group" style="margin-bottom:16px;">
+    <label for="body_text"><strong>Email Body (plain text)</strong></label>
+    <textarea id="body_text" name="body_text" class="input" rows="10" style="font-family:monospace;">{{ invoice.body_text or '' }}</textarea>
+    <p class="muted">Available: {user_name} {user_email} {conference_title} {conference_dates} {tier_name} {amount} {currency_code} {currency_symbol} {transaction_id} {payment_date} {site_name} {registration_id}</p>
+  </div>
+
+  <div class="form-group" style="margin-bottom:16px;">
+    <label for="body_html"><strong>Email Body (HTML, optional)</strong></label>
+    <textarea id="body_html" name="body_html" class="input" rows="10" style="font-family:monospace;">{{ invoice.body_html or '' }}</textarea>
+  </div>
+
+  <div class="form-group" style="margin-bottom:16px;">
+    <label for="footer_text"><strong>Footer Text</strong></label>
+    <input type="text" id="footer_text" name="footer_text" class="input" value="{{ invoice.footer_text or '' }}">
+    <p class="muted">Appended to the email body. Available: {site_name}</p>
+  </div>
+
+  <div style="display:flex; gap:8px; margin-top:20px;">
+    <button type="submit" class="btn">Save Template</button>
+    <a href="{{ url_for('admin.financial') }}" class="btn btn-ghost">Cancel</a>
+  </div>
+</form>
+{% endblock %}

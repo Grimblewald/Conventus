@@ -1,0 +1,36 @@
+{% extends "admin/_base.html" %}
+{% block title %}Confirm Sandbox Toggle · {{ site.site_name }} Admin{% endblock %}
+{% block admin_content %}
+<div class="section-head">
+  <div>
+    <div class="eyebrow">Financial</div>
+    <h2>Confirm Sandbox Toggle</h2>
+  </div>
+</div>
+
+<div class="card" style="padding:24px; max-width:480px;">
+  <p>
+    You are about to <strong>{{ 'enable' if config.is_test_mode else 'disable' }}</strong> sandbox mode
+    for ANZ Worldline payments.
+  </p>
+  {% if config.is_test_mode %}
+    <p style="background:#fff3cd; padding:12px; border-radius:6px;">
+      <strong>Warning:</strong> Disabling sandbox mode means payments WILL be processed as real transactions.
+      Ensure your live credentials are correct before proceeding.
+    </p>
+  {% endif %}
+  <p>A confirmation code has been sent to <strong>{{ current_user.email }}</strong>.</p>
+
+  <form method="POST" style="margin-top:16px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="form-group" style="margin-bottom:16px;">
+      <label for="code"><strong>Confirmation Code</strong></label>
+      <input type="text" id="code" name="code" class="input" maxlength="6" placeholder="6-digit code" autocomplete="off">
+    </div>
+    <div style="display:flex; gap:8px;">
+      <button type="submit" class="btn">Confirm</button>
+      <a href="{{ url_for('admin.financial') }}" class="btn btn-ghost">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

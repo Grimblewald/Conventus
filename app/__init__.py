@@ -83,6 +83,7 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
     _register_blueprints(app)
     _register_template_globals(app)
     _register_setup_gate(app)
+    _register_key_expiry_check(app)
     _register_error_handlers(app)
 
     return app
@@ -293,6 +294,24 @@ def _register_setup_gate(app: Flask) -> None:
         if endpoint.startswith("setup.") or endpoint == "static":
             return None
         return redirect(url_for("setup.welcome"))
+
+
+def _register_key_expiry_check(app: Flask) -> None:
+    """Check API key expiry on first request of each day."""
+    last_check = {"date": None}
+
+    @app.before_request
+    def check():
+        from datetime import date as _date
+        today = _date.today()
+        if last_check["date"] == today:
+            return None
+        last_check["date"] = today
+        try:
+            from .services.key_expiry import check_key_expiry
+            check_key_expiry()
+        except Exception:
+            app.logger.warning("Key expiry check skipped", exc_info=True)
 
 
 def _register_error_handlers(app: Flask) -> None:

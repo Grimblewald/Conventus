@@ -45,9 +45,12 @@
   </ul>
   {% endif %}
 
-  {% if current_user.is_admin %}
+  {% if current_user.is_admin or can('financial.manage') %}
   <h5>System</h5>
   <ul>
+    {% if current_user.is_admin or can('financial.manage') %}
+      <li><a href="{{ url_for('admin.financial') }}">Financial</a></li>
+    {% endif %}
     {% if current_user.is_admin %}
       <li><a href="{{ url_for('admin.permissions') }}">Permissions</a></li>
       <li><a href="{{ url_for('admin.audit_log') }}">Audit log</a></li>

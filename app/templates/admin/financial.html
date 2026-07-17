@@ -1,0 +1,82 @@
+{% extends "admin/_base.html" %}
+{% block title %}Financial · {{ site.site_name }} Admin{% endblock %}
+{% block admin_content %}
+<div class="section-head">
+  <div>
+    <div class="eyebrow">Financial</div>
+    <h2>Payment Providers</h2>
+  </div>
+</div>
+
+<div class="card" style="padding:24px; margin-bottom:20px;">
+  <div style="display:flex; justify-content:space-between; align-items:center;">
+    <div>
+      <h3 style="margin:0;">ANZ Worldline</h3>
+      <p class="muted" style="margin:4px 0 0;">
+        {% if config.is_enabled %}
+          <span class="badge" style="background:var(--c-accent);color:var(--c-accent-ink);padding:2px 10px;border-radius:12px;font-size:0.8rem;">
+            {{ 'Sandbox' if config.is_test_mode else 'Live' }}
+          </span>
+          {% if config.merchant_id %}
+            Merchant: {{ config.merchant_id }}
+          {% endif %}
+        {% else %}
+          <span class="badge" style="background:#999;color:#fff;padding:2px 10px;border-radius:12px;font-size:0.8rem;">Disabled</span>
+        {% endif %}
+      </p>
+    </div>
+    <div style="display:flex; gap:8px;">
+      {% if config.is_enabled %}
+        <form method="POST" action="{{ url_for('admin.financial_test') }}" style="display:inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-ghost" type="submit">Test Connection</button>
+        </form>
+        <form method="POST" action="{{ url_for('admin.financial_toggle_sandbox_request') }}" style="display:inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-ghost" type="submit">
+            {% if config.is_test_mode %}Disable Sandbox{% else %}Enable Sandbox{% endif %}
+          </button>
+        </form>
+      {% endif %}
+      <a href="{{ url_for('admin.financial_edit') }}" class="btn">Configure</a>
+    </div>
+  </div>
+  
+  {% if config.api_key_set_at %}
+  <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--c-card-border);">
+    <p class="muted" style="margin:0; font-size:0.9rem;">
+      API key set {{ config.api_key_set_at.strftime('%-d %B %Y') }}
+      {% if config.expiry_warnings_sent %}
+        · Warnings sent for: {{ config.expiry_warnings_sent | join(', ') }} days
+      {% endif %}
+    </p>
+  </div>
+  {% endif %}
+</div>
+</div>
+
+<div class="section-head" style="margin-top:32px;">
+  <div>
+    <div class="eyebrow">Templates</div>
+    <h2>Invoice</h2>
+  </div>
+</div>
+
+<div class="card" style="padding:24px;">
+  <p>Customize the email invoice sent to members when payment is confirmed.</p>
+  <a href="{{ url_for('admin.financial_invoice') }}" class="btn">Edit Invoice Template</a>
+  {% if invoice %}
+    <p class="muted" style="margin-top:8px; font-size:0.9rem;">Subject: {{ invoice.subject }}</p>
+  {% endif %}
+</div>
+
+<div class="card" style="padding:24px; margin-top:20px; background:var(--c-page-bg);">
+  <h4>Available template variables</h4>
+  <p class="muted">Use these in your invoice subject and body:</p>
+  <code style="font-size:0.85rem;">
+    {user_name} {user_email} {conference_title} {conference_dates} {tier_name}
+    {amount} {currency_code} {currency_symbol} {transaction_id} {payment_date}
+    {site_name} {registration_id}
+  </code>
+</div>
+{% endblock %}

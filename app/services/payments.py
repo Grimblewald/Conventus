@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 
-from flask import current_app, url_for
+from flask import url_for
 
 from ..models.registration import Registration
 from .mail import send_mail
@@ -41,10 +41,11 @@ def initiate_payment(registration: Registration) -> str | None:
     g = _active_gateway()
     if not g:
         return None
+    from ..models.content import get_site_settings
     result = g.create_checkout(
         registration,
         amount=registration.amount,
-        currency=current_app.config.get("CURRENCY_CODE", "AUD"),
+        currency=(get_site_settings().currency_code or "AUD").upper(),
     )
     if result.error:
         log.warning("Payment error for reg %d: %s", registration.id, result.error)
@@ -59,11 +60,13 @@ def payment_url_for(registration: Registration) -> str:
 
 def send_payment_email(registration: Registration, pay_url: str) -> bool:
     """Email the member a payment link for their registration."""
+    from ..models.content import get_site_settings
     conf = registration.conference
+    site = get_site_settings()
     body = (
         f"Thank you for registering for {conf.title} ({conf.date_range}).\n\n"
         f"Tier: {registration.tier_name}\n"
-        f"Amount: {registration.amount / 100:.2f} {current_app.config.get('CURRENCY_CODE', 'AUD')}\n\n"
+        f"Amount: {registration.amount / 100:.2f} {(site.currency_code or 'AUD').upper()}\n\n"
         f"To complete your registration, please visit:\n{pay_url}\n"
     )
     return send_mail(

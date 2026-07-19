@@ -169,6 +169,9 @@ class PaymentGatewayConfig(db.Model):
 
 
 def _fernet_key() -> bytes:
+    # Derived from SECRET_KEY: rotating SECRET_KEY invalidates every stored
+    # gateway secret (decryption then returns "" and the gateway reports
+    # itself unconfigured until credentials are re-entered).
     import hashlib
     import base64
     from flask import current_app

@@ -45,7 +45,9 @@
                 {{ affil_items[0] }}
                 {% if affil_items|length > 1 %}
                   <span class="aff-more" style="display:none"> · {{ affil_items[1:] | join(' · ') }}</span>
-                  <span class="aff-toggle" data-toggle-next=".aff-more" style="cursor:pointer;color:var(--c-accent);font-size:11px;"> ▾</span>
+                  <button type="button" class="aff-toggle" data-toggle-next=".aff-more"
+                          aria-label="Show all roles"
+                          style="cursor:pointer;color:var(--c-accent);font-size:11px;background:none;border:none;padding:2px 6px;"> ▾</button>
                 {% endif %}
               </div>
             {% endif %}

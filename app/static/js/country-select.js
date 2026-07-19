@@ -89,12 +89,16 @@
               var div = document.createElement("div");
               div.className = "country-select-item";
               div.textContent = label;
-              div.addEventListener("mousedown", function (e) {
+              // pointerdown fires before the input's blur on touch devices;
+              // mousedown kept for the keyboard-driven dispatchEvent path.
+              var select = function (e) {
                 e.preventDefault();
                 input.value = label;
                 hidden.value = c.name;
                 dropdown.style.display = "none";
-              });
+              };
+              div.addEventListener("pointerdown", select);
+              div.addEventListener("mousedown", select);
               dropdown.appendChild(div);
             });
 

@@ -279,6 +279,25 @@ def _register_template_globals(app: Flask) -> None:
     from .services.payments import payments_open_to_members
     app.add_template_global(payments_open_to_members, "payments_open_to_members")
 
+    # Cache-bust static assets: Cloudflare edge-caches js/css by default, so
+    # without a version param deploys serve stale scripts for hours.
+    _asset_versions: dict[str, int] = {}
+
+    @app.url_defaults
+    def _static_cache_bust(endpoint, values):
+        if endpoint != "static" or "filename" not in values or "v" in values:
+            return
+        filename = values["filename"]
+        v = _asset_versions.get(filename)
+        if v is None:
+            try:
+                v = int((Path(app.static_folder) / filename).stat().st_mtime)
+            except OSError:
+                v = 0
+            _asset_versions[filename] = v
+        if v:
+            values["v"] = v
+
 
 def _setup_complete(app: Flask) -> bool:
     return Path(app.config["SETUP_FLAG_PATH"]).exists()

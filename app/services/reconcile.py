@@ -192,12 +192,14 @@ def _reconcile_test_payments(gateway) -> tuple[int, list, list, list]:
 
 def _add_pre_ledger_test_refs(by_ref: dict, cutoff) -> None:
     """Test payments made before the payment_events ledger existed live only
-    in the audit log. Synthesize transient poll candidates from those rows so
-    reconciliation can see them; their current state then lands in the ledger
-    properly. DELETE once every pre-ledger test reference has reached a
-    final state (they age out of the cutoff window regardless)."""
+    in the audit log. Materialize their event history into the ledger (with
+    the original timestamps) so they appear on the Transactions page and can
+    be polled/cancelled like any other reference. Runs once per reference:
+    materialized refs are in the ledger on subsequent sweeps. DELETE once
+    every pre-ledger test reference has aged out of the cutoff window."""
     import re
 
+    from .jinja_filters import parse_cents
     from ..models.audit import AuditLog
 
     rows = (AuditLog.query
@@ -205,18 +207,31 @@ def _add_pre_ledger_test_refs(by_ref: dict, cutoff) -> None:
                     AuditLog.created_at >= cutoff)
             .order_by(AuditLog.id.asc())
             .all())
-    pattern = re.compile(r"Test payment (test_\w+): ([\w.]+), \$[\d.,?]+, "
-                         r"transaction (\S+)")
+    pattern = re.compile(r"Test payment (test_\w+): ([\w.]+), "
+                         r"\$([\d.,]+|\?), transaction (\S+)")
     ledger_refs = set(by_ref)
+    materialized = False
     for row in rows:
         m = pattern.match(row.summary or "")
         if not m:
             continue
-        ref, etype, txn = m.groups()
+        ref, etype, amount_raw, txn = m.groups()
         if ref in ledger_refs or txn in ("n/a", ""):
             continue
-        by_ref.setdefault(ref, []).append(PaymentEvent(
-            merchant_reference=ref, event_type=etype, transaction_id=txn))
+        try:
+            amount = None if amount_raw == "?" else parse_cents(amount_raw)
+        except ValueError:
+            amount = None
+        evt = PaymentEvent(
+            merchant_reference=ref, event_type=etype, transaction_id=txn,
+            amount=amount, note="backfilled from audit log",
+            created_at=row.created_at,
+        )
+        db.session.add(evt)
+        materialized = True
+        by_ref.setdefault(ref, []).append(evt)
+    if materialized:
+        db.session.commit()
 
 
 def _fetch_status(gateway, reg: Registration):

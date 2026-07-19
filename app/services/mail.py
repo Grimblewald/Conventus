@@ -39,18 +39,21 @@ def connect_mailer() -> None:
 
 
 def send_mail(to: str, subject: str, body: str, sender_name: str | None = None,
-              reply_to: str | None = None) -> bool:
+              reply_to: str | None = None, sender_email: str | None = None,
+              html: str | None = None) -> bool:
     """Returns True on success, False on failure. Never raises.
 
     If *sender_name* is given, it replaces the display-name portion of
-    MAIL_FROM (e.g. "Contact Form" <noreply@example.org>).
+    MAIL_FROM (e.g. "Contact Form" <noreply@example.org>). If
+    *sender_email* is given, it replaces the address portion. If *html*
+    is given, it is attached as an HTML alternative to the plain body.
     """
     backend = os.environ.get("MAIL_BACKEND", "console").strip().lower()
     try:
         if backend == "smtp":
-            _send_smtp(to, subject, body, sender_name, reply_to)
+            _send_smtp(to, subject, body, sender_name, reply_to, sender_email, html)
         else:
-            _send_console(to, subject, body, sender_name, reply_to)
+            _send_console(to, subject, body, sender_name, reply_to, sender_email, html)
         return True
     except Exception:
         log.exception("send_mail(%r) failed", to)
@@ -59,22 +62,29 @@ def send_mail(to: str, subject: str, body: str, sender_name: str | None = None,
 
 def _send_console(to: str, subject: str, body: str,
                   sender_name: str | None = None,
-                  reply_to: str | None = None) -> None:
+                  reply_to: str | None = None,
+                  sender_email: str | None = None,
+                  html: str | None = None) -> None:
     bar = "=" * 72
-    from_label = f" (from: {sender_name})" if sender_name else ""
+    from_bits = " ".join(filter(None, [sender_name, sender_email]))
+    from_label = f" (from: {from_bits})" if from_bits else ""
     reply_label = f" (reply-to: {reply_to})" if reply_to else ""
-    print(f"\n{bar}\n[mail:console] to={to}{from_label}{reply_label}\n[mail:console] subject={subject}\n"
+    html_label = " (+html alternative)" if html else ""
+    print(f"\n{bar}\n[mail:console] to={to}{from_label}{reply_label}{html_label}\n[mail:console] subject={subject}\n"
           f"{'-' * 72}\n{body}\n{bar}\n", flush=True)
 
 
 def _send_smtp(to: str, subject: str, body: str,
                sender_name: str | None = None,
-               reply_to: str | None = None) -> None:
+               reply_to: str | None = None,
+               sender_email: str | None = None,
+               html: str | None = None) -> None:
     from flask import current_app
     raw_from = current_app.config.get("MAIL_FROM", "").strip() or "noreply@example.org"
-    if sender_name:
-        _display, addr = parseaddr(raw_from)
-        sender = formataddr((sender_name, addr)) if addr else raw_from
+    if sender_name or sender_email:
+        display, addr = parseaddr(raw_from)
+        addr = sender_email or addr
+        sender = formataddr((sender_name or display, addr)) if addr else raw_from
     else:
         sender = raw_from
 
@@ -91,6 +101,8 @@ def _send_smtp(to: str, subject: str, body: str,
     if reply_to:
         msg["Reply-To"] = reply_to
     msg.set_content(body)
+    if html:
+        msg.add_alternative(html, subtype="html")
 
     conn = _get_smtp_connection()
     try:

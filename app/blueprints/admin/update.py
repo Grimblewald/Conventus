@@ -122,7 +122,9 @@ def update_confirm():
                 capture_output=True, timeout=10,
             )
             if proc.returncode == 0:
-                flash("Site updated and restarting.", "success")
+                # Render the waiting page directly — a redirect would race
+                # the restart and greet the admin with a bad gateway.
+                return render_template("admin/update_restarting.html")
             else:
                 detail = (proc.stderr or proc.stdout or b"").decode().strip()
                 flash("Site updated, but the restart could not be queued"

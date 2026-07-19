@@ -1,0 +1,40 @@
+{% extends "admin/_base.html" %}
+{% block title %}Restarting · {{ site.site_name }} Admin{% endblock %}
+{% block admin %}
+<div class="section-head">
+  <div>
+    <div class="eyebrow">System</div>
+    <h2>Update complete</h2>
+  </div>
+</div>
+
+<div class="card" style="padding:24px;" id="restart-status" data-target="{{ url_for('admin.index') }}">
+  <h3 style="margin-top:0;">The site is restarting</h3>
+  <p>git pull and database migrations succeeded, and the service restart has been queued.</p>
+  <p class="muted">
+    This page checks every few seconds and returns to the admin overview as soon
+    as the site is back — usually well under a minute. If nothing happens after a
+    couple of minutes, reload manually.
+  </p>
+  <p class="muted" id="restart-progress">Waiting for the site to come back…</p>
+</div>
+<script>
+(function () {
+  var el = document.getElementById("restart-status");
+  var progress = document.getElementById("restart-progress");
+  var target = el.getAttribute("data-target");
+  var tries = 0;
+  function schedule(delay) { setTimeout(poll, delay); }
+  function poll() {
+    tries += 1;
+    progress.textContent = "Waiting for the site to come back… (check " + tries + ")";
+    fetch(target, { cache: "no-store", credentials: "same-origin" })
+      .then(function (r) {
+        if (r.ok) { window.location = target; } else { schedule(2000); }
+      })
+      .catch(function () { schedule(2000); });
+  }
+  schedule(3000);
+})();
+</script>
+{% endblock %}

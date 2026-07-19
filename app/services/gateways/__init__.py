@@ -68,17 +68,3 @@ class PaymentGateway(ABC):
         Returns:
             WebhookResult with success status and registration_id.
         """
-
-
-_gateway_registry: dict[str, type[PaymentGateway]] = {}
-
-
-def register_gateway(name: str, cls: type[PaymentGateway]):
-    """Register a gateway implementation."""
-    _gateway_registry[name] = cls
-
-
-def get_gateway(name: str) -> PaymentGateway | None:
-    """Get a gateway instance by name."""
-    cls = _gateway_registry.get(name)
-    return cls() if cls else None

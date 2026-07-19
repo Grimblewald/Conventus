@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from flask import url_for
 
-from . import CheckoutResult, ConnectionTestResult, PaymentGateway, WebhookResult, register_gateway
+from . import CheckoutResult, ConnectionTestResult, PaymentGateway, WebhookResult
 from ...models import get_active_payment_gateway
 
 log = logging.getLogger(__name__)
@@ -260,6 +260,3 @@ class ANZWorldlineGateway(PaymentGateway):
                 message=f"Connection failed ({env}, {endpoint}): {e}{hint}",
                 details=str(e)
             )
-
-
-register_gateway("anz_worldline", ANZWorldlineGateway)

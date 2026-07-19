@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Launch the site under gunicorn. Standalone — no Cloudflare in here;
-# see deploy/cloudflared/ for the tunnel example.
+# scripts/launch_cloudflared.sh wraps this with the Cloudflare tunnel.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."

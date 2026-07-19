@@ -1,10 +1,8 @@
 """Payment integration points.
 
-Pluggable gateway architecture: register implementations via
-``register_gateway()`` in ``app/services/gateways/``.
-
-The active gateway is determined by the PaymentGatewayConfig DB model
-(payment gateway configuration panel in the admin).
+Gateways implement the ``PaymentGateway`` ABC in
+``app/services/gateways/``; the active one is selected via the
+PaymentGatewayConfig DB row managed in the admin Financial panel.
 """
 from __future__ import annotations
 

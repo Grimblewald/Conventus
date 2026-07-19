@@ -413,14 +413,17 @@ def payment_webhook():
             if reg:
                 reg.transaction_id = result.transaction_id or reg.transaction_id
                 reg.last_webhook_event = result.event_type or result.error or "unknown"
+                event_type = (result.event_type or "").lower()
 
-                if result.event_type and "refund" in result.event_type.lower():
+                if "refund" in event_type:
+                    first_refund = reg.status != "refunded"
                     reg.status = "refunded"
                     db.session.commit()
-                    try:
-                        send_invoice_email(reg)
-                    except Exception:
-                        current_app.logger.exception("Refund invoice email failed for reg %d", reg.id)
+                    if first_refund:
+                        try:
+                            send_invoice_email(reg)
+                        except Exception:
+                            current_app.logger.exception("Refund invoice email failed for reg %d", reg.id)
                 elif result.success:
                     if reg.status in ("pending", "processing", "failed"):
                         reg.status = "paid"
@@ -432,13 +435,19 @@ def payment_webhook():
                             send_invoice_email(reg)
                         except Exception:
                             current_app.logger.exception("Invoice email failed for reg %d", reg.id)
-                    elif reg.status != "paid":
+                    else:
                         db.session.commit()
+                elif event_type in ("payment.rejected", "payment.rejected_capture", "payment.cancelled"):
+                    # Never downgrade a completed payment on a stale or
+                    # out-of-order failure event.
+                    if reg.status in ("pending", "processing"):
+                        reg.status = "cancelled" if event_type == "payment.cancelled" else "failed"
+                    db.session.commit()
+                elif event_type in ("payment.pending_capture", "payment.capture_requested"):
+                    if reg.status == "pending":
+                        reg.status = "processing"
+                    db.session.commit()
                 else:
-                    if "rejected" in (result.error or ""):
-                        reg.status = "failed"
-                    elif "cancelled" in (result.error or ""):
-                        reg.status = "cancelled"
                     db.session.commit()
         return {"status": "ok" if result.success else "ignored"}, 200
     except Exception:

@@ -15,17 +15,13 @@ from ...models import (
     get_payment_gateway_config, get_active_payment_gateway,
     get_invoice_template,
 )
-from ...security import audit
-from ...security.permissions import can
+from ...security import audit, requires_permission
 from ...services.mail import send_mail
 
 
 @admin_bp.route("/financial")
+@requires_permission("financial.manage")
 def financial():
-    if not (current_user.is_admin or can("financial.manage")):
-        from flask import abort
-        abort(403)
-
     anzw_cfg = get_payment_gateway_config("anz_worldline")
     if not anzw_cfg:
         anzw_cfg = PaymentGatewayConfig(provider="anz_worldline")
@@ -42,11 +38,8 @@ def financial():
 
 
 @admin_bp.route("/financial/anz_worldline/edit", methods=["GET", "POST"])
+@requires_permission("financial.manage")
 def financial_edit():
-    if not (current_user.is_admin or can("financial.manage")):
-        from flask import abort
-        abort(403)
-
     cfg = get_payment_gateway_config("anz_worldline")
     if not cfg:
         cfg = PaymentGatewayConfig(provider="anz_worldline")
@@ -84,11 +77,8 @@ def financial_edit():
 
 
 @admin_bp.route("/financial/anz_worldline/test", methods=["POST"])
+@requires_permission("financial.manage")
 def financial_test():
-    if not (current_user.is_admin or can("financial.manage")):
-        from flask import abort
-        abort(403)
-
     from ...services.gateways.anz_worldline import ANZWorldlineGateway
 
     cfg = get_payment_gateway_config("anz_worldline")
@@ -112,11 +102,8 @@ def financial_test():
 
 
 @admin_bp.route("/financial/anz_worldline/toggle-sandbox-request", methods=["POST"])
+@requires_permission("financial.manage")
 def financial_toggle_sandbox_request():
-    if not (current_user.is_admin or can("financial.manage")):
-        from flask import abort
-        abort(403)
-
     cfg = get_payment_gateway_config("anz_worldline")
     if not cfg:
         flash("No gateway configured.", "error")
@@ -150,11 +137,8 @@ def financial_toggle_sandbox_request():
 
 
 @admin_bp.route("/financial/<provider>/toggle-sandbox-confirm", methods=["GET", "POST"])
+@requires_permission("financial.manage")
 def financial_toggle_sandbox_confirm(provider):
-    if not (current_user.is_admin or can("financial.manage")):
-        from flask import abort
-        abort(403)
-
     cfg = get_payment_gateway_config(provider)
     if not cfg:
         flash("No gateway configured.", "error")
@@ -188,11 +172,8 @@ def financial_toggle_sandbox_confirm(provider):
 
 
 @admin_bp.route("/financial/invoice", methods=["GET", "POST"])
+@requires_permission("financial.manage")
 def financial_invoice():
-    if not (current_user.is_admin or can("financial.manage")):
-        from flask import abort
-        abort(403)
-
     tpl = get_invoice_template()
 
     if request.method == "POST":

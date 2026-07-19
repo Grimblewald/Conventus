@@ -16,6 +16,10 @@ log = logging.getLogger(__name__)
 _WORLDLINE_TEST_BASE = "https://payment.preprod.anzworldline-solutions.com.au"
 _WORLDLINE_LIVE_BASE = "https://payment.anzworldline-solutions.com.au"
 
+_SUCCESSFUL_EVENTS = ("payment.captured", "payment.paid")
+_FAILED_EVENTS = ("payment.rejected", "payment.rejected_capture", "payment.cancelled")
+_REFUND_EVENTS = ("payment.refunded", "refund.refunded")
+
 
 class ANZWorldlineGateway(PaymentGateway):
     def __init__(self, config=None):
@@ -28,10 +32,6 @@ class ANZWorldlineGateway(PaymentGateway):
         """Create a fresh SDK client from stored config."""
         if not self._config or not self._config.is_enabled:
             return None
-        from onlinepayments.sdk.factory import Factory
-        from onlinepayments.sdk.communicator_configuration import CommunicatorConfiguration
-        from onlinepayments.sdk.default_connection import DefaultConnection
-        from onlinepayments.sdk.metadata_provider import MetadataProviderBuilder
 
         secret = self._config.get_api_secret()
         if not secret or not self._config.api_key_id or not self._config.merchant_id:
@@ -40,17 +40,22 @@ class ANZWorldlineGateway(PaymentGateway):
         base_url = _WORLDLINE_TEST_BASE if self._config.is_test_mode else _WORLDLINE_LIVE_BASE
 
         try:
+            from onlinepayments.sdk.factory import Factory
+            from onlinepayments.sdk.communicator_configuration import CommunicatorConfiguration
+            from onlinepayments.sdk.authentication.authorization_type import AuthorizationType
+
             config = CommunicatorConfiguration(
-                api_key=self._config.api_key_id,
-                api_secret=secret,
                 api_endpoint=base_url,
-                integrator="Conventus"
+                api_key_id=self._config.api_key_id,
+                secret_api_key=secret,
+                authorization_type=AuthorizationType.V1HMAC,
+                connect_timeout=10,
+                socket_timeout=30,
+                max_connections=10,
+                integrator="Conventus",
             )
-            conn = DefaultConnection()
-            meta_provider = MetadataProviderBuilder().with_integrator("Conventus").build()
-            client = Factory.create_client_from_configuration(config, conn=conn, metadata_provider=meta_provider)
-            return client
-        except Exception as e:
+            return Factory.create_client_from_configuration(config)
+        except Exception:
             log.exception("Failed to create Worldline client")
             return None
 
@@ -59,16 +64,16 @@ class ANZWorldlineGateway(PaymentGateway):
         if not client:
             return CheckoutResult(error="Payment gateway not configured.")
 
-        from onlinepayments.sdk.domain.create_hosted_checkout_request import CreateHostedCheckoutRequest
-        from onlinepayments.sdk.domain.order import Order
-        from onlinepayments.sdk.domain.amount_of_money import AmountOfMoney
-        from onlinepayments.sdk.domain.hosted_checkout_specific_input import HostedCheckoutSpecificInput
-        from onlinepayments.sdk.domain.order_references import OrderReferences
-
         reg_id = registration.id
         return_url = url_for("member.pay_result", reg_id=reg_id, _external=True)
 
         try:
+            from onlinepayments.sdk.domain.create_hosted_checkout_request import CreateHostedCheckoutRequest
+            from onlinepayments.sdk.domain.order import Order
+            from onlinepayments.sdk.domain.amount_of_money import AmountOfMoney
+            from onlinepayments.sdk.domain.hosted_checkout_specific_input import HostedCheckoutSpecificInput
+            from onlinepayments.sdk.domain.order_references import OrderReferences
+
             merchant_client = client.merchant(self._config.merchant_id)
 
             request_obj = CreateHostedCheckoutRequest()
@@ -87,7 +92,6 @@ class ANZWorldlineGateway(PaymentGateway):
             hcs_input = HostedCheckoutSpecificInput()
             hcs_input.locale = "en-AU"
             hcs_input.return_url = return_url
-            hcs_input.variant = ""
 
             request_obj.order = order
             request_obj.hosted_checkout_specific_input = hcs_input
@@ -98,7 +102,7 @@ class ANZWorldlineGateway(PaymentGateway):
             redirect_url = response.redirect_url or ""
 
             if not redirect_url and response.partial_redirect_url:
-                base = _WORLDLINE_TEST_BASE if self._config.is_test_mode else _WORLDLINE_LIVE_BASE
+                # The 'payment' subdomain always resolves for hosted pages.
                 redirect_url = "https://payment." + response.partial_redirect_url
 
             if not redirect_url:
@@ -113,9 +117,8 @@ class ANZWorldlineGateway(PaymentGateway):
     def verify_webhook(self, request_body: bytes, headers: dict | None = None) -> WebhookResult:
         """Verify a Worldline webhook using the WebhooksHelper from the SDK.
 
-        NOTE: Signature changed from (request_data: dict, headers: dict)
-        to (request_body: bytes, headers: dict | None = None).  Callers
-        must pass the raw POST body bytes, not parsed JSON.
+        Callers must pass the raw POST body bytes (the HMAC is computed
+        over the exact bytes received), plus the HTTP headers.
         """
         if not self._config:
             return WebhookResult(error="No payment gateway configured")
@@ -126,58 +129,59 @@ class ANZWorldlineGateway(PaymentGateway):
         if not secret or not key_id:
             return WebhookResult(error="Webhooks not configured")
 
-        from onlinepayments.sdk.webhooks.webhooks_helper import WebhooksHelper
-        from onlinepayments.sdk.webhooks.in_memory_secret_key_store import InMemorySecretKeyStore
-
-        key_store = InMemorySecretKeyStore()
-        key_store.store_secret_key(key_id, secret)
-
-        helper = WebhooksHelper(key_store)
-
         try:
-            header_list = []
-            if headers:
-                for k, v in headers.items():
-                    header_list.append({"name": k, "value": v})
+            from onlinepayments.sdk.communication.request_header import RequestHeader
+            from onlinepayments.sdk.json.default_marshaller import DefaultMarshaller
+            from onlinepayments.sdk.webhooks.webhooks_helper import WebhooksHelper
+            from onlinepayments.sdk.webhooks.in_memory_secret_key_store import InMemorySecretKeyStore
 
-            try:
-                body_str = request_body.decode("utf-8") if isinstance(request_body, bytes) else request_body
-            except Exception:
-                body_str = request_body
+            key_store = InMemorySecretKeyStore()
+            key_store.store_secret_key(key_id, secret)
+            helper = WebhooksHelper(DefaultMarshaller.instance(), key_store)
 
-            event = helper.unmarshal(body_str, header_list)
+            body = request_body if isinstance(request_body, bytes) else str(request_body).encode("utf-8")
+            header_list = [RequestHeader(k, v) for k, v in (headers or {}).items()]
 
-            if not event or not event.payment:
+            event = helper.unmarshal(body, header_list)
+            if not event:
                 return WebhookResult(error="Could not parse webhook event")
 
+            event_type = event.type or ""
+
+            # Payment events carry event.payment; refund events carry
+            # event.refund. Both reference the order via merchant_reference.
+            if event.payment:
+                transaction_id = event.payment.id or ""
+                output = event.payment.payment_output
+            elif event.refund:
+                transaction_id = event.refund.id or ""
+                output = event.refund.refund_output
+            else:
+                return WebhookResult(
+                    error=f"Unsupported webhook event: {event_type}",
+                    event_type=event_type,
+                )
+
             reg_id = None
-            if event.payment.payment_output and event.payment.payment_output.references:
-                ref = event.payment.payment_output.references.merchant_reference or ""
-                ref_parts = ref.split("reg_")
-                if len(ref_parts) == 2:
+            if output and output.references:
+                ref = output.references.merchant_reference or ""
+                if ref.startswith("reg_"):
                     try:
-                        reg_id = int(ref_parts[1])
+                        reg_id = int(ref[len("reg_"):])
                     except ValueError:
                         pass
 
-            event_type = event.type or ""
-            transaction_id = event.payment.id or ""
-
-            successful_events = ("payment.captured", "payment.paid")
-            failed_events = ("payment.rejected", "payment.cancelled")
-            refunded_events = ("payment.refunded", "refund.refunded")
-
-            if event_type in successful_events:
+            if event_type in _SUCCESSFUL_EVENTS:
                 return WebhookResult(
                     success=True, registration_id=reg_id,
                     transaction_id=transaction_id, event_type=event_type,
                 )
-            elif event_type in refunded_events:
+            elif event_type in _REFUND_EVENTS:
                 return WebhookResult(
                     success=True, registration_id=reg_id,
                     transaction_id=transaction_id, event_type=event_type,
                 )
-            elif event_type in failed_events:
+            elif event_type in _FAILED_EVENTS:
                 return WebhookResult(
                     success=False, registration_id=reg_id,
                     transaction_id=transaction_id, error=f"Payment {event_type}",
@@ -201,9 +205,10 @@ class ANZWorldlineGateway(PaymentGateway):
             return ConnectionTestResult(success=False, message="Gateway not configured. Set API credentials first.")
 
         try:
+            from onlinepayments.sdk.merchant.products.get_payment_products_params import GetPaymentProductsParams
+
             merchant_client = client.merchant(self._config.merchant_id)
 
-            from onlinepayments.sdk.merchant.products.get_payment_products_params import GetPaymentProductsParams
             params = GetPaymentProductsParams()
             params.country_code = "AU"
             params.currency_code = "AUD"

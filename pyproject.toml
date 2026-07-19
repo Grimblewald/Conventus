@@ -15,10 +15,8 @@ dependencies = [
     "flask-talisman==1.1.0",
     "flask-babel==4.0.0",
     "werkzeug==3.0.4",
-
     # Database drivers
     "psycopg[binary]==3.2.3",
-
     # Utilities
     "email-validator==2.2.0",
     "python-dotenv>=1.0.1",
@@ -26,11 +24,10 @@ dependencies = [
     "pillow>=10.4.0",
     "cryptography>=42.0.0",
     "onlinepayments-sdk-python3>=4.0.0",
-
     "limits[redis]>=3.13.0",
-
     # Production WSGI
     "gunicorn==23.0.0",
+    "pyzipper>=0.4.0",
 ]
 
 [project.optional-dependencies]

@@ -52,17 +52,24 @@
   </div>
   {% endif %}
 
-  <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--c-card-border);">
+  <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--c-card-border); display:flex; justify-content:space-between; align-items:center; gap:16px; flex-wrap:wrap;">
     <p class="muted" style="margin:0; font-size:0.9rem;">
       Member payments are <strong>{{ 'open' if payments_open_to_members() else 'closed' }}</strong>.
-      Opening them requires all three:
-      gateway enabled ({{ 'yes' if config.is_enabled else 'no' }}) ·
-      live mode ({{ 'yes' if not config.is_test_mode else 'no — sandbox' }}) ·
-      payment portal switch in <a href="{{ url_for('admin.site_identity') }}">Site → Identity</a>
-      ({{ 'on' if site.payment_portal_enabled else 'off' }}).
+      Opening requires: gateway enabled ({{ 'yes' if config.is_enabled else 'no' }}) ·
+      live mode ({{ 'yes' if not config.is_test_mode else 'no — sandbox' }}).
       While closed, members see the portal as under construction; admins and
       financial managers can still run test payments on their own registrations.
     </p>
+    <form method="POST" action="{{ url_for('admin.financial_member_payments') }}" style="display:inline;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {% if site.payment_portal_enabled %}
+        <input type="hidden" name="action" value="close">
+        <button class="btn btn-ghost" type="submit">Close member payments</button>
+      {% elif config.is_enabled and not config.is_test_mode %}
+        <input type="hidden" name="action" value="open">
+        <button class="btn btn-primary" type="submit">Open member payments</button>
+      {% endif %}
+    </form>
   </div>
 </div>
 

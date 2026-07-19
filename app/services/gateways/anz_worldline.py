@@ -88,6 +88,7 @@ class ANZWorldlineGateway(PaymentGateway):
             from onlinepayments.sdk.domain.create_hosted_checkout_request import CreateHostedCheckoutRequest
             from onlinepayments.sdk.domain.order import Order
             from onlinepayments.sdk.domain.amount_of_money import AmountOfMoney
+            from onlinepayments.sdk.domain.card_payment_method_specific_input import CardPaymentMethodSpecificInput
             from onlinepayments.sdk.domain.hosted_checkout_specific_input import HostedCheckoutSpecificInput
             from onlinepayments.sdk.domain.order_references import OrderReferences
 
@@ -110,7 +111,14 @@ class ANZWorldlineGateway(PaymentGateway):
             hcs_input.locale = "en-AU"
             hcs_input.return_url = return_url
 
+            # SALE authorizes and captures in one step. The default
+            # (FINAL_AUTHORIZATION) only reserves the amount, leaving
+            # payments stuck at pending_capture until captured manually.
+            card_input = CardPaymentMethodSpecificInput()
+            card_input.authorization_mode = "SALE"
+
             request_obj.order = order
+            request_obj.card_payment_method_specific_input = card_input
             request_obj.hosted_checkout_specific_input = hcs_input
 
             response = merchant_client.hosted_checkout().create_hosted_checkout(request_obj)

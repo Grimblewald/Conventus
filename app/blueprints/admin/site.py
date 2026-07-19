@@ -47,7 +47,6 @@ def site_identity():
             val = (request.form.get(fld) or "").strip()
             if val:
                 setattr(s, fld, val)
-        s.payment_portal_enabled = request.form.get("payment_portal_enabled") == "1"
         raw_start = (request.form.get("board_term_start") or "").strip()
         s.board_term_start = date.fromisoformat(raw_start) if raw_start else None
         raw_int = (request.form.get("board_term_interval_months") or "").strip()

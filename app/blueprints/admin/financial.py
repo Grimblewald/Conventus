@@ -325,3 +325,38 @@ def financial_send_invoice():
 
     return render_template("admin/financial_send_invoice.html",
                            form={}, suggested_ref=suggested_ref)
+
+
+@admin_bp.route("/financial/member-payments", methods=["POST"])
+@requires_permission("financial.manage")
+def financial_member_payments():
+    """Open or close online payments to members — the final gate in front
+    of the checkout. Opening requires the gateway to be enabled and live."""
+    from ...models.content import get_site_settings
+
+    site = get_site_settings()
+    action = (request.form.get("action") or "").strip()
+
+    if action == "open":
+        cfg = get_payment_gateway_config("anz_worldline")
+        if not cfg or not cfg.is_enabled:
+            flash("Cannot open member payments: the gateway is not enabled.", "error")
+            return redirect(url_for("admin.financial"))
+        if cfg.is_test_mode:
+            flash("Cannot open member payments while the gateway is in sandbox "
+                  "mode — members would be sent to the test environment.", "error")
+            return redirect(url_for("admin.financial"))
+        site.payment_portal_enabled = True
+    elif action == "close":
+        site.payment_portal_enabled = False
+    else:
+        flash("Unknown action.", "error")
+        return redirect(url_for("admin.financial"))
+
+    db.session.commit()
+    state = "opened" if site.payment_portal_enabled else "closed"
+    audit.record("financial.member_payments_toggled",
+                 target_kind="site_settings", target_id="1",
+                 summary=f"Member payments {state} by {current_user.email}")
+    flash(f"Member payments {state}.", "success")
+    return redirect(url_for("admin.financial"))

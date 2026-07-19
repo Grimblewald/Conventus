@@ -217,6 +217,10 @@ class ANZWorldlineGateway(PaymentGateway):
         if not client:
             return ConnectionTestResult(success=False, message="Gateway not configured. Set API credentials first.")
 
+        env = "sandbox" if self._config.is_test_mode else "live"
+        base_url = _WORLDLINE_TEST_BASE if self._config.is_test_mode else _WORLDLINE_LIVE_BASE
+        endpoint = base_url.removeprefix("https://")
+
         try:
             from onlinepayments.sdk.merchant.products.get_payment_products_params import GetPaymentProductsParams
 
@@ -229,16 +233,23 @@ class ANZWorldlineGateway(PaymentGateway):
             response = merchant_client.products().get_payment_products(params)
             count = len(response.payment_products) if response.payment_products else 0
 
-            env = "sandbox" if self._config.is_test_mode else "live"
             return ConnectionTestResult(
                 success=True,
-                message=f"Connection successful ({env}). {count} payment products available.",
+                message=f"Connection successful ({env}, {endpoint}). {count} payment products available.",
                 details=f"Environment: {env}, Merchant: {self._config.merchant_id}"
             )
         except Exception as e:
+            hint = ""
+            if "ACCESS_TO_MERCHANT_NOT_ALLOWED" in str(e):
+                hint = (f" Hint: the API key is valid but not for merchant "
+                        f"'{self._config.merchant_id}' on the {env} environment — "
+                        f"check the merchant ID matches the portal the key was "
+                        f"generated in, and that the key belongs to this "
+                        f"environment (sandbox keys come from the preprod portal, "
+                        f"live keys from the production portal).")
             return ConnectionTestResult(
                 success=False,
-                message=f"Connection failed: {e}",
+                message=f"Connection failed ({env}, {endpoint}): {e}{hint}",
                 details=str(e)
             )
 

@@ -107,19 +107,32 @@ def update_confirm():
             return redirect(url_for("admin.update_page"))
         flash("Database migrations applied.", "success")
 
-        try:
-            subprocess.run(
-                ["systemctl", "--user", "restart", "cloudflared-launch.service"],
-                check=False, capture_output=True, timeout=10,
-            )
-            flash("Site updated and restarting.", "success")
-        except Exception:
-            flash("Site updated, but restart failed. Run manually:"
-                  " systemctl --user restart cloudflared-launch.service", "success")
-
+        # Record the audit entry before restarting: the restart stops the
+        # unit this process runs under, so nothing after it is guaranteed.
         audit.record("site.updated",
                      target_kind="system", target_id=0,
                      summary="Site updated via admin panel")
+
+        try:
+            # --no-block queues the restart so this response gets out
+            # before the service (and this process) is stopped.
+            proc = subprocess.run(
+                ["systemctl", "--user", "restart", "--no-block",
+                 "cloudflared-launch.service"],
+                capture_output=True, timeout=10,
+            )
+            if proc.returncode == 0:
+                flash("Site updated and restarting.", "success")
+            else:
+                detail = (proc.stderr or proc.stdout or b"").decode().strip()
+                flash("Site updated, but the restart could not be queued"
+                      + (f" ({detail})" if detail else "") + ". Run manually:"
+                      " systemctl --user restart cloudflared-launch.service", "error")
+        except Exception:
+            flash("Site updated, but the restart could not be queued."
+                  " Run manually:"
+                  " systemctl --user restart cloudflared-launch.service", "error")
+
         return redirect(url_for("admin.index"))
 
     return render_template("admin/update_confirm.html")

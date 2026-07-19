@@ -32,13 +32,16 @@ def check_key_expiry():
 
         sent_warnings = cfg.expiry_warnings_sent or []
 
-        for threshold in EXPIRY_WARNING_DAYS:
-            if days_remaining <= threshold and threshold not in sent_warnings:
-                _send_expiry_warning(cfg, days_remaining, site)
-                sent_warnings.append(threshold)
-
-        cfg.expiry_warnings_sent = sent_warnings
-        db.session.commit()
+        crossed = [t for t in EXPIRY_WARNING_DAYS
+                   if days_remaining <= t and t not in sent_warnings]
+        if crossed:
+            # One email per check, however many thresholds were crossed at
+            # once. Assign a fresh list: in-place mutation of a JSON column
+            # is invisible to SQLAlchemy's change tracking.
+            _send_expiry_warning(cfg, days_remaining, site)
+            cfg.expiry_warnings_sent = sorted(
+                set(sent_warnings) | set(crossed), reverse=True)
+            db.session.commit()
 
 
 def _send_expiry_warning(cfg, days_remaining, site):
@@ -47,13 +50,17 @@ def _send_expiry_warning(cfg, days_remaining, site):
         User.deleted_at.is_(None),
     ).all()
 
+    if days_remaining > 0:
+        when = f"expires in {days_remaining} day(s)"
+    else:
+        when = "has expired"
+
     for admin in admins:
         send_mail(
             to=admin.email,
-            subject=f"[{site.site_name}] API key expires in {days_remaining} days",
+            subject=f"[{site.site_name}] API key {when}",
             body=(
-                f"The ANZ Worldline API key for {site.site_name} expires in "
-                f"{days_remaining} day(s).\n\n"
+                f"The ANZ Worldline API key for {site.site_name} {when}.\n\n"
                 f"Provider: {cfg.provider}\n"
                 f"Merchant ID: {cfg.merchant_id}\n"
                 f"API Key ID: {cfg.api_key_id}\n\n"

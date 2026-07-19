@@ -63,6 +63,7 @@ class ANZWorldlineGateway(PaymentGateway):
         from onlinepayments.sdk.domain.order import Order
         from onlinepayments.sdk.domain.amount_of_money import AmountOfMoney
         from onlinepayments.sdk.domain.hosted_checkout_specific_input import HostedCheckoutSpecificInput
+        from onlinepayments.sdk.domain.order_references import OrderReferences
 
         reg_id = registration.id
         return_url = url_for("member.pay_result", reg_id=reg_id, _external=True)
@@ -78,6 +79,10 @@ class ANZWorldlineGateway(PaymentGateway):
 
             order = Order()
             order.amount_of_money = amount_of_money
+
+            refs = OrderReferences()
+            refs.merchant_reference = f"reg_{reg_id}"
+            order.references = refs
 
             hcs_input = HostedCheckoutSpecificInput()
             hcs_input.locale = "en-AU"

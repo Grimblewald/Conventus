@@ -122,7 +122,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
 }
 .brand { display: flex; align-items: center; gap: 14px; text-decoration: none; color: inherit; }
 .brand:hover { text-decoration: none; }
-.brand-mark { height: 42px; width: auto; flex-shrink: 0; object-fit: contain; }
+.brand-mark { height: var(--logo-height, 42px); width: auto; flex-shrink: 0; object-fit: contain; }
 .brand-text { line-height: 1.05; }
 .brand-text .wordmark {
   font-family: var(--f-heading);

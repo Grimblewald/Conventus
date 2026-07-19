@@ -67,6 +67,7 @@ class SiteSettings(db.Model):
     # --- Images ------------------------------------------------------------
     hero_image_filename = db.Column(db.String(255))
     logo_filename = db.Column(db.String(255))
+    logo_height_px = db.Column(db.Integer, nullable=True)
     favicon_filename = db.Column(db.String(255))
     og_image_filename = db.Column(db.String(255))
 

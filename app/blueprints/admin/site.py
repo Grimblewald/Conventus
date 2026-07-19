@@ -228,3 +228,28 @@ def site_images_update(slot):
                  summary=f"Uploaded new {cfg['label']}")
     flash(f"{cfg['label']} updated.", "success")
     return redirect(url_for("admin.site_images"))
+
+
+@admin_bp.route("/site/images/logo-height", methods=["POST"])
+@requires_permission("site.images")
+def site_images_logo_height():
+    s = get_site_settings()
+    raw = (request.form.get("logo_height_px") or "").strip()
+    if not raw:
+        s.logo_height_px = None
+    else:
+        try:
+            height = int(raw)
+        except ValueError:
+            flash("Logo height must be a whole number of pixels.", "error")
+            return redirect(url_for("admin.site_images"))
+        if not (16 <= height <= 300):
+            flash("Logo height must be between 16 and 300 pixels.", "error")
+            return redirect(url_for("admin.site_images"))
+        s.logo_height_px = height
+    db.session.commit()
+    audit.record("site.image_uploaded",
+                 target_kind="site_settings", target_id=s.id,
+                 summary=f"Logo display height set to {s.logo_height_px or 'default'}")
+    flash("Logo height saved.", "success")
+    return redirect(url_for("admin.site_images"))

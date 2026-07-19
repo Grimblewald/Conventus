@@ -27,6 +27,20 @@
         {% endif %}
       </div>
     </form>
+    {% if key == 'logo' %}
+    <form method="post" action="{{ url_for('admin.site_images_logo_height') }}"
+          class="form" style="margin-top:14px; padding-top:14px; border-top:1px solid var(--c-card-border);">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label for="logo_height_px">Display height (px)</label>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input class="input" id="logo_height_px" name="logo_height_px" type="number"
+               min="16" max="300" value="{{ s.logo_height_px or '' }}"
+               placeholder="42" style="max-width:110px;">
+        <button class="btn btn-sm" type="submit">Save height</button>
+      </div>
+      <div class="help">Height of the logo in the header and footer. Blank restores the default (42px).</div>
+    </form>
+    {% endif %}
   </div>
   {% endfor %}
 </div>

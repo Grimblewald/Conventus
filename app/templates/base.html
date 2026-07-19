@@ -29,6 +29,8 @@
       --c-button-bg:    {{ site.palette_button_bg }};
       --c-button-text:  {{ site.palette_button_text }};
 
+      --logo-height:    {{ site.logo_height_px or 42 }}px;
+
       --f-heading: {{ (FONT_STACKS[site.font_heading]['stack'] if site.font_heading in FONT_STACKS else FONT_STACKS['modern_serif']['stack']) | safe }};
       --f-body:    {{ (FONT_STACKS[site.font_body]['stack'] if site.font_body in FONT_STACKS else FONT_STACKS['system_sans']['stack']) | safe }};
       --f-link:    {{ (FONT_STACKS[site.font_link]['stack'] if site.font_link in FONT_STACKS else FONT_STACKS['system_sans']['stack']) | safe }};

@@ -416,14 +416,29 @@ def payment_webhook():
                 event_type = (result.event_type or "").lower()
 
                 if "refund" in event_type:
-                    first_refund = reg.status != "refunded"
-                    reg.status = "refunded"
+                    if result.success:
+                        # Settled refund (payment.refunded / refund.refunded).
+                        first_refund = reg.status != "refunded"
+                        reg.status = "refunded"
+                        db.session.commit()
+                        if first_refund:
+                            try:
+                                send_invoice_email(reg)
+                            except Exception:
+                                current_app.logger.exception("Refund invoice email failed for reg %d", reg.id)
+                    else:
+                        # Initiated (refund.created) or failed refunds must
+                        # not flip the status; failures need human eyes.
+                        db.session.commit()
+                        if any(w in event_type for w in ("rejected", "cancelled")):
+                            _notify_payment_attention(reg, result)
+                elif event_type in ("payment.chargebacked",
+                                    "payment.chargeback_reversed",
+                                    "payment.reversed"):
+                    # Disputes are managed in the Merchant Portal; record the
+                    # event and alert admins without changing the status.
                     db.session.commit()
-                    if first_refund:
-                        try:
-                            send_invoice_email(reg)
-                        except Exception:
-                            current_app.logger.exception("Refund invoice email failed for reg %d", reg.id)
+                    _notify_payment_attention(reg, result)
                 elif result.success:
                     if reg.status in ("pending", "processing", "failed"):
                         reg.status = "paid"
@@ -455,6 +470,43 @@ def payment_webhook():
     except Exception:
         current_app.logger.exception("Webhook processing failed")
         return {"status": "error", "message": "Payment processing error"}, 500
+
+
+def _notify_payment_attention(reg, result) -> None:
+    """Audit and email admins about a payment event needing human action:
+    a dispute/chargeback or a failed refund."""
+    from ...models.user import User
+    from ...models.content import get_site_settings
+    from ...security import audit
+    from ...services.jinja_filters import format_amount
+    from ...services.mail import send_mail
+
+    event = result.event_type or "unknown"
+    amount = format_amount(result.amount) if result.amount is not None else format_amount(reg.amount)
+    user_email = reg.user.email if reg.user else "unknown"
+    summary = (f"Registration {reg.id} ({user_email}): {event}, ${amount}, "
+               f"transaction {result.transaction_id or reg.transaction_id or 'n/a'}")
+    audit.record("financial.payment_attention",
+                 target_kind="registration", target_id=str(reg.id),
+                 summary=summary)
+
+    site = get_site_settings()
+    admins = User.query.filter(User.role_name == "admin",
+                               User.deleted_at.is_(None)).all()
+    for admin in admins:
+        send_mail(
+            to=admin.email,
+            subject=f"[{site.site_name}] Payment needs attention: {event}",
+            body=(f"A payment event that needs review was received.\n\n"
+                  f"Registration: {reg.id} ({user_email})\n"
+                  f"Event: {event}\n"
+                  f"Amount: ${amount}\n"
+                  f"Transaction: {result.transaction_id or reg.transaction_id or 'n/a'}\n"
+                  f"Registration status: {reg.status} (unchanged)\n\n"
+                  f"Disputes and refund failures are managed in the Worldline "
+                  f"Merchant Portal. Update the registration status manually "
+                  f"in the admin if needed."),
+        )
 
 
 def _record_test_payment_event(result) -> None:

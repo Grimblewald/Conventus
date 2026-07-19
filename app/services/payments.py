@@ -72,6 +72,15 @@ def initiate_payment(registration: Registration) -> str | None:
     if result.error:
         log.warning("Payment error for reg %d: %s", registration.id, result.error)
         return None
+    from ..models import record_payment_event
+    record_payment_event(
+        transaction_id=result.payment_id,
+        merchant_reference=f"reg_{registration.id}",
+        registration_id=registration.id,
+        event_type="checkout.created",
+        amount=registration.amount,
+        note="hosted checkout session created",
+    )
     return result.redirect_url
 
 

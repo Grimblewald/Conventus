@@ -238,6 +238,15 @@ def financial_test_payment():
         flash(f"Could not start test payment: {result.error or 'no redirect URL'}",
               "error")
         return redirect(url_for("admin.financial"))
+
+    from ...models import record_payment_event
+    record_payment_event(
+        transaction_id=result.payment_id,
+        merchant_reference=reference,
+        event_type="checkout.created",
+        amount=amount,
+        note=f"test payment started by {current_user.email}",
+    )
     return redirect(result.redirect_url)
 
 
@@ -316,6 +325,15 @@ def financial_send_invoice():
                               f"{' (cc ' + ', '.join(cc) + ')' if cc else ''}"
                               f" by {current_user.email}"))
         if ok:
+            from ...models import record_payment_event
+            record_payment_event(
+                merchant_reference=reference,
+                event_type="invoice.sent",
+                amount=amount,
+                note=(f"to {to}"
+                      f"{' (cc ' + ', '.join(cc) + ')' if cc else ''}"
+                      f" by {current_user.email}"),
+            )
             flash(f"Invoice {reference} sent to {to}"
                   f"{' (cc ' + ', '.join(cc) + ')' if cc else ''}.", "success")
             return redirect(url_for("admin.financial_send_invoice"))
@@ -360,3 +378,34 @@ def financial_member_payments():
                  summary=f"Member payments {state} by {current_user.email}")
     flash(f"Member payments {state}.", "success")
     return redirect(url_for("admin.financial"))
+
+
+@admin_bp.route("/financial/transactions")
+@requires_permission("financial.manage")
+def financial_transactions():
+    """Financial event ledger, grouped per transaction and searchable."""
+    from ...models import PaymentEvent, Registration, User
+
+    q = (request.args.get("q") or "").strip()
+    query = (PaymentEvent.query
+             .outerjoin(Registration, PaymentEvent.registration_id == Registration.id)
+             .outerjoin(User, Registration.user_id == User.id))
+    if q:
+        like = f"%{q}%"
+        query = query.filter(db.or_(
+            PaymentEvent.transaction_id.ilike(like),
+            PaymentEvent.merchant_reference.ilike(like),
+            PaymentEvent.event_type.ilike(like),
+            PaymentEvent.note.ilike(like),
+            User.email.ilike(like),
+        ))
+    events = (query.order_by(PaymentEvent.created_at.desc(),
+                             PaymentEvent.id.desc())
+              .limit(500).all())
+
+    groups: dict[str, list] = {}
+    for e in events:
+        groups.setdefault(e.group_key, []).append(e)
+
+    return render_template("admin/financial_transactions.html",
+                           groups=groups, q=q, event_count=len(events))

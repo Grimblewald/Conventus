@@ -408,9 +408,14 @@ def payment_webhook():
 
     try:
         result = g.verify_webhook(request.data, dict(request.headers))
+        ledger_note = ""
+        reg = None
         if result.registration_id:
             reg = db.session.get(Registration, result.registration_id)
+            if not reg:
+                ledger_note = "no matching registration"
             if reg:
+                old_status = reg.status
                 reg.transaction_id = result.transaction_id or reg.transaction_id
                 reg.last_webhook_event = result.event_type or result.error or "unknown"
                 event_type = (result.event_type or "").lower()
@@ -464,8 +469,23 @@ def payment_webhook():
                     db.session.commit()
                 else:
                     db.session.commit()
+                ledger_note = (f"status {old_status} → {reg.status}"
+                               if reg.status != old_status
+                               else f"status unchanged ({reg.status})")
         elif (result.merchant_reference or "").startswith("test_"):
             _record_test_payment_event(result)
+            ledger_note = "admin test payment"
+
+        if result.event_type:
+            from ...models import record_payment_event
+            record_payment_event(
+                transaction_id=result.transaction_id,
+                merchant_reference=result.merchant_reference,
+                registration_id=reg.id if reg else None,
+                event_type=result.event_type,
+                amount=result.amount,
+                note=ledger_note,
+            )
         return {"status": "ok" if result.success else "ignored"}, 200
     except Exception:
         current_app.logger.exception("Webhook processing failed")

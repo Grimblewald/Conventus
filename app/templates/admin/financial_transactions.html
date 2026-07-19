@@ -1,0 +1,66 @@
+{% extends "admin/_base.html" %}
+{% block title %}Transactions · {{ site.site_name }} Admin{% endblock %}
+{% block admin %}
+<div class="section-head">
+  <div>
+    <div class="eyebrow">Financial</div>
+    <h2>Transactions</h2>
+  </div>
+</div>
+
+<form method="GET" class="card" style="padding:16px 24px; margin-bottom:20px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+  <input type="text" name="q" class="input" value="{{ q }}" style="max-width:360px;"
+         placeholder="Transaction ID, reference, event type, or member email">
+  <button class="btn" type="submit">Search</button>
+  {% if q %}<a class="btn btn-ghost" href="{{ url_for('admin.financial_transactions') }}">Clear</a>{% endif %}
+  <span class="muted" style="margin-left:auto; font-size:0.9rem;">
+    {{ groups | length }} transaction{{ 's' if groups | length != 1 }} · {{ event_count }} event{{ 's' if event_count != 1 }}
+    {% if event_count == 500 %} (showing latest 500){% endif %}
+  </span>
+</form>
+
+{% if not groups %}
+<div class="card" style="padding:24px;">
+  <p class="muted" style="margin:0;">
+    {% if q %}No events match "{{ q }}".{% else %}No payment events recorded yet.
+    Events appear here as checkouts are created, webhooks arrive, and invoices are sent.{% endif %}
+  </p>
+</div>
+{% endif %}
+
+{% for key, events in groups.items() %}
+{% set latest = events[0] %}
+<details class="card" style="padding:0; margin-bottom:12px;">
+  <summary style="padding:14px 24px; cursor:pointer; display:flex; gap:16px; align-items:center; flex-wrap:wrap;">
+    <code style="font-size:0.9rem;">{{ key }}</code>
+    {% if latest.registration %}
+      <a href="{{ url_for('admin.registration_detail', reg_id=latest.registration.id) }}">
+        reg {{ latest.registration.id }}{% if latest.registration.user %} · {{ latest.registration.user.email }}{% endif %}
+      </a>
+    {% elif latest.merchant_reference and latest.merchant_reference != key %}
+      <span class="muted">{{ latest.merchant_reference }}</span>
+    {% endif %}
+    <span class="muted" style="margin-left:auto;">
+      {{ events | length }} event{{ 's' if events | length != 1 }} ·
+      latest: {{ latest.event_type }} · {{ latest.created_at.strftime('%-d %b %Y %H:%M') }}
+    </span>
+  </summary>
+  <div style="padding:0 24px 16px; overflow-x:auto;">
+    <table class="table">
+      <thead><tr><th>Time (UTC)</th><th>Event</th><th>Amount</th><th>Reference</th><th>Note</th></tr></thead>
+      <tbody>
+        {% for e in events | reverse %}
+        <tr>
+          <td style="white-space:nowrap;">{{ e.created_at.strftime('%-d %b %Y %H:%M:%S') }}</td>
+          <td><code>{{ e.event_type }}</code></td>
+          <td>{% if e.amount is not none %}{{ site.currency_symbol }}{{ e.amount | format_amount }}{% else %}—{% endif %}</td>
+          <td><code style="font-size:0.85rem;">{{ e.merchant_reference or '—' }}</code></td>
+          <td class="muted">{{ e.note }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+{% endfor %}
+{% endblock %}

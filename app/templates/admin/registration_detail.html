@@ -19,6 +19,8 @@
       <div><dt>Tier</dt><dd>{{ reg.tier_name }}</dd></div>
       <div><dt>Amount</dt><dd>{{ site.currency_symbol }}{{ reg.amount | format_amount }} {{ site.currency_code }}</dd></div>
       <div><dt>Status</dt><dd><span class="status" data-v="{{ reg.status }}">{{ reg.status }}</span></dd></div>
+      <div><dt>Transaction</dt><dd>{{ reg.transaction_id or '—' }}</dd></div>
+      <div><dt>Last webhook</dt><dd>{{ reg.last_webhook_event or '—' }}</dd></div>
       <div><dt>Payment sent</dt><dd>{{ reg.payment_sent_at.strftime('%-d %b %Y %H:%M') if reg.payment_sent_at else '—' }}</dd></div>
       <div><dt>Registered</dt><dd>{{ reg.created_at.strftime('%-d %b %Y %H:%M') }}</dd></div>
       <div><dt>Updated</dt><dd>{{ reg.updated_at.strftime('%-d %b %Y %H:%M') }}</dd></div>
@@ -34,7 +36,9 @@
         <div class="field" style="margin:0;">
           <select class="select" name="status">
             <option value="pending" {% if reg.status == 'pending' %}selected{% endif %}>Pending</option>
+            <option value="processing" {% if reg.status == 'processing' %}selected{% endif %}>Processing</option>
             <option value="paid" {% if reg.status == 'paid' %}selected{% endif %}>Paid</option>
+            <option value="failed" {% if reg.status == 'failed' %}selected{% endif %}>Failed</option>
             <option value="refunded" {% if reg.status == 'refunded' %}selected{% endif %}>Refunded</option>
             <option value="cancelled" {% if reg.status == 'cancelled' %}selected{% endif %}>Cancelled</option>
           </select>

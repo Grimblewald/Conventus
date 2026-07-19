@@ -27,6 +27,11 @@ def _active_gateway():
     return ANZWorldlineGateway(config)
 
 
+def gateway_available() -> bool:
+    """True when an enabled payment gateway is configured."""
+    return _active_gateway() is not None
+
+
 def initiate_payment(registration: Registration) -> str | None:
     """Start a payment checkout for a registration.
 

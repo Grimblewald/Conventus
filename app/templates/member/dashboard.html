@@ -23,7 +23,7 @@
             <td>{{ site.currency_symbol }}{{ r.amount | format_amount }} {{ site.currency_code }}</td>
             <td><span class="status" data-v="{{ r.status }}">{{ r.status }}</span></td>
             <td>
-              {% if r.status == 'pending' %}
+              {% if r.status in ('pending', 'failed') %}
                 <a class="btn btn-primary btn-sm" href="{{ url_for('member.pay_registration', reg_id=r.id) }}">Pay</a>
               {% endif %}
             </td>

@@ -19,7 +19,9 @@ from ...models import Abstract, Conference, OTPCode, Registration, ReviewAssignm
 from ...models.content import get_site_settings
 from ...security import audit
 from ...services.mail import send_mail
-from ...services.payments import initiate_payment, payment_url_for, send_payment_email
+from ...services.payments import (
+    gateway_available, initiate_payment, payment_url_for, send_payment_email,
+)
 from ...services.uploads import UploadError, remove_upload, save_figure, save_image
 from ...services.form_renderer import validate_form
 from ...services.citations import fetch_metadata, format_reference, normalize_doi
@@ -632,10 +634,33 @@ def pay_registration(reg_id):
     if reg.status == "paid":
         flash("This registration is already paid.", "success")
         return redirect(url_for("member.dashboard"))
+    if reg.status == "processing":
+        flash("Your payment is being processed.", "success")
+        return redirect(url_for("member.pay_result", reg_id=reg.id))
     site = get_site_settings()
-    redirect_url = initiate_payment(reg)
     return render_template("member/pay.html", reg=reg, site=site,
-                           redirect_url=redirect_url)
+                           gateway_available=gateway_available())
+
+
+@member_bp.route("/pay/<int:reg_id>/checkout", methods=["POST"])
+@login_required
+def pay_checkout(reg_id):
+    """Create a hosted checkout session and send the member to Worldline."""
+    reg = Registration.query.get_or_404(reg_id)
+    if reg.user_id != current_user.id:
+        abort(403)
+    if reg.status == "paid":
+        flash("This registration is already paid.", "success")
+        return redirect(url_for("member.dashboard"))
+    if reg.status == "processing":
+        flash("Your payment is being processed.", "success")
+        return redirect(url_for("member.pay_result", reg_id=reg.id))
+    redirect_url = initiate_payment(reg)
+    if not redirect_url:
+        flash("The payment service could not be reached. Please try again "
+              "shortly, or contact us if the problem persists.", "error")
+        return redirect(url_for("member.pay_registration", reg_id=reg.id))
+    return redirect(redirect_url)
 
 
 @member_bp.route("/pay/<int:reg_id>/result")

@@ -50,6 +50,7 @@
   <ul>
     <li><a href="{{ url_for('admin.financial') }}" {% if request.endpoint == 'admin.financial' %}class="active"{% endif %}>Payment Providers</a></li>
     <li><a href="{{ url_for('admin.financial_invoice') }}" {% if request.endpoint == 'admin.financial_invoice' %}class="active"{% endif %}>Invoice Template</a></li>
+    <li><a href="{{ url_for('admin.financial_send_invoice') }}" {% if request.endpoint == 'admin.financial_send_invoice' %}class="active"{% endif %}>Send Invoice</a></li>
   </ul>
   {% endif %}
 

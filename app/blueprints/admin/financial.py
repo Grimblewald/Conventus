@@ -261,3 +261,67 @@ def financial_test_invoice():
     else:
         flash("Failed to send test invoice — check the mail settings.", "error")
     return redirect(url_for("admin.financial"))
+
+
+@admin_bp.route("/financial/send-invoice", methods=["GET", "POST"])
+@requires_permission("financial.manage")
+def financial_send_invoice():
+    """Send a templated invoice for an agreed amount to chosen recipients
+    (e.g. sponsors). Email only — no payment link is created."""
+    from ...services.invoice import send_manual_invoice
+    from ...services.jinja_filters import format_amount, parse_cents
+
+    suggested_ref = f"INV-{datetime.utcnow().strftime('%Y%m%d')}-{secrets.token_hex(2).upper()}"
+
+    if request.method == "POST":
+        to = (request.form.get("to") or "").strip()
+        cc_raw = (request.form.get("cc") or "").replace(";", ",")
+        cc = [a.strip() for a in cc_raw.split(",") if a.strip()]
+        recipient_name = (request.form.get("recipient_name") or "").strip()
+        description = (request.form.get("description") or "").strip()
+        item = (request.form.get("item") or "").strip()
+        reference = (request.form.get("reference") or "").strip() or suggested_ref
+        period = (request.form.get("period") or "").strip()
+        subject_override = (request.form.get("subject") or "").strip()
+
+        errors = []
+        if "@" not in to:
+            errors.append("Enter a valid recipient email.")
+        errors += [f"Invalid CC address: {a}" for a in cc if "@" not in a]
+        if not description:
+            errors.append("Describe what the invoice is for.")
+        try:
+            amount = parse_cents(request.form.get("amount") or "")
+        except ValueError:
+            amount = 0
+        if amount <= 0:
+            errors.append("Enter a valid amount, e.g. 500.00.")
+
+        if errors:
+            for e in errors:
+                flash(e, "error")
+            return render_template("admin/financial_send_invoice.html",
+                                   form=request.form, suggested_ref=suggested_ref)
+
+        ok = send_manual_invoice(
+            to, cc=cc or None, recipient_name=recipient_name,
+            description=description, item=item, amount_cents=amount,
+            reference=reference, period=period,
+            subject_override=subject_override,
+        )
+        audit.record("financial.invoice_sent",
+                     target_kind="invoice", target_id=reference,
+                     summary=(f"Invoice {reference} for ${format_amount(amount)} "
+                              f"sent to {to}"
+                              f"{' (cc ' + ', '.join(cc) + ')' if cc else ''}"
+                              f" by {current_user.email}"))
+        if ok:
+            flash(f"Invoice {reference} sent to {to}"
+                  f"{' (cc ' + ', '.join(cc) + ')' if cc else ''}.", "success")
+            return redirect(url_for("admin.financial_send_invoice"))
+        flash("Failed to send the invoice — check the mail settings.", "error")
+        return render_template("admin/financial_send_invoice.html",
+                               form=request.form, suggested_ref=suggested_ref)
+
+    return render_template("admin/financial_send_invoice.html",
+                           form={}, suggested_ref=suggested_ref)

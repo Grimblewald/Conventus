@@ -61,11 +61,43 @@ def send_test_invoice(to_email: str) -> bool:
     return _send_rendered(vars_, to=to_email, subject_prefix="[TEST] ")
 
 
-def _send_rendered(vars_: dict, to: str, subject_prefix: str = "") -> bool:
+def send_manual_invoice(to: str, *, recipient_name: str, description: str,
+                        item: str, amount_cents: int, reference: str,
+                        period: str = "", cc: list[str] | None = None,
+                        subject_override: str = "") -> bool:
+    """Send a templated invoice for an agreed amount to arbitrary recipients.
+
+    Used for out-of-band billing (e.g. sponsors). Maps onto the template's
+    registration-centric variables: *description* fills {conference_title},
+    *item* fills {tier_name}, *reference* fills {transaction_id}.
+    """
+    site = get_site_settings()
+    vars_ = {
+        "user_name": recipient_name or to,
+        "user_email": to,
+        "conference_title": description,
+        "conference_dates": period,
+        "tier_name": item,
+        "amount": format_amount(amount_cents),
+        "currency_code": site.currency_code,
+        "currency_symbol": site.currency_symbol,
+        "transaction_id": reference,
+        "payment_date": datetime.utcnow().strftime("%-d %B %Y"),
+        "site_name": site.site_name,
+        "registration_id": "N/A",
+    }
+    log.info("Sending manual invoice %s to %s (cc %s)", reference, to, cc or [])
+    return _send_rendered(vars_, to=to, cc=cc, subject_override=subject_override)
+
+
+def _send_rendered(vars_: dict, to: str, subject_prefix: str = "",
+                   cc: list[str] | None = None,
+                   subject_override: str = "") -> bool:
     tpl = get_invoice_template()
     site = get_site_settings()
 
-    subject = subject_prefix + _render(tpl.subject, vars_)
+    subject_tpl = subject_override or tpl.subject
+    subject = subject_prefix + _render(subject_tpl, vars_)
     body = _render(tpl.body_text, vars_)
 
     footer = _render(tpl.footer_text, vars_) if tpl.footer_text else ""
@@ -88,6 +120,7 @@ def _send_rendered(vars_: dict, to: str, subject_prefix: str = "") -> bool:
         sender_name=sender_name or f"{site.site_name}",
         sender_email=(tpl.from_email or "").strip() or None,
         html=html,
+        cc=cc,
     )
 
 

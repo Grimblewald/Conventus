@@ -1,0 +1,84 @@
+{% extends "admin/_base.html" %}
+{% block title %}Send Invoice · {{ site.site_name }} Admin{% endblock %}
+{% block admin %}
+<div class="section-head">
+  <div>
+    <div class="eyebrow">Financial</div>
+    <h2>Send Invoice</h2>
+  </div>
+</div>
+
+<form method="POST" class="card" style="padding:24px;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <div class="row-2">
+    <div class="form-group" style="margin-bottom:16px;">
+      <label for="to"><strong>To</strong></label>
+      <input type="email" id="to" name="to" class="input" required
+             value="{{ form.get('to', '') }}" placeholder="sponsor@example.org">
+    </div>
+    <div class="form-group" style="margin-bottom:16px;">
+      <label for="cc"><strong>CC</strong> <span class="muted">(optional, comma-separated)</span></label>
+      <input type="text" id="cc" name="cc" class="input"
+             value="{{ form.get('cc', '') }}" placeholder="treasurer@example.org, president@example.org">
+    </div>
+  </div>
+
+  <div class="form-group" style="margin-bottom:16px;">
+    <label for="recipient_name"><strong>Recipient name</strong> <span class="muted">— fills {{ '{user_name}' }}</span></label>
+    <input type="text" id="recipient_name" name="recipient_name" class="input"
+           value="{{ form.get('recipient_name', '') }}" placeholder="Acme Pty Ltd">
+  </div>
+
+  <div class="form-group" style="margin-bottom:16px;">
+    <label for="description"><strong>Invoice for</strong> <span class="muted">— fills {{ '{conference_title}' }}</span></label>
+    <input type="text" id="description" name="description" class="input" required
+           value="{{ form.get('description', '') }}" placeholder="Sponsorship — Annual Conference 2026">
+  </div>
+
+  <div class="row-2">
+    <div class="form-group" style="margin-bottom:16px;">
+      <label for="item"><strong>Item</strong> <span class="muted">— fills {{ '{tier_name}' }}</span></label>
+      <input type="text" id="item" name="item" class="input"
+             value="{{ form.get('item', '') }}" placeholder="Gold Sponsor Package">
+    </div>
+    <div class="form-group" style="margin-bottom:16px;">
+      <label for="amount"><strong>Amount ({{ site.currency_code }})</strong></label>
+      <input type="text" id="amount" name="amount" class="input" required
+             value="{{ form.get('amount', '') }}" placeholder="500.00">
+    </div>
+  </div>
+
+  <div class="row-2">
+    <div class="form-group" style="margin-bottom:16px;">
+      <label for="reference"><strong>Reference</strong> <span class="muted">— fills {{ '{transaction_id}' }}</span></label>
+      <input type="text" id="reference" name="reference" class="input"
+             value="{{ form.get('reference', '') }}" placeholder="{{ suggested_ref }}">
+    </div>
+    <div class="form-group" style="margin-bottom:16px;">
+      <label for="period"><strong>Period / dates</strong> <span class="muted">(optional — fills {{ '{conference_dates}' }})</span></label>
+      <input type="text" id="period" name="period" class="input"
+             value="{{ form.get('period', '') }}" placeholder="1–3 September 2026">
+    </div>
+  </div>
+
+  <div class="form-group" style="margin-bottom:16px;">
+    <label for="subject"><strong>Subject override</strong> <span class="muted">(optional — template variables allowed)</span></label>
+    <input type="text" id="subject" name="subject" class="input"
+           value="{{ form.get('subject', '') }}" placeholder="Invoice {{ '{transaction_id}' }} — {{ '{conference_title}' }}">
+  </div>
+
+  <div class="card" style="padding:12px 16px; margin-bottom:16px; background:var(--c-page-bg); border-color:#e8c954;">
+    <p class="muted" style="margin:0;">
+      This sends an email using the
+      <a href="{{ url_for('admin.financial_invoice') }}">invoice template</a> —
+      it does not create a payment link. The default template is worded as a
+      payment <em>receipt</em>; review the wording (and use the subject override)
+      before invoicing someone who has not paid yet.
+    </p>
+  </div>
+
+  <button class="btn btn-primary" type="submit">Send invoice</button>
+  <a class="btn btn-ghost" href="{{ url_for('admin.financial') }}">Cancel</a>
+</form>
+{% endblock %}

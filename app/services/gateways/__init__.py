@@ -6,6 +6,16 @@ from dataclasses import dataclass
 
 
 @dataclass
+class PaymentStatus:
+    """Point-in-time payment state fetched from the provider (not a webhook)."""
+    raw_status: str = ""            # provider status, e.g. CAPTURED / REJECTED
+    transaction_id: str = ""
+    merchant_reference: str = ""
+    amount: int | None = None
+    error: str = ""
+
+
+@dataclass
 class ConnectionTestResult:
     success: bool = False
     message: str = ""

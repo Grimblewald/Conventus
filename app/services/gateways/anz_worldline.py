@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from flask import url_for
 
-from . import CheckoutResult, ConnectionTestResult, PaymentGateway, WebhookResult
+from . import CheckoutResult, ConnectionTestResult, PaymentGateway, PaymentStatus, WebhookResult
 from ...models import get_active_payment_gateway
 
 log = logging.getLogger(__name__)
@@ -219,6 +219,50 @@ class ANZWorldlineGateway(PaymentGateway):
         except Exception as e:
             log.exception("Webhook verification failed")
             return WebhookResult(error=f"Webhook verification error: {e}")
+
+    def get_payment_status(self, payment_id: str) -> PaymentStatus:
+        """Fetch the current state of a payment directly from Worldline."""
+        client = self._client()
+        if not client:
+            return PaymentStatus(error="Payment gateway not configured.")
+        try:
+            payment = client.merchant(self._config.merchant_id).payments().get_payment(payment_id)
+            return self._payment_to_status(payment)
+        except Exception as e:
+            log.exception("Payment status fetch failed for %s", payment_id)
+            return PaymentStatus(error=f"Status fetch failed: {e}")
+
+    def get_checkout_payment(self, hosted_checkout_id: str) -> PaymentStatus:
+        """Fetch the payment created by a hosted checkout session, if any."""
+        client = self._client()
+        if not client:
+            return PaymentStatus(error="Payment gateway not configured.")
+        try:
+            resp = (client.merchant(self._config.merchant_id)
+                    .hosted_checkout().get_hosted_checkout(hosted_checkout_id))
+            if resp.created_payment_output and resp.created_payment_output.payment:
+                return self._payment_to_status(resp.created_payment_output.payment)
+            return PaymentStatus(raw_status=resp.status or "NO_PAYMENT")
+        except Exception as e:
+            log.exception("Checkout status fetch failed for %s", hosted_checkout_id)
+            return PaymentStatus(error=f"Status fetch failed: {e}")
+
+    @staticmethod
+    def _payment_to_status(payment) -> PaymentStatus:
+        ref = ""
+        amount = None
+        output = payment.payment_output
+        if output:
+            if output.references:
+                ref = output.references.merchant_reference or ""
+            if output.amount_of_money and output.amount_of_money.amount is not None:
+                amount = output.amount_of_money.amount
+        return PaymentStatus(
+            raw_status=payment.status or "",
+            transaction_id=payment.id or "",
+            merchant_reference=ref,
+            amount=amount,
+        )
 
     def test_connection(self) -> ConnectionTestResult:
         client = self._client()

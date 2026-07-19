@@ -409,3 +409,44 @@ def financial_transactions():
 
     return render_template("admin/financial_transactions.html",
                            groups=groups, q=q, event_count=len(events))
+
+
+@admin_bp.route("/financial/reconcile", methods=["POST"])
+@requires_permission("financial.manage")
+def financial_reconcile():
+    """Fetch current payment state from Worldline for every unsettled
+    registration and apply any outcomes whose webhooks were missed."""
+    from ...services.reconcile import reconcile_payments
+
+    summary = reconcile_payments()
+    if summary["error"]:
+        flash(f"Reconciliation not run: {summary['error']}", "error")
+        return redirect(url_for("admin.financial_transactions"))
+
+    audit.record("financial.reconciled",
+                 target_kind="payment_gateway", target_id="anz_worldline",
+                 summary=(f"Reconciliation by {current_user.email}: "
+                          f"{summary['checked']} checked, "
+                          f"{len(summary['changes'])} updated, "
+                          f"{len(summary['errors'])} errors"))
+
+    for ch in summary["changes"]:
+        if ch.get("test_ref"):
+            flash(f"Test payment {ch['test_ref']}: Worldline reports {ch['raw']} "
+                  f"— recorded in the ledger (webhook may have been missed)",
+                  "warning")
+        else:
+            flash(f"Registration {ch['reg_id']} ({ch['email']}): "
+                  f"{ch['old']} → {ch['new']} (Worldline status {ch['raw']})",
+                  "warning")
+    for err in summary["errors"]:
+        flash(f"Reconciliation error — {err}", "error")
+
+    if summary["changes"]:
+        flash(f"Reconciliation complete: {summary['checked']} checked, "
+              f"{len(summary['changes'])} updated. Changes are recorded in "
+              f"the ledger as reconcile.* events.", "success")
+    else:
+        flash(f"Reconciliation complete: {summary['checked']} checked, "
+              f"no discrepancies found.", "success")
+    return redirect(url_for("admin.financial_transactions"))

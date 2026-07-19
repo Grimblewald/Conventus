@@ -19,6 +19,20 @@
   </span>
 </form>
 
+<div class="card" style="padding:16px 24px; margin-bottom:20px; display:flex; gap:16px; align-items:center; flex-wrap:wrap;">
+  <form method="POST" action="{{ url_for('admin.financial_reconcile') }}" style="display:inline;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn-ghost" type="submit">Reconcile with Worldline</button>
+  </form>
+  <p class="muted" style="margin:0; font-size:0.9rem; flex:1; min-width:260px;">
+    Fetches the current state of every pending/processing registration (and
+    recent test payments) from Worldline and applies any outcome whose webhook
+    was missed — invoices are sent as they would have been. Every change is
+    flashed here, audit-logged, and recorded in the ledger as a
+    <code>reconcile.*</code> event.
+  </p>
+</div>
+
 {% if not groups %}
 <div class="card" style="padding:24px;">
   <p class="muted" style="margin:0;">

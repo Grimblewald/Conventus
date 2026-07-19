@@ -46,18 +46,21 @@
   {% endif %}
 
   {% if current_user.is_admin or can('financial.manage') %}
+  <h5>Financial</h5>
+  <ul>
+    <li><a href="{{ url_for('admin.financial') }}" {% if request.endpoint == 'admin.financial' %}class="active"{% endif %}>Payment Providers</a></li>
+    <li><a href="{{ url_for('admin.financial_invoice') }}" {% if request.endpoint == 'admin.financial_invoice' %}class="active"{% endif %}>Invoice Template</a></li>
+  </ul>
+  {% endif %}
+
+  {% if current_user.is_admin %}
   <h5>System</h5>
   <ul>
-    {% if current_user.is_admin or can('financial.manage') %}
-      <li><a href="{{ url_for('admin.financial') }}">Financial</a></li>
-    {% endif %}
-    {% if current_user.is_admin %}
-      <li><a href="{{ url_for('admin.permissions') }}">Permissions</a></li>
-      <li><a href="{{ url_for('admin.audit_log') }}">Audit log</a></li>
-      {% if can('system.backup') %}
-        <li><a href="{{ url_for('admin.backup') }}">Backup</a></li>
-        <li><a href="{{ url_for('admin.update_page') }}">Update</a></li>
-      {% endif %}
+    <li><a href="{{ url_for('admin.permissions') }}">Permissions</a></li>
+    <li><a href="{{ url_for('admin.audit_log') }}">Audit log</a></li>
+    {% if can('system.backup') %}
+      <li><a href="{{ url_for('admin.backup') }}">Backup</a></li>
+      <li><a href="{{ url_for('admin.update_page') }}">Update</a></li>
     {% endif %}
   </ul>
   {% endif %}

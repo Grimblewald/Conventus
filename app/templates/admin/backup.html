@@ -42,6 +42,23 @@
   </div>
 
 </div>
+
+<div class="card" style="padding:24px; margin-top:32px; border-color:#e8c954;">
+  <h3 style="margin-top:0;">Full backup — includes .env</h3>
+  <p class="muted">
+    Everything in a regular backup <strong>plus the server's .env file</strong>
+    (SECRET_KEY, mail credentials — enough to clone this site completely,
+    including decrypting stored payment gateway secrets). The archive is
+    AES-256 encrypted with a password you choose at creation; losing the
+    password makes the backup unusable. Requires email confirmation. Never
+    created automatically. Extract with 7-Zip/p7zip — Windows Explorer's
+    built-in extractor cannot open AES zips.
+  </p>
+  <form method="post" action="{{ url_for('admin.backup_env_request') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn-ghost" type="submit">Request full backup…</button>
+  </form>
+</div>
 {% endblock %}
 
 {% block scripts %}

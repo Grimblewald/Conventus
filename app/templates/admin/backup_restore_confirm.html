@@ -16,6 +16,13 @@
     <label for="code">Confirmation code</label>
     <input class="input" id="code" name="code" inputmode="numeric" required>
   </div>
+  {% if encrypted %}
+  <div class="field">
+    <label for="backup_password">Backup password</label>
+    <input class="input" id="backup_password" name="backup_password" type="password" required>
+    <div class="help">This backup is password-protected (it includes .env). Enter the password chosen when it was created.</div>
+  </div>
+  {% endif %}
   <button class="btn btn-primary" type="submit">Restore site</button>
 </form>
 {% endblock %}

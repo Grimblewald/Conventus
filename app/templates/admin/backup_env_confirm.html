@@ -1,0 +1,109 @@
+{% extends "admin/_base.html" %}
+{% block title %}Confirm full backup · Admin{% endblock %}
+{% block admin %}
+<div class="section-head">
+  <div><div class="eyebrow">Confirm</div><h2>Full backup (includes .env)</h2></div>
+  <a class="link" href="{{ url_for('admin.backup') }}">← cancel</a>
+</div>
+<p class="lede">We emailed a 6-digit code to <strong>{{ current_user.email }}</strong>.
+Enter it with an encryption password (minimum {{ min_password_len }} characters) to build and download the archive.</p>
+<div class="danger-zone" style="margin-bottom:18px;">
+  <strong>Handle with care:</strong> this archive contains every server secret.
+  Store it offline. The password is not stored anywhere — if you lose it, the
+  backup cannot be opened.
+</div>
+<form id="env-backup-form" class="form" autocomplete="off"
+      action="{{ url_for('admin.backup_env_create') }}"
+      data-chunk-url="{{ url_for('admin.backup_download_chunk', upload_id='UID', index=0) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="field">
+    <label for="code">Confirmation code</label>
+    <input class="input" id="code" name="code" inputmode="numeric" required>
+  </div>
+  <div class="field">
+    <label for="password">Encryption password</label>
+    <input class="input" id="password" name="password" type="password" minlength="{{ min_password_len }}" required>
+  </div>
+  <div class="field">
+    <label for="password2">Repeat password</label>
+    <input class="input" id="password2" name="password2" type="password" minlength="{{ min_password_len }}" required>
+  </div>
+  <button class="btn btn-primary" type="submit" id="env-backup-btn">Build and download</button>
+  <span id="env-backup-progress" style="display:none; margin-left:10px; font-size:13px; color:var(--c-muted-text);"></span>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  "use strict";
+  var form = document.getElementById("env-backup-form");
+  var btn = document.getElementById("env-backup-btn");
+  var prog = document.getElementById("env-backup-progress");
+  var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+  var csrfToken = csrfMeta ? csrfMeta.getAttribute("content") : "";
+  if (!form || !btn) return;
+
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    if (form.password.value !== form.password2.value) {
+      alert("Passwords do not match."); return;
+    }
+    btn.disabled = true;
+    btn.textContent = "Building backup...";
+    prog.style.display = "none";
+
+    fetch(form.action, {
+      method: "POST",
+      headers: { "X-CSRFToken": csrfToken, "Accept": "application/json" },
+      body: new FormData(form),
+    })
+      .then(function (r) {
+        return r.json().then(function (info) {
+          if (!r.ok || info.error) throw new Error(info.error || ("Server returned " + r.status));
+          return info;
+        });
+      })
+      .then(function (info) {
+        prog.style.display = "";
+        btn.textContent = "Downloading...";
+        var chunks = [];
+        var fetched = 0;
+        function fetchNext() {
+          if (fetched >= info.chunk_count) {
+            var blob = new Blob(chunks);
+            var a = document.createElement("a");
+            a.href = URL.createObjectURL(blob);
+            a.download = info.filename;
+            a.click();
+            btn.textContent = "Done — check your downloads";
+            prog.style.display = "none";
+            return;
+          }
+          prog.textContent = "Chunk " + (fetched + 1) + "/" + info.chunk_count;
+          var url = form.dataset.chunkUrl
+            .replace("UID", info.upload_id).replace("/0", "/" + fetched);
+          fetch(url).then(function (r) {
+            if (!r.ok) throw new Error("Chunk " + fetched + " failed");
+            return r.blob();
+          }).then(function (b) {
+            chunks.push(b);
+            fetched++;
+            fetchNext();
+          }).catch(function (err) {
+            btn.disabled = false;
+            btn.textContent = "Build and download";
+            prog.textContent = "Error: " + err.message;
+          });
+        }
+        fetchNext();
+      })
+      .catch(function (err) {
+        btn.disabled = false;
+        btn.textContent = "Build and download";
+        alert("Backup failed: " + (err.message || err));
+      });
+  });
+})();
+</script>
+{% endblock %}

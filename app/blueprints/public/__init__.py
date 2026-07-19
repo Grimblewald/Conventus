@@ -416,6 +416,7 @@ def payment_webhook():
                 ledger_note = "no matching registration"
             if reg:
                 old_status = reg.status
+                old_txn = reg.transaction_id
                 reg.transaction_id = result.transaction_id or reg.transaction_id
                 reg.last_webhook_event = result.event_type or result.error or "unknown"
                 event_type = (result.event_type or "").lower()
@@ -456,7 +457,26 @@ def payment_webhook():
                         except Exception:
                             current_app.logger.exception("Invoice email failed for reg %d", reg.id)
                     else:
+                        # Already paid or refunded. A redelivered webhook for
+                        # the SAME transaction is routine; a successful capture
+                        # under a DIFFERENT transaction ID means the member
+                        # paid twice — keep the original ID and alert admins.
+                        double_payment = (
+                            reg.status in ("paid", "refunded")
+                            and old_txn and result.transaction_id
+                            and result.transaction_id != old_txn)
+                        if double_payment:
+                            reg.transaction_id = old_txn
                         db.session.commit()
+                        if double_payment:
+                            _notify_payment_attention(reg, result, reason=(
+                                f"A second successful payment "
+                                f"({result.transaction_id}) arrived for a "
+                                f"registration that is already {reg.status} "
+                                f"(original transaction {old_txn}). This is "
+                                f"likely a double payment — verify both "
+                                f"transactions in the Merchant Portal and "
+                                f"refund the duplicate."))
                 elif event_type in ("payment.rejected", "payment.rejected_capture", "payment.cancelled"):
                     # Never downgrade a completed payment on a stale or
                     # out-of-order failure event.
@@ -492,9 +512,9 @@ def payment_webhook():
         return {"status": "error", "message": "Payment processing error"}, 500
 
 
-def _notify_payment_attention(reg, result) -> None:
+def _notify_payment_attention(reg, result, reason: str = "") -> None:
     """Audit and email admins about a payment event needing human action:
-    a dispute/chargeback or a failed refund."""
+    a dispute/chargeback, a failed refund, or a suspected double payment."""
     from ...models.user import User
     from ...models.content import get_site_settings
     from ...security import audit
@@ -513,6 +533,10 @@ def _notify_payment_attention(reg, result) -> None:
     site = get_site_settings()
     admins = User.query.filter(User.role_name == "admin",
                                User.deleted_at.is_(None)).all()
+    explanation = reason or (
+        "Disputes and refund failures are managed in the Worldline "
+        "Merchant Portal. Update the registration status manually "
+        "in the admin if needed.")
     for admin in admins:
         send_mail(
             to=admin.email,
@@ -523,9 +547,7 @@ def _notify_payment_attention(reg, result) -> None:
                   f"Amount: ${amount}\n"
                   f"Transaction: {result.transaction_id or reg.transaction_id or 'n/a'}\n"
                   f"Registration status: {reg.status} (unchanged)\n\n"
-                  f"Disputes and refund failures are managed in the Worldline "
-                  f"Merchant Portal. Update the registration status manually "
-                  f"in the admin if needed."),
+                  f"{explanation}"),
         )
 
 

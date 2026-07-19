@@ -66,7 +66,6 @@ The recommended host is a small Linux VPS rented from **[Binary Lane][bl]** as i
    ```bash
    git clone https://github.com/Grimblewald/Conventus.git
    cd Conventus
-   chmod +x scripts/update.sh
    ```
 
 4. **Launch the site**

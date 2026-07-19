@@ -17,8 +17,7 @@
 </div>
 
 <div style="display:flex; gap:8px; margin-bottom:18px;">
-  <select class="select" style="max-width:300px;"
-          onchange="window.location=this.value">
+  <select class="select" style="max-width:300px;" data-jump>
     <option value="{{ url_for('admin.registrations', status=status_filter) }}">All conferences</option>
     {% for c in conferences %}
       <option value="{{ url_for('admin.registrations', conference_id=c.id, status=status_filter) }}"

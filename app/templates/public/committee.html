@@ -45,7 +45,7 @@
                 {{ affil_items[0] }}
                 {% if affil_items|length > 1 %}
                   <span class="aff-more" style="display:none"> · {{ affil_items[1:] | join(' · ') }}</span>
-                  <span class="aff-toggle" onclick="var m=this.parentElement.querySelector('.aff-more');var o=m.style.display==='none';m.style.display=o?'':'none';this.textContent=o?' ▴':' ▾'" style="cursor:pointer;color:var(--c-accent);font-size:11px;"> ▾</span>
+                  <span class="aff-toggle" data-toggle-next=".aff-more" style="cursor:pointer;color:var(--c-accent);font-size:11px;"> ▾</span>
                 {% endif %}
               </div>
             {% endif %}

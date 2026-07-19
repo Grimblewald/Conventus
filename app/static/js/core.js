@@ -30,4 +30,42 @@
       e.preventDefault();
     }
   });
+
+  // CSP forbids inline event handlers — these delegated listeners back the
+  // data-* attributes templates use instead.
+
+  // <span data-toggle-next> — show/hide its previous sibling (used for the
+  // committee card extra-affiliations toggle).
+  document.addEventListener("click", function (e) {
+    var t = e.target.closest("[data-toggle-next]");
+    if (!t) return;
+    var more = t.parentElement.querySelector(t.dataset.toggleNext);
+    if (!more) return;
+    var opening = more.style.display === "none";
+    more.style.display = opening ? "" : "none";
+    t.textContent = opening ? " ▴" : " ▾";
+  });
+
+  // <input data-output="id"> — mirror the control's value into an element.
+  document.addEventListener("input", function (e) {
+    var src = e.target.closest("[data-output]");
+    if (!src) return;
+    var out = document.getElementById(src.dataset.output);
+    if (out) out.textContent = src.value;
+  });
+
+  // <button data-reveal="id"> — un-hide an element.
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest("[data-reveal]");
+    if (!btn) return;
+    var el = document.getElementById(btn.dataset.reveal);
+    if (el) el.style.display = "block";
+  });
+
+  // <select data-jump> — navigate to the selected option's value.
+  document.addEventListener("change", function (e) {
+    var sel = e.target.closest("select[data-jump]");
+    if (!sel || !sel.value) return;
+    window.location = sel.value;
+  });
 })();

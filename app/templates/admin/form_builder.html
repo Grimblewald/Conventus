@@ -116,7 +116,7 @@
           </form>
         </td>
         <td>
-          <form method="post" style="display:inline;" onsubmit="return confirm('Delete template \\'{{ t.name }}\\'?');">
+          <form method="post" style="display:inline;" data-confirm="Delete template '{{ t.name }}'?">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" name="action" value="delete_template">
             <input type="hidden" name="template_id" value="{{ t.id }}">

@@ -76,7 +76,7 @@
         <label for="score">Score (0–100)</label>
         <input class="input" id="score" name="score" type="range" min="0" max="100"
                value="{{ ra.score if ra.score is not none else 50 }}"
-               oninput="document.getElementById('score-val').textContent = this.value"
+               data-output="score-val"
                style="max-width:400px;">
         <span id="score-val" style="font-weight:600; margin-left:8px;">{{ ra.score if ra.score is not none else 50 }}</span>
         <div class="help">0 = reject outright, 50 = borderline, 100 = exceptional</div>
@@ -120,8 +120,7 @@
           <button class="btn btn-primary" type="submit" name="action" value="submit">Submit review</button>
         </div>
         {% if ra.status == 'pending' %}
-        <button class="btn btn-quiet btn-sm" type="button"
-                onclick="document.getElementById('recuse-form').style.display='block'">
+        <button class="btn btn-quiet btn-sm" type="button" data-reveal="recuse-form">
           Recuse yourself
         </button>
         {% endif %}

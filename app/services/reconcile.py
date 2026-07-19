@@ -52,6 +52,7 @@ def reconcile_payments() -> dict:
     checked = 0
     changes: list[dict] = []
     errors: list[str] = []
+    unchanged: list[str] = []
 
     for reg in candidates:
         status = _fetch_status(gateway, reg)
@@ -66,6 +67,7 @@ def reconcile_payments() -> dict:
         if target == "captured-as-paid":
             target = "paid"
         if not target or target == reg.status:
+            unchanged.append(f"reg {reg.id}: {status.raw_status or 'NO_PAYMENT'}")
             continue
 
         old_status = reg.status
@@ -108,9 +110,10 @@ def reconcile_payments() -> dict:
             "raw": status.raw_status,
         })
 
-    checked_t, changes_t, errors_t = _reconcile_test_payments(gateway)
+    checked_t, changes_t, errors_t, unchanged_t = _reconcile_test_payments(gateway)
     return {"checked": checked + checked_t, "changes": changes + changes_t,
-            "errors": errors + errors_t, "error": ""}
+            "errors": errors + errors_t, "unchanged": unchanged + unchanged_t,
+            "error": ""}
 
 
 # Once one of these is known for a test reference, its lifecycle is over
@@ -119,7 +122,7 @@ def reconcile_payments() -> dict:
 _FINAL_WORDS = ("refunded", "rejected", "cancelled", "chargebacked", "reversed")
 
 
-def _reconcile_test_payments(gateway) -> tuple[int, list, list]:
+def _reconcile_test_payments(gateway) -> tuple[int, list, list, list]:
     """Sweep recent admin test payments (test_* references): fetch their
     current provider state and record it in the ledger when the ledger
     doesn't reflect it yet (i.e. the webhook was missed)."""
@@ -138,6 +141,7 @@ def _reconcile_test_payments(gateway) -> tuple[int, list, list]:
     checked = 0
     changes: list[dict] = []
     errors: list[str] = []
+    unchanged: list[str] = []
 
     for ref, ref_events in by_ref.items():
         seen_types = {e.event_type for e in ref_events}
@@ -167,6 +171,7 @@ def _reconcile_test_payments(gateway) -> tuple[int, list, list]:
         already_known = any(raw.lower() in t for t in seen_types)
         terminal = raw in _STATUS_MAP or raw in ("CHARGEBACKED", "REVERSED")
         if not terminal or already_known:
+            unchanged.append(f"{ref}: {raw or 'NO_PAYMENT'}")
             continue
 
         record_payment_event(
@@ -180,7 +185,7 @@ def _reconcile_test_payments(gateway) -> tuple[int, list, list]:
                         "old": poll.event_type, "new": ref,
                         "raw": raw, "test_ref": ref})
 
-    return checked, changes, errors
+    return checked, changes, errors, unchanged
 
 
 def _fetch_status(gateway, reg: Registration):

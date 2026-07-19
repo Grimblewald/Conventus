@@ -442,6 +442,11 @@ def financial_reconcile():
     for err in summary["errors"]:
         flash(f"Reconciliation error — {err}", "error")
 
+    if summary.get("unchanged"):
+        flash("Current Worldline state, no change needed — "
+              + "; ".join(summary["unchanged"][:20])
+              + ("; …" if len(summary["unchanged"]) > 20 else ""), "info")
+
     if summary["changes"]:
         flash(f"Reconciliation complete: {summary['checked']} checked, "
               f"{len(summary['changes'])} updated. Changes are recorded in "

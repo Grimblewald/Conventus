@@ -20,7 +20,8 @@ from ...models.content import get_site_settings
 from ...security import audit
 from ...services.mail import send_mail
 from ...services.payments import (
-    gateway_available, initiate_payment, payment_url_for, send_payment_email,
+    gateway_available, initiate_payment, payment_url_for,
+    payments_open_to_members, sandbox_mode, send_payment_email,
 )
 from ...services.uploads import UploadError, remove_upload, save_figure, save_image
 from ...services.form_renderer import validate_form
@@ -169,8 +170,7 @@ def register_conf(slug):
                      target_kind="registration", target_id=reg.id,
                      summary=f"{current_user.email} → {c.slug} ({tier.name})")
 
-        site = get_site_settings()
-        if site.payment_portal_enabled:
+        if payments_open_to_members():
             pay_url = payment_url_for(reg)
             send_payment_email(reg, pay_url)
             reg.payment_sent_at = datetime.utcnow()
@@ -638,8 +638,17 @@ def pay_registration(reg_id):
         flash("Your payment is being processed.", "success")
         return redirect(url_for("member.pay_result", reg_id=reg.id))
     site = get_site_settings()
+    open_to_members = payments_open_to_members()
+    show_checkout = open_to_members or (_can_test_payments() and gateway_available())
     return render_template("member/pay.html", reg=reg, site=site,
-                           gateway_available=gateway_available())
+                           gateway_available=show_checkout,
+                           testing=show_checkout and not open_to_members,
+                           sandbox=sandbox_mode())
+
+
+def _can_test_payments() -> bool:
+    """Admins and financial managers may pay before the portal opens."""
+    return current_user.is_admin or current_user.has_permission("financial.manage")
 
 
 @member_bp.route("/pay/<int:reg_id>/checkout", methods=["POST"])
@@ -655,6 +664,9 @@ def pay_checkout(reg_id):
     if reg.status == "processing":
         flash("Your payment is being processed.", "success")
         return redirect(url_for("member.pay_result", reg_id=reg.id))
+    if not (payments_open_to_members() or _can_test_payments()):
+        flash("The payment portal is not yet available.", "warning")
+        return redirect(url_for("member.pay_registration", reg_id=reg.id))
     redirect_url = initiate_payment(reg)
     if not redirect_url:
         flash("The payment service could not be reached. Please try again "

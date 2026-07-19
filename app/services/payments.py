@@ -32,6 +32,28 @@ def gateway_available() -> bool:
     return _active_gateway() is not None
 
 
+def sandbox_mode() -> bool:
+    """True when the enabled gateway is in sandbox (test) mode."""
+    from ..models.content import get_active_payment_gateway
+    config = get_active_payment_gateway()
+    return bool(config and config.is_test_mode)
+
+
+def payments_open_to_members() -> bool:
+    """True when general members may pay online.
+
+    Requires all three: gateway enabled, live (not sandbox) mode, and the
+    site-level payment portal switch. While any of these is off, members
+    see the portal as unavailable; admins and financial.manage holders can
+    still run test payments through an enabled gateway.
+    """
+    from ..models.content import get_active_payment_gateway, get_site_settings
+    config = get_active_payment_gateway()
+    if not config or config.is_test_mode:
+        return False
+    return bool(get_site_settings().payment_portal_enabled)
+
+
 def initiate_payment(registration: Registration) -> str | None:
     """Start a payment checkout for a registration.
 

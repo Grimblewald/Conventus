@@ -13,15 +13,14 @@
     <div>
       <h3 style="margin:0;">ANZ Worldline</h3>
       <p class="muted" style="margin:4px 0 0;">
-        {% if config.is_enabled %}
-          <span class="badge" style="background:var(--c-accent);color:var(--c-accent-ink);padding:2px 10px;border-radius:12px;font-size:0.8rem;">
-            {{ 'Sandbox' if config.is_test_mode else 'Live' }}
-          </span>
-          {% if config.merchant_id %}
-            Merchant: {{ config.merchant_id }}
-          {% endif %}
-        {% else %}
+        {% if not config.is_enabled %}
           <span class="badge" style="background:#999;color:#fff;padding:2px 10px;border-radius:12px;font-size:0.8rem;">Disabled</span>
+        {% endif %}
+        <span class="badge" style="background:var(--c-accent);color:var(--c-accent-ink);padding:2px 10px;border-radius:12px;font-size:0.8rem;">
+          {{ 'Sandbox' if config.is_test_mode else 'Live' }}
+        </span>
+        {% if config.merchant_id %}
+          Merchant: {{ config.merchant_id }}
         {% endif %}
       </p>
     </div>
@@ -52,6 +51,19 @@
     </p>
   </div>
   {% endif %}
+
+  <div style="margin-top:12px; padding-top:12px; border-top:1px solid var(--c-card-border);">
+    <p class="muted" style="margin:0; font-size:0.9rem;">
+      Member payments are <strong>{{ 'open' if payments_open_to_members() else 'closed' }}</strong>.
+      Opening them requires all three:
+      gateway enabled ({{ 'yes' if config.is_enabled else 'no' }}) ·
+      live mode ({{ 'yes' if not config.is_test_mode else 'no — sandbox' }}) ·
+      payment portal switch in <a href="{{ url_for('admin.site_identity') }}">Site → Identity</a>
+      ({{ 'on' if site.payment_portal_enabled else 'off' }}).
+      While closed, members see the portal as under construction; admins and
+      financial managers can still run test payments on their own registrations.
+    </p>
+  </div>
 </div>
 
 <div class="section-head" style="margin-top:32px;">

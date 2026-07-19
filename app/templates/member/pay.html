@@ -20,6 +20,14 @@
     </div>
 
     {% if gateway_available %}
+    {% if testing %}
+    <div class="card" style="padding:16px 24px; margin-top:18px; background:var(--c-page-bg); border-color:#e8c954;">
+      <p style="margin:0;"><strong>Test mode</strong> — the payment portal is not yet
+        open to members{% if sandbox %} and the gateway is in <strong>sandbox</strong>,
+        so only Worldline test cards will work{% endif %}. You can proceed because you
+        manage payments for this site.</p>
+    </div>
+    {% endif %}
     <div class="card" style="padding:24px; margin-top:18px;">
       <h3 style="margin-top:0;">Complete Your Payment</h3>
       <p>

@@ -276,6 +276,9 @@ def _register_template_globals(app: Flask) -> None:
     app.add_template_filter(target_url, "target_url")
     app.add_template_filter(format_amount, "format_amount")
 
+    from .services.payments import payments_open_to_members
+    app.add_template_global(payments_open_to_members, "payments_open_to_members")
+
 
 def _setup_complete(app: Flask) -> bool:
     return Path(app.config["SETUP_FLAG_PATH"]).exists()

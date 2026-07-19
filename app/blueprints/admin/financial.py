@@ -47,7 +47,17 @@ def financial_edit():
         db.session.commit()
 
     if request.method == "POST":
+        was_enabled = cfg.is_enabled
+        was_live = was_enabled and not cfg.is_test_mode
         cfg.is_enabled = request.form.get("is_enabled") == "1"
+        # Live mode is only ever reached through the OTP-confirmed toggle
+        # on an already-enabled gateway: disabling resets to sandbox, and
+        # enabling from disabled always lands in sandbox.
+        if not cfg.is_test_mode and (not cfg.is_enabled or not was_enabled):
+            cfg.is_test_mode = True
+            if was_live:
+                flash("Gateway disabled — sandbox mode re-engaged. Going live "
+                      "again will require OTP confirmation.", "warning")
         cfg.merchant_id = (request.form.get("merchant_id") or "").strip()
         cfg.api_key_id = (request.form.get("api_key_id") or "").strip()
 

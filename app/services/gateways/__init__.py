@@ -22,12 +22,19 @@ class CheckoutResult:
 
 @dataclass
 class WebhookResult:
-    """Result of processing a webhook callback."""
+    """Outcome of verifying a webhook.
+
+    ``merchant_reference`` is the raw order reference from the event
+    (``reg_<id>`` for registrations, ``test_<token>`` for admin test
+    payments); ``amount`` is the event's minor-unit amount when present.
+    """
     success: bool = False
     registration_id: int | None = None
     transaction_id: str = ""
     error: str = ""
     event_type: str = ""
+    merchant_reference: str = ""
+    amount: int | None = None
 
 
 class PaymentGateway(ABC):

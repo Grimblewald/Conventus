@@ -201,3 +201,63 @@ def financial_invoice():
         return redirect(url_for("admin.financial"))
 
     return render_template("admin/financial_invoice.html", invoice=tpl)
+
+
+@admin_bp.route("/financial/anz_worldline/test-payment", methods=["POST"])
+@requires_permission("financial.manage")
+def financial_test_payment():
+    """Start a small real checkout so the gateway can be verified end-to-end
+    without touching any registration. Confirmation arrives via webhook."""
+    from ...services.gateways.anz_worldline import ANZWorldlineGateway
+    from ...services.jinja_filters import format_amount, parse_cents
+
+    cfg = get_payment_gateway_config("anz_worldline")
+    if not cfg or not cfg.is_enabled:
+        flash("Enable the gateway before starting a test payment.", "error")
+        return redirect(url_for("admin.financial"))
+
+    try:
+        amount = parse_cents(request.form.get("amount") or "1.00")
+    except ValueError:
+        flash("Enter a valid test amount, e.g. 1.00.", "error")
+        return redirect(url_for("admin.financial"))
+    if not (1 <= amount <= 1000):
+        flash("Test amount must be between $0.01 and $10.00.", "error")
+        return redirect(url_for("admin.financial"))
+
+    reference = f"test_{secrets.token_hex(4)}"
+    result = ANZWorldlineGateway(cfg).create_test_checkout(amount, reference)
+
+    audit.record("financial.test_payment_started",
+                 target_kind="payment_gateway_config", target_id=str(cfg.id),
+                 summary=(f"Test payment {reference} for ${format_amount(amount)} "
+                          f"started by {current_user.email} "
+                          f"({'sandbox' if cfg.is_test_mode else 'LIVE'})"))
+
+    if result.error or not result.redirect_url:
+        flash(f"Could not start test payment: {result.error or 'no redirect URL'}",
+              "error")
+        return redirect(url_for("admin.financial"))
+    return redirect(result.redirect_url)
+
+
+@admin_bp.route("/financial/test-invoice", methods=["POST"])
+@requires_permission("financial.manage")
+def financial_test_invoice():
+    """Send the invoice template, rendered with sample data, to a chosen address."""
+    from ...services.invoice import send_test_invoice
+
+    to = (request.form.get("email") or "").strip() or current_user.email
+    if "@" not in to:
+        flash("Enter a valid email address for the test invoice.", "error")
+        return redirect(url_for("admin.financial"))
+
+    ok = send_test_invoice(to)
+    audit.record("financial.test_invoice_sent",
+                 target_kind="invoice_template", target_id="1",
+                 summary=f"Test invoice sent to {to} by {current_user.email}")
+    if ok:
+        flash(f"Test invoice sent to {to}.", "success")
+    else:
+        flash("Failed to send test invoice — check the mail settings.", "error")
+    return redirect(url_for("admin.financial"))

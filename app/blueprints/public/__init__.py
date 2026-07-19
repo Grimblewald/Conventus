@@ -449,10 +449,53 @@ def payment_webhook():
                     db.session.commit()
                 else:
                     db.session.commit()
+        elif (result.merchant_reference or "").startswith("test_"):
+            _record_test_payment_event(result)
         return {"status": "ok" if result.success else "ignored"}, 200
     except Exception:
         current_app.logger.exception("Webhook processing failed")
         return {"status": "error", "message": "Payment processing error"}, 500
+
+
+def _record_test_payment_event(result) -> None:
+    """Audit an admin-initiated test payment event; email admins when it
+    settles. The webhook is the only reliable confirmation channel when the
+    portal account can't view transactions."""
+    from ...models.user import User
+    from ...models.content import get_site_settings
+    from ...security import audit
+    from ...services.jinja_filters import format_amount
+    from ...services.mail import send_mail
+
+    event = result.event_type or "unknown"
+    amount = format_amount(result.amount) if result.amount is not None else "?"
+    summary = (f"Test payment {result.merchant_reference}: {event}, ${amount}, "
+               f"transaction {result.transaction_id or 'n/a'}")
+    audit.record("financial.test_payment_event",
+                 target_kind="payment_gateway",
+                 target_id=result.merchant_reference,
+                 summary=summary)
+
+    terminal = result.success or any(
+        w in event for w in ("rejected", "cancelled", "refunded"))
+    if not terminal:
+        return
+
+    site = get_site_settings()
+    admins = User.query.filter(User.role_name == "admin",
+                               User.deleted_at.is_(None)).all()
+    for admin in admins:
+        send_mail(
+            to=admin.email,
+            subject=f"[{site.site_name}] Gateway test payment: {event}",
+            body=(f"A payment gateway test event was received.\n\n"
+                  f"Reference: {result.merchant_reference}\n"
+                  f"Event: {event}\n"
+                  f"Amount: ${amount}\n"
+                  f"Transaction: {result.transaction_id or 'n/a'}\n\n"
+                  f"If this was a live test charge, remember to refund it from "
+                  f"the Worldline Merchant Portal."),
+        )
 
 
 @public_bp.route("/.well-known/security.txt")

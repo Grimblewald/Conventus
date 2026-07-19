@@ -60,12 +60,29 @@ class ANZWorldlineGateway(PaymentGateway):
             return None
 
     def create_checkout(self, registration, amount: int, currency: str = "AUD") -> CheckoutResult:
+        reg_id = registration.id
+        return self._create_hosted_checkout(
+            amount=amount,
+            currency=currency,
+            merchant_reference=f"reg_{reg_id}",
+            return_url=url_for("member.pay_result", reg_id=reg_id, _external=True),
+        )
+
+    def create_test_checkout(self, amount: int, reference: str,
+                             currency: str = "AUD") -> CheckoutResult:
+        """Admin-initiated test payment, not tied to any registration."""
+        return self._create_hosted_checkout(
+            amount=amount,
+            currency=currency,
+            merchant_reference=reference,
+            return_url=url_for("admin.financial", _external=True),
+        )
+
+    def _create_hosted_checkout(self, amount: int, currency: str,
+                                merchant_reference: str, return_url: str) -> CheckoutResult:
         client = self._client()
         if not client:
             return CheckoutResult(error="Payment gateway not configured.")
-
-        reg_id = registration.id
-        return_url = url_for("member.pay_result", reg_id=reg_id, _external=True)
 
         try:
             from onlinepayments.sdk.domain.create_hosted_checkout_request import CreateHostedCheckoutRequest
@@ -86,7 +103,7 @@ class ANZWorldlineGateway(PaymentGateway):
             order.amount_of_money = amount_of_money
 
             refs = OrderReferences()
-            refs.merchant_reference = f"reg_{reg_id}"
+            refs.merchant_reference = merchant_reference
             order.references = refs
 
             hcs_input = HostedCheckoutSpecificInput()
@@ -162,37 +179,33 @@ class ANZWorldlineGateway(PaymentGateway):
                     event_type=event_type,
                 )
 
-            reg_id = None
-            if output and output.references:
-                ref = output.references.merchant_reference or ""
-                if ref.startswith("reg_"):
-                    try:
-                        reg_id = int(ref[len("reg_"):])
-                    except ValueError:
-                        pass
+            ref = ""
+            amount = None
+            if output:
+                if output.references:
+                    ref = output.references.merchant_reference or ""
+                if output.amount_of_money and output.amount_of_money.amount is not None:
+                    amount = output.amount_of_money.amount
 
-            if event_type in _SUCCESSFUL_EVENTS:
-                return WebhookResult(
-                    success=True, registration_id=reg_id,
-                    transaction_id=transaction_id, event_type=event_type,
-                )
-            elif event_type in _REFUND_EVENTS:
-                return WebhookResult(
-                    success=True, registration_id=reg_id,
-                    transaction_id=transaction_id, event_type=event_type,
-                )
+            reg_id = None
+            if ref.startswith("reg_"):
+                try:
+                    reg_id = int(ref[len("reg_"):])
+                except ValueError:
+                    pass
+
+            common = dict(registration_id=reg_id, transaction_id=transaction_id,
+                          event_type=event_type, merchant_reference=ref, amount=amount)
+
+            if event_type in _SUCCESSFUL_EVENTS or event_type in _REFUND_EVENTS:
+                return WebhookResult(success=True, **common)
             elif event_type in _FAILED_EVENTS:
                 return WebhookResult(
-                    success=False, registration_id=reg_id,
-                    transaction_id=transaction_id, error=f"Payment {event_type}",
-                    event_type=event_type,
+                    success=False, error=f"Payment {event_type}", **common,
                 )
             else:
                 return WebhookResult(
-                    success=False, registration_id=reg_id,
-                    transaction_id=transaction_id,
-                    error=f"Non-terminal event: {event_type}",
-                    event_type=event_type,
+                    success=False, error=f"Non-terminal event: {event_type}", **common,
                 )
 
         except Exception as e:

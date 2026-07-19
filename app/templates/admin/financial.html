@@ -81,6 +81,45 @@
   {% endif %}
 </div>
 
+<div class="section-head" style="margin-top:32px;">
+  <div>
+    <div class="eyebrow">Verification</div>
+    <h2>Testing</h2>
+  </div>
+</div>
+
+<div class="card" style="padding:24px;">
+  <h4 style="margin-top:0;">Test invoice email</h4>
+  <p class="muted">Sends the invoice template, rendered with sample data, to the address below. No payment involved.</p>
+  <form method="POST" action="{{ url_for('admin.financial_test_invoice') }}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="email" name="email" class="input" placeholder="{{ current_user.email }}" style="max-width:320px;">
+    <button class="btn" type="submit">Send test invoice</button>
+  </form>
+</div>
+
+{% if config.is_enabled %}
+<div class="card" style="padding:24px; margin-top:20px;">
+  <h4 style="margin-top:0;">Test payment</h4>
+  <p class="muted">
+    Opens a Worldline checkout for a small amount, not tied to any registration.
+    {% if config.is_test_mode %}
+      The gateway is in <strong>sandbox</strong>, so use Worldline test cards — no money moves.
+    {% else %}
+      The gateway is <strong>LIVE</strong>: this is a <strong>real charge</strong> to whatever card you enter.
+      Refund it afterwards from the Worldline Merchant Portal.
+    {% endif %}
+    Confirmation arrives via webhook — admins get an email and an audit log entry when the payment settles.
+  </p>
+  <form method="POST" action="{{ url_for('admin.financial_test_payment') }}" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label for="test-amount" class="muted">Amount ($0.01–$10.00)</label>
+    <input type="text" id="test-amount" name="amount" class="input" value="1.00" style="max-width:120px;">
+    <button class="btn" type="submit">Start test payment</button>
+  </form>
+</div>
+{% endif %}
+
 <div class="card" style="padding:24px; margin-top:20px; background:var(--c-page-bg);">
   <h4>Available template variables</h4>
   <p class="muted">Use these in your invoice subject and body:</p>

@@ -403,12 +403,53 @@ def financial_transactions():
                              PaymentEvent.id.desc())
               .limit(500).all())
 
-    groups: dict[str, list] = {}
+    grouped: dict[str, list] = {}
     for e in events:
-        groups.setdefault(e.group_key, []).append(e)
+        grouped.setdefault(e.group_key, []).append(e)
+
+    groups = []
+    for key, evts in grouped.items():
+        state = _transaction_state(evts)
+        cancel_ref = ""
+        ref = evts[0].merchant_reference or ""
+        if ref.startswith("test_") and state in ("awaiting capture", "in progress"):
+            if any(e.transaction_id and e.event_type != "checkout.created"
+                   and not e.event_type.startswith("invoice.") for e in evts):
+                cancel_ref = ref
+        groups.append({"key": key, "events": evts, "state": state,
+                       "cancel_ref": cancel_ref})
 
     return render_template("admin/financial_transactions.html",
                            groups=groups, q=q, event_count=len(events))
+
+
+def _transaction_state(evts) -> str:
+    """Best-known lifecycle state of a transaction, derived from its events."""
+    from datetime import datetime, timedelta
+
+    suffixes = {e.event_type.rsplit(".", 1)[-1] for e in evts}
+    types = {e.event_type for e in evts}
+    if "refunded" in suffixes:
+        return "refunded"
+    if suffixes & {"chargebacked", "reversed", "chargeback_reversed"}:
+        return "disputed"
+    if suffixes & {"captured", "paid"}:
+        return "paid"
+    if suffixes & {"rejected", "rejected_capture"}:
+        return "failed"
+    if "cancelled" in suffixes:
+        return "cancelled"
+    if suffixes & {"pending_capture", "capture_requested"}:
+        return "awaiting capture"
+    if types == {"invoice.sent"}:
+        return "invoice sent"
+    if types == {"checkout.created"}:
+        latest = max(e.created_at for e in evts if e.created_at)
+        # hosted checkout sessions expire after roughly two hours
+        if latest < datetime.utcnow() - timedelta(hours=3):
+            return "abandoned"
+        return "initiated"
+    return "in progress"
 
 
 @admin_bp.route("/financial/reconcile", methods=["POST"])
@@ -454,4 +495,51 @@ def financial_reconcile():
     else:
         flash(f"Reconciliation complete: {summary['checked']} checked, "
               f"no discrepancies found.", "success")
+    return redirect(url_for("admin.financial_transactions"))
+
+
+@admin_bp.route("/financial/test-payment/<ref>/cancel", methods=["POST"])
+@requires_permission("financial.manage")
+def financial_test_payment_cancel(ref):
+    """Void the uncaptured authorization behind a test payment."""
+    from flask import abort
+    from ...models import PaymentEvent, record_payment_event
+    from ...services.gateways.anz_worldline import ANZWorldlineGateway
+
+    if not ref.startswith("test_"):
+        abort(404)
+
+    evt = (PaymentEvent.query
+           .filter(PaymentEvent.merchant_reference == ref,
+                   PaymentEvent.transaction_id != "",
+                   PaymentEvent.event_type != "checkout.created",
+                   db.not_(PaymentEvent.event_type.like("invoice.%")))
+           .order_by(PaymentEvent.id.desc())
+           .first())
+    if not evt:
+        flash(f"No payment found for {ref} to cancel.", "error")
+        return redirect(url_for("admin.financial_transactions"))
+
+    cfg = get_payment_gateway_config("anz_worldline")
+    result = ANZWorldlineGateway(cfg).cancel_payment(evt.transaction_id)
+
+    audit.record("financial.test_payment_cancelled",
+                 target_kind="payment_gateway", target_id=ref,
+                 summary=(f"Cancel authorization {evt.transaction_id} ({ref}) "
+                          f"by {current_user.email}: "
+                          f"{result.error or result.raw_status}"))
+
+    if result.error:
+        flash(f"Cancel failed for {ref}: {result.error}", "error")
+    else:
+        record_payment_event(
+            transaction_id=evt.transaction_id,
+            merchant_reference=ref,
+            event_type=f"cancel.{(result.raw_status or 'requested').lower()}",
+            amount=result.amount,
+            note=f"authorization voided via API by {current_user.email}",
+        )
+        flash(f"Authorization for {ref} cancelled "
+              f"(Worldline status {result.raw_status}). The hold on the card "
+              f"will drop off within a few days.", "success")
     return redirect(url_for("admin.financial_transactions"))

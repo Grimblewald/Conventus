@@ -247,6 +247,23 @@ class ANZWorldlineGateway(PaymentGateway):
             log.exception("Checkout status fetch failed for %s", hosted_checkout_id)
             return PaymentStatus(error=f"Status fetch failed: {e}")
 
+    def cancel_payment(self, payment_id: str) -> PaymentStatus:
+        """Void an uncaptured authorization (full cancel). Returns the
+        payment's resulting state."""
+        client = self._client()
+        if not client:
+            return PaymentStatus(error="Payment gateway not configured.")
+        try:
+            from onlinepayments.sdk.domain.cancel_payment_request import CancelPaymentRequest
+            resp = (client.merchant(self._config.merchant_id).payments()
+                    .cancel_payment(payment_id, CancelPaymentRequest()))
+            if resp.payment:
+                return self._payment_to_status(resp.payment)
+            return PaymentStatus(raw_status="CANCELLED", transaction_id=payment_id)
+        except Exception as e:
+            log.exception("Cancel failed for payment %s", payment_id)
+            return PaymentStatus(error=f"Cancel failed: {e}")
+
     @staticmethod
     def _payment_to_status(payment) -> PaymentStatus:
         ref = ""

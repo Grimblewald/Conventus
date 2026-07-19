@@ -138,6 +138,8 @@ def _reconcile_test_payments(gateway) -> tuple[int, list, list, list]:
     for e in events:
         by_ref.setdefault(e.merchant_reference, []).append(e)
 
+    _add_pre_ledger_test_refs(by_ref, cutoff)
+
     checked = 0
     changes: list[dict] = []
     errors: list[str] = []
@@ -186,6 +188,35 @@ def _reconcile_test_payments(gateway) -> tuple[int, list, list, list]:
                         "raw": raw, "test_ref": ref})
 
     return checked, changes, errors, unchanged
+
+
+def _add_pre_ledger_test_refs(by_ref: dict, cutoff) -> None:
+    """Test payments made before the payment_events ledger existed live only
+    in the audit log. Synthesize transient poll candidates from those rows so
+    reconciliation can see them; their current state then lands in the ledger
+    properly. DELETE once every pre-ledger test reference has reached a
+    final state (they age out of the cutoff window regardless)."""
+    import re
+
+    from ..models.audit import AuditLog
+
+    rows = (AuditLog.query
+            .filter(AuditLog.action == "financial.test_payment_event",
+                    AuditLog.created_at >= cutoff)
+            .order_by(AuditLog.id.asc())
+            .all())
+    pattern = re.compile(r"Test payment (test_\w+): ([\w.]+), \$[\d.,?]+, "
+                         r"transaction (\S+)")
+    ledger_refs = set(by_ref)
+    for row in rows:
+        m = pattern.match(row.summary or "")
+        if not m:
+            continue
+        ref, etype, txn = m.groups()
+        if ref in ledger_refs or txn in ("n/a", ""):
+            continue
+        by_ref.setdefault(ref, []).append(PaymentEvent(
+            merchant_reference=ref, event_type=etype, transaction_id=txn))
 
 
 def _fetch_status(gateway, reg: Registration):

@@ -42,16 +42,18 @@
 </div>
 {% endif %}
 
-{% for key, events in groups.items() %}
+{% for g in groups %}
+{% set events = g.events %}
 {% set latest = events[0] %}
 <details class="card" style="padding:0; margin-bottom:12px;">
   <summary style="padding:14px 24px; cursor:pointer; display:flex; gap:16px; align-items:center; flex-wrap:wrap;">
-    <code style="font-size:0.9rem;">{{ key }}</code>
+    <code style="font-size:0.9rem;">{{ g.key }}</code>
+    <span class="badge" style="background:var(--c-accent);color:var(--c-accent-ink);padding:2px 10px;border-radius:12px;font-size:0.75rem;">{{ g.state }}</span>
     {% if latest.registration %}
       <a href="{{ url_for('admin.registration_detail', reg_id=latest.registration.id) }}">
         reg {{ latest.registration.id }}{% if latest.registration.user %} · {{ latest.registration.user.email }}{% endif %}
       </a>
-    {% elif latest.merchant_reference and latest.merchant_reference != key %}
+    {% elif latest.merchant_reference and latest.merchant_reference != g.key %}
       <span class="muted">{{ latest.merchant_reference }}</span>
     {% endif %}
     <span class="muted" style="margin-left:auto;">
@@ -74,6 +76,13 @@
         {% endfor %}
       </tbody>
     </table>
+    {% if g.cancel_ref %}
+    <form method="POST" action="{{ url_for('admin.financial_test_payment_cancel', ref=g.cancel_ref) }}"
+          style="margin-top:8px;" data-confirm="Void the uncaptured authorization for {{ g.cancel_ref }}? The card hold will be released.">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-ghost btn-sm" type="submit">Cancel authorization</button>
+    </form>
+    {% endif %}
   </div>
 </details>
 {% endfor %}

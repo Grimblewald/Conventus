@@ -18,6 +18,7 @@ from ...models import Abstract, Conference, ConferenceReviewer, OTPCode, Organis
 from ...models.abstract import ALL_STATUSES, SPEAKER_STATUSES
 from ...models.conference import PriceTier
 from ...security import requires_permission, audit
+from ...services.jinja_filters import parse_cents
 from ...services.mail import send_mail
 from ...services.slugs import slugify
 from ...services.uploads import (
@@ -227,7 +228,7 @@ def conference_save(cid):
                 t.name = (request.form.get(f"tier_name_{t.id}") or "").strip()
             if f"tier_amount_{t.id}" in request.form:
                 try:
-                    t.amount = int(request.form.get(f"tier_amount_{t.id}") or 0)
+                    t.amount = parse_cents(request.form.get(f"tier_amount_{t.id}") or "0")
                 except ValueError:
                     pass
             if f"tier_desc_{t.id}" in request.form:
@@ -240,7 +241,7 @@ def conference_save(cid):
             if f"tier_eb_amt_{t.id}" in request.form:
                 if request.form.get(f"tier_eb_{t.id}"):
                     try:
-                        t.early_bird_amount = int(request.form.get(f"tier_eb_amt_{t.id}") or 0)
+                        t.early_bird_amount = parse_cents(request.form.get(f"tier_eb_amt_{t.id}") or "0")
                     except ValueError:
                         pass
                 else:
@@ -258,7 +259,7 @@ def conference_save(cid):
                 continue
             amount = 0
             try:
-                amount = int(new_amounts[i] or 0)
+                amount = parse_cents(new_amounts[i] or "0")
             except (IndexError, ValueError):
                 pass
             desc = (new_descs[i] if i < len(new_descs) else "").strip()
@@ -270,7 +271,7 @@ def conference_save(cid):
             eb_amt = None
             try:
                 raw_eb = (new_eb_amounts[i] if i < len(new_eb_amounts) else "0")
-                eb_amt = int(raw_eb) if raw_eb else None
+                eb_amt = parse_cents(raw_eb) if raw_eb else None
             except (IndexError, ValueError):
                 pass
             db.session.add(PriceTier(

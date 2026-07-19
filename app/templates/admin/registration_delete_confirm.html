@@ -11,7 +11,7 @@
 <p class="lede">
   You are about to delete the registration by <strong>{{ reg.user.email if reg.user else '—' }}</strong>
   for <strong>{{ reg.conference.title if reg.conference else '—' }}</strong>
-  ({{ site.currency_symbol }}{{ reg.amount }} · {{ reg.status }}).
+  ({{ site.currency_symbol }}{{ reg.amount | format_amount }} · {{ reg.status }}).
 </p>
 <p class="lede">We emailed a 6-digit code to <strong>{{ current_user.email }}</strong>. Enter it below to permanently soft-delete this registration.</p>
 <form method="post" class="form" autocomplete="off">

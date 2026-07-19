@@ -58,7 +58,7 @@ def send_payment_email(registration: Registration, pay_url: str) -> bool:
     body = (
         f"Thank you for registering for {conf.title} ({conf.date_range}).\n\n"
         f"Tier: {registration.tier_name}\n"
-        f"Amount: {registration.amount}\n\n"
+        f"Amount: {registration.amount / 100:.2f} {current_app.config.get('CURRENCY_CODE', 'AUD')}\n\n"
         f"To complete your registration, please visit:\n{pay_url}\n"
     )
     return send_mail(

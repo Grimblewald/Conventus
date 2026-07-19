@@ -17,7 +17,7 @@
       <div><dt>Email</dt><dd>{{ reg.user.email }}</dd></div>
       <div><dt>Conference</dt><dd>{{ conference.title if conference else '—' }}</dd></div>
       <div><dt>Tier</dt><dd>{{ reg.tier_name }}</dd></div>
-      <div><dt>Amount</dt><dd>{{ site.currency_symbol }}{{ reg.amount }} {{ site.currency_code }}</dd></div>
+      <div><dt>Amount</dt><dd>{{ site.currency_symbol }}{{ reg.amount | format_amount }} {{ site.currency_code }}</dd></div>
       <div><dt>Status</dt><dd><span class="status" data-v="{{ reg.status }}">{{ reg.status }}</span></dd></div>
       <div><dt>Payment sent</dt><dd>{{ reg.payment_sent_at.strftime('%-d %b %Y %H:%M') if reg.payment_sent_at else '—' }}</dd></div>
       <div><dt>Registered</dt><dd>{{ reg.created_at.strftime('%-d %b %Y %H:%M') }}</dd></div>

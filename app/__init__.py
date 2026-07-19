@@ -272,8 +272,9 @@ def _register_template_globals(app: Flask) -> None:
             result += "<br>" + " &emsp; ".join(sorted_affils)
         return Markup(result)
 
-    from .services.jinja_filters import target_url
+    from .services.jinja_filters import target_url, format_amount
     app.add_template_filter(target_url, "target_url")
+    app.add_template_filter(format_amount, "format_amount")
 
 
 def _setup_complete(app: Flask) -> bool:

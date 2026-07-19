@@ -111,13 +111,13 @@
               <h4>{{ t.name }}</h4>
               {% if is_early %}
                 <div class="price">
-                  <span style="text-decoration:line-through;opacity:0.5;font-size:0.85em;">{{ site.currency_symbol }}{{ t.amount }}</span>
-                  {{ site.currency_symbol }}{{ t.early_bird_amount }}
+                  <span style="text-decoration:line-through;opacity:0.5;font-size:0.85em;">{{ site.currency_symbol }}{{ t.amount | format_amount }}</span>
+                  {{ site.currency_symbol }}{{ t.early_bird_amount | format_amount }}
                   <small>{{ site.currency_code }}</small>
                 </div>
                 <small style="color:var(--c-accent);">Early bird until {{ c.early_bird_deadline.strftime('%-d %B %Y') }}</small>
               {% else %}
-                <div class="price">{{ site.currency_symbol }}{{ t.amount }} <small>{{ site.currency_code }}</small></div>
+                <div class="price">{{ site.currency_symbol }}{{ t.amount | format_amount }} <small>{{ site.currency_code }}</small></div>
               {% endif %}
               {% if t.description %}<p style="font-size:14px; color: var(--c-muted-text);">{{ t.description }}</p>{% endif %}
             </div>

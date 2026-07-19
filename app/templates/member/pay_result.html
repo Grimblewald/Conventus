@@ -13,7 +13,7 @@
     <div class="card" style="padding:24px;">
       <table class="table">
         <tr><th>Tier</th><td>{{ reg.tier_name }}</td></tr>
-        <tr><th>Amount</th><td>{{ site.currency_symbol }}{{ reg.amount }} {{ site.currency_code }}</td></tr>
+        <tr><th>Amount</th><td>{{ site.currency_symbol }}{{ reg.amount | format_amount }} {{ site.currency_code }}</td></tr>
         <tr><th>Status</th><td><span class="status" data-v="{{ reg.status }}">{{ reg.status }}</span></td></tr>
       </table>
     </div>

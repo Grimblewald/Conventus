@@ -38,7 +38,7 @@
       <td><a href="{{ url_for('admin.registration_detail', reg_id=r.id) }}">{{ r.user.email if r.user else '—' }}</a></td>
       <td>{{ r.conference.title if r.conference else '—' }}</td>
       <td>{{ r.tier_name }}</td>
-      <td>{{ site.currency_symbol }}{{ r.amount }}</td>
+      <td>{{ site.currency_symbol }}{{ r.amount | format_amount }}</td>
       <td><span class="status" data-v="{{ r.status }}">{{ r.status }}</span></td>
       <td>{{ r.payment_sent_at.strftime('%-d %b %Y') if r.payment_sent_at else '—' }}</td>
       <td>{{ r.created_at.strftime('%-d %b %Y') }}</td>

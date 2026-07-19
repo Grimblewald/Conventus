@@ -88,9 +88,9 @@
                     <option value="{{ t.name }}" {% if existing and existing.tier_name == t.name %}selected{% endif %}>
                       {{ t.name }} —
                       {% if is_early %}
-                        {{ site.currency_symbol }}{{ t.early_bird_amount }} (early bird, {{ site.currency_symbol }}{{ t.amount }} standard)
-                      {% else %}
-                        {{ site.currency_symbol }}{{ t.amount }}
+                        {{ site.currency_symbol }}{{ t.early_bird_amount | format_amount }} (early bird, {{ site.currency_symbol }}{{ t.amount | format_amount }} standard)
+                    {% else %}
+                        {{ site.currency_symbol }}{{ t.amount | format_amount }}
                       {% endif %}
                     </option>
                   {% endfor %}

@@ -20,7 +20,7 @@
           <tr>
             <td><a href="{{ url_for('public.conference_detail', slug=r.conference.slug) }}">{{ r.conference.title }}</a></td>
             <td>{{ r.tier_name }}</td>
-            <td>{{ site.currency_symbol }}{{ r.amount }} {{ site.currency_code }}</td>
+            <td>{{ site.currency_symbol }}{{ r.amount | format_amount }} {{ site.currency_code }}</td>
             <td><span class="status" data-v="{{ r.status }}">{{ r.status }}</span></td>
             <td>
               {% if r.status == 'pending' %}

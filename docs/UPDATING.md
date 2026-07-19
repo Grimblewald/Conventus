@@ -1,59 +1,65 @@
 # Keeping a deployment up to date
 
-The project is designed to be updated with `git pull`. Schema changes are
-introduced as additive migrations whenever possible so existing deployments
-keep working without manual intervention.
+There are two supported update paths. Both back up first, pull the latest
+code, apply database migrations, and restart the service — you never run
+migrations by hand in normal operation.
 
-## Standard update procedure
+## Path 1 — from the admin panel (recommended)
 
-```bash
-cd /opt/society-site                 # or wherever you cloned
-sudo -u society git pull
-sudo -u society uv sync               # picks up new/removed dependencies
-sudo systemctl restart society-site   # or `docker compose up -d app`
-```
+**Admin → System → Update.** The page shows whether a newer commit is
+available (set `UPDATE_REMOTE_URL` in `.env` to enable the check). Clicking
+Update emails you a confirmation code; entering it runs `git pull`, applies
+migrations, and queues a service restart. You land on a "site is
+restarting" page that polls every couple of seconds and returns you to the
+admin overview when the site is back — usually well under a minute.
 
-That's it for typical changes — CSS tweaks, new admin panels, copy
-edits, additive columns.
+Every update is audit-logged as `site.updated`.
 
-## When a release has a migration
-
-Look in the release notes (or `CHANGELOG.md`) for a line marked
-**MIGRATION REQUIRED**. The standard recipe:
+## Path 2 — from the shell
 
 ```bash
-sudo -u society uv run flask --app wsgi:app db upgrade
-sudo systemctl restart society-site
+cd ~/Conventus            # or wherever you cloned
+uv run python -m app update
 ```
 
-The very first time you run this on an older deployment that doesn't have
-a migrations table yet, stamp the current revision first:
+This backs up the database to `var/backups/`, pulls, migrates, and
+restarts the `cloudflared-launch` user service. If the update goes
+sideways:
 
 ```bash
-sudo -u society uv run flask --app wsgi:app db stamp head
+uv run python -m app revert
 ```
 
-## Update notifier (future)
+restores the exact pre-update state (database + git ref) in one step.
 
-The admin panel exposes `app/services/updater.py` which can read your git
-remote (set `UPDATE_REMOTE_URL` in `.env`) and tell admins when a newer
-commit is available. The current implementation only shows a status
-message — emailing a digest to admins when updates land is a planned
-follow-up. The current stub is small enough that you can call its
-`latest_status()` from a cron job today if you want to script your own
-notifier.
+## Migrations
+
+Schema changes ship as Alembic migrations and are applied automatically by
+both update paths. Releases whose migrations need extra care (data
+conversions, anything not purely additive) are marked **MIGRATION
+REQUIRED** in `CHANGELOG.md` — read the entry before updating, and take a
+backup from **Admin → System → Backup** first.
+
+If you ever need to run migrations manually:
+
+```bash
+uv run flask --app wsgi:app db upgrade
+```
+
+On a very old deployment without a migrations table, stamp once first:
+
+```bash
+uv run flask --app wsgi:app db stamp head
+```
 
 ## Rolling back
 
-* SQLite — `cp instance/app.db.backup-YYYYMMDD instance/app.db`, restart.
-* Postgres — restore from `pg_dump`, then check out the previous git tag
-  and `flask db downgrade` if a migration ran.
-* Always keep uploads + DB snapshots aligned in time so a rollback isn't
-  pointing at images that disappeared.
-
-## Watching breaking changes
-
-Every release that drops a column, renames a route, or removes a
-permission key will be tagged `BREAKING` in the changelog. The migrations
-that ship with such releases will include a comment about what to do
-about it. For minor releases, just pull and restart.
+* `uv run python -m app revert` undoes the most recent `update` exactly.
+* For anything older, restore a backup zip: **Admin → System → Backup**
+  (OTP-gated, takes a safety backup first) or
+  `uv run python scripts/backup.py --restore <zip>`. Backup archives
+  record the git commit and migration head they were taken at
+  (`manifest.json`), so check out that commit before restoring a backup
+  made on older code.
+* Keep uploads + DB snapshots aligned in time — the backup zips bundle
+  both precisely so a rollback isn't pointing at images that disappeared.

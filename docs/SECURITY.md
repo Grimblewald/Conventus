@@ -27,14 +27,44 @@ the attacker's.
 | Soft deletes                         | Conferences, abstracts, registrations, announcements, pages, committee, users all soft-delete |
 | Audit log                            | `app/security/audit.py` records every admin / committee mutation                  |
 | Static-fonts CSP                     | We ship no external font loads, so the CSP forbids `font-src` beyond `'self'`    |
+| Inline scripts                       | CSP `script-src` carries SHA-256 hashes computed from templates at startup — no `unsafe-inline`. Inline scripts must be static; page data goes in `<script type="application/json">` blocks |
+
+## Payments
+
+Card handling is delegated entirely to ANZ Worldline's Hosted Checkout
+(PCI SAQ-A scope) — no card data ever reaches the server, and the
+codebase stores none.
+
+| Concern                    | How it's handled                                                       |
+| -------------------------- | ---------------------------------------------------------------------- |
+| API credentials at rest    | Fernet-encrypted in the DB with a key derived from `SECRET_KEY` — rotating `SECRET_KEY` invalidates them (re-enter in the Financial panel) |
+| Webhooks                   | HMAC-SHA256 signature verification via the provider SDK before any processing; invalid signatures are ignored |
+| Going live                 | OTP-confirmed toggle; disabling or re-enabling the gateway always resets to sandbox |
+| Member exposure            | Members can only reach checkout when gateway enabled **and** live **and** the member-payments switch is open — every other state shows "under construction" |
+| Status integrity           | Stale/out-of-order failure events never downgrade a paid registration; duplicate captures (possible double payments), disputes, and failed refunds email admins and are audit-logged |
+| Traceability               | Every verified gateway event is appended to a per-transaction ledger (Admin → Financial → Transactions) |
+
+## Backups
+
+* Regular backups (admin download, `scripts/backup.py`, and the scheduled
+  systemd timer) never include `.env`.
+* The optional **full backup** bundles `.env` and is only available from
+  the admin panel: OTP-confirmed, AES-256 encrypted with a password chosen
+  at creation and stored nowhere. That archive can clone the entire site
+  — including decrypting stored payment credentials — so store it offline
+  and keep the password separate.
+* Restores are OTP-gated and take an automatic safety backup first.
 
 ## What's your problem
 
-* **Real TLS.** Reverse-proxy with nginx + certbot, Caddy (which does it
-  automatically), or sit behind Cloudflare. The Talisman defaults assume
-  TLS is in front of you.
-* **Backups.** Snapshot `instance/` and `uploads/` regularly. SQLite is
-  one file; Postgres has `pg_dump`. Practise restoring.
+* **Real TLS.** The supported deployment (Cloudflare Tunnel) terminates
+  TLS for you. If you front the app any other way, put a TLS-terminating
+  proxy in front — the Talisman defaults assume TLS is ahead of you.
+* **Backup custody.** The built-in backup system produces the archives;
+  getting them off the box and practising restores is on you. Keep `.env`
+  (or a password-protected full backup) somewhere safe — without
+  `SECRET_KEY`, stored payment credentials in a restored DB are
+  unrecoverable by design.
 * **The deploy host.** Patch it. Don't expose `instance/` over a static
   file handler. Make sure `flask.log` isn't world-readable — OTP codes
   printed by the `console` mail backend would leak otherwise (don't use

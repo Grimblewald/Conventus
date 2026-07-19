@@ -19,9 +19,19 @@ SQLite.  Lightweight enough to deploy on a Pi or an old phone.
   - **Announcements**
   - **Members** + per-role **Permissions** matrix
   - **Audit log**
-  - **System → Backup** — full-site zip download & OTP-gated restore
-    with chunked transfer for large files
-  - **System → Update** — OTP-gated git pull + migration from the admin panel
+  - **Financial** — payment provider configuration (ANZ Worldline hosted
+    checkout), OTP-gated sandbox/live switching, invoice template editor,
+    manual invoicing with To/CC, a searchable per-transaction event ledger,
+    and an explicit open/close switch for member payments
+  - **System → Backup** — full-site zip download & OTP-gated restore with
+    chunked transfer; optional AES-256 password-protected full backup
+    including `.env`
+  - **System → Update** — OTP-gated git pull + migration from the admin
+    panel, with an auto-restart that polls until the site returns
+- Online payments via ANZ Worldline's Hosted Checkout (card data never
+  touches the server — PCI SAQ-A scope), webhook-driven status updates
+  with HMAC signature verification, invoice emails, refund/dispute and
+  double-payment alerting
 - Hardened OTP login, CSRF on every form, CSP via Talisman, image
   validation, rate-limited OTP issuance, attempt counter + lockout
 - Postgres or SQLite via `DATABASE_URL`; Redis-backed rate limiting is opt-in
@@ -95,6 +105,14 @@ The `update` command is designed to be run while the site is live.
 Backups are stored in `var/backups/`.  If an update goes sideways, `revert`
 restores the exact state from before the last `update`.
 
+### Promoting more admins
+
+The wizard creates *one* admin. To promote more, SSH in and run:
+
+```bash
+uv run python scripts/admin_cli.py
+```
+
 ### Managing page content with git
 
 Static pages (Privacy Policy, Terms & Conditions, Code of Conduct, etc.)
@@ -153,7 +171,7 @@ app/
 │   └── setup_wizard/       # first-run wizard
 ├── templates/              # Jinja2 templates
 └── static/                 # site.css (vars-driven) + site.js
-deploy/                     # systemd units, nginx config
+deploy/                     # systemd user units (tunnel, backup, healthcheck)
 scripts/                    # launch_cloudflared.sh, launch.sh, update.sh,
                             # backup.py, healthcheck.py, admin_cli.py
 migrations/                 # Alembic/Flask-Migrate
@@ -166,8 +184,7 @@ wsgi.py                     # gunicorn entry
 ## Documentation index
 
 - [`docs/INSTALL.md`](docs/INSTALL.md) — prerequisites, local dev setup
-- [`docs/DEPLOY-CLOUDFLARE-SIMPLE.md`](docs/DEPLOY-CLOUDFLARE-SIMPLE.md) — zero-config Cloudflare tunnel (recommended)
-- [`docs/DEPLOY-VPS.md`](docs/DEPLOY-VPS.md) — single VPS w/ systemd + nginx
+- [`docs/DEPLOY-CLOUDFLARE-SIMPLE.md`](docs/DEPLOY-CLOUDFLARE-SIMPLE.md) — zero-config Cloudflare tunnel (the supported path)
 - [`docs/SECURITY.md`](docs/SECURITY.md) — hardening notes
 - [`docs/UPDATING.md`](docs/UPDATING.md) — keeping a deployment current
 - [`docs/CUSTOMISING.md`](docs/CUSTOMISING.md) — what each admin panel does

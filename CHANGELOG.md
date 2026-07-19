@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.2.0] — 2026-07-20  **MIGRATION REQUIRED**
+
+### Added
+- Online payments: ANZ Worldline Hosted Checkout (PCI SAQ-A), admin
+  Financial panel (provider config, OTP-gated sandbox/live switch, member
+  payments open/close), invoice template + automatic invoice/refund
+  emails, manual Send Invoice with To/CC, admin test payments and test
+  invoices, per-transaction event ledger with search
+- Webhook processing with HMAC verification, guarded status transitions,
+  refund/dispute/double-payment admin alerts, API key expiry warnings
+- Unified backup archive format (manifest with git commit + migration
+  head) shared by the admin panel and CLI; optional OTP-gated, AES-256
+  password-protected full backup including `.env`
+- Admin update flow queues the restart and shows a polling
+  "restarting" page instead of racing the service down
+
+### Changed
+- **MIGRATION: amounts are now stored in minor units (cents).** The
+  migration multiplies existing price tier and registration amounts
+  by 100 — run `db upgrade` exactly once (both update paths do this
+  automatically) and spot-check displayed prices afterwards.
+- Prices are entered and displayed as dollars everywhere
+- Financial admin routes gated by the `financial.manage` permission
+
+### Removed
+- nginx deployment path (config, system-level unit, VPS doc) — the
+  Cloudflare Tunnel user service is the supported deployment
+- Dead payment gateway registry and `PAYMENT_GATEWAY`/`ANZ_*` env vars —
+  gateway selection lives in the admin-managed DB config
+
 ## [0.1.0] — 2026-05-30
 
 ### Added

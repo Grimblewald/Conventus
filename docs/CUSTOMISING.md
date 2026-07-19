@@ -111,3 +111,35 @@ here, grouped by section. Admin is implicit and not in the list.
 
 `/admin/audit` — append-only history of every admin/committee mutation.
 Filter by action substring or actor email.
+
+## Financial
+
+`/admin/financial` — the whole payment lifecycle, gated on the
+`financial.manage` permission (grantable to committee; implies
+`registrations.view`):
+
+* **Payment Providers** — ANZ Worldline credentials (API + webhook
+  key/secret, stored encrypted), Test Connection, and the OTP-confirmed
+  Sandbox/Live toggle. The gateway always (re-)enables into sandbox; live
+  is only reachable via the OTP flow. A status line spells out whether
+  member payments are open and offers the explicit Open/Close switch —
+  members only ever reach checkout when the gateway is enabled, live,
+  *and* opened. While closed, admins and financial managers can still run
+  test payments on their own registrations.
+* **Testing** — send the invoice template (rendered with sample data) to
+  any address, and run a small test payment (≤ $10) not tied to any
+  registration; settlement is confirmed by webhook → admin email + audit.
+* **Invoice Template** — subject, plain/HTML body, from name/address, and
+  footer for the emails sent automatically when a payment or refund
+  settles. Variables like `{user_name}`, `{amount}`, `{transaction_id}`
+  are listed on the dashboard.
+* **Send Invoice** — manually bill arbitrary recipients (e.g. sponsors)
+  with To/CC, amount, and reference; uses the same template (review its
+  wording — the default reads as a receipt).
+* **Transactions** — searchable per-transaction ledger of every checkout
+  created, gateway webhook event (with the status change it caused), and
+  manual invoice sent.
+
+Registration payment webhooks (`/payments/webhook`) are verified by HMAC
+signature; refunds, disputes, and suspected double payments email all
+admins and appear in the audit log as `financial.payment_attention`.

@@ -50,9 +50,13 @@ console — paste it into the wizard.
 
 ## Going to production
 
-- [Cloudflare Tunnel — zero-config (recommended)](DEPLOY-CLOUDFLARE-SIMPLE.md)
-- [Single VPS — systemd + nginx](DEPLOY-VPS.md)
+- [Cloudflare Tunnel — zero-config (the supported path)](DEPLOY-CLOUDFLARE-SIMPLE.md)
 
 Before going public, read [SECURITY.md](SECURITY.md) — it lists the env
 vars that must be set for production and the hardening the app applies
 for you.
+
+Sizing: default gunicorn settings give `3 workers × 32 threads`. For
+registration spikes, raise via `GUNICORN_WORKERS` / `GUNICORN_THREADS` in
+`.env`, and consider Postgres (`DATABASE_URL`) if SQLite logs
+`database is locked`.

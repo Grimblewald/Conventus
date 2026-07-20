@@ -143,3 +143,35 @@ Filter by action substring or actor email.
 Registration payment webhooks (`/payments/webhook`) are verified by HMAC
 signature; refunds, disputes, and suspected double payments email all
 admins and appear in the audit log as `financial.payment_attention`.
+
+### Understanding transaction IDs
+
+The gateway platform (Worldline Global Online Pay) identifies things at
+two levels, and mixing them up makes reconciliation look broken:
+
+* **Merchant reference** — *our* identifier for the whole payment
+  lifecycle: `reg_<id>` for registrations, `test_<token>` for admin test
+  payments, `INV-…` for sent invoices. Every operation on a payment
+  (authorisation, capture, refund, void) carries the same reference. The
+  Transactions ledger groups by it, and the Merchant Portal's transaction
+  search uses it too (with `%` wildcards). **This is the join key**
+  between our ledger, the portal, and any treasurer notes.
+* **Payment/operation ID** — the long number the platform generates
+  (e.g. `9000009599513317000`). Each *operation* gets its own: observed
+  in practice, an authorisation and its later void share all digits
+  except a trailing counter (`…000` → `…001`), i.e. the number embeds
+  the payment's identity plus a per-operation history index — the modern
+  form of the legacy platform's PAYID + PAYIDSUB pair. The exact digit
+  layout is not publicly documented, so treat the full string as opaque:
+  match payments by merchant reference, and read a differing tail as
+  "another operation on the same payment", not a new payment.
+
+In the Merchant Portal, operations do **not** appear as separate rows:
+find the transaction by merchant reference, open it, and the **History**
+section lists each authorisation/capture/refund/void with its result.
+A voided authorisation never settles, so it shows no settled amount and
+disappears from bank statements when the hold lapses. Settlement-side
+numbers (RRN/ARN in acquirer reports and on cardholder statements) come
+from the card schemes and will never match platform payment IDs —
+reconcile those against settlement reports by amount, date, and merchant
+reference, not by ID.

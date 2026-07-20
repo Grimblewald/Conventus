@@ -33,10 +33,11 @@ class PaymentEvent(db.Model):
 
     @property
     def group_key(self) -> str:
-        """Transactions group by the platform transaction ID when known,
-        falling back to the merchant reference (e.g. before checkout
-        completes, or for manually sent invoices)."""
-        return self.transaction_id or self.merchant_reference or "(unreferenced)"
+        """Group by merchant reference — the stable key across a payment's
+        whole lifecycle. Worldline assigns each operation (authorization,
+        void, refund) its own transaction ID, so grouping by transaction ID
+        would split one payment's history into several groups."""
+        return self.merchant_reference or self.transaction_id or "(unreferenced)"
 
 
 def record_payment_event(*, transaction_id: str = "", merchant_reference: str = "",

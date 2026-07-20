@@ -63,14 +63,14 @@
   </summary>
   <div style="padding:0 24px 16px; overflow-x:auto;">
     <table class="table">
-      <thead><tr><th>Time (UTC)</th><th>Event</th><th>Amount</th><th>Reference</th><th>Note</th></tr></thead>
+      <thead><tr><th>Time (UTC)</th><th>Event</th><th>Amount</th><th>Transaction</th><th>Note</th></tr></thead>
       <tbody>
         {% for e in events | reverse %}
         <tr>
           <td style="white-space:nowrap;">{{ e.created_at.strftime('%-d %b %Y %H:%M:%S') }}</td>
           <td><code>{{ e.event_type }}</code></td>
           <td>{% if e.amount is not none %}{{ site.currency_symbol }}{{ e.amount | format_amount }}{% else %}—{% endif %}</td>
-          <td><code style="font-size:0.85rem;">{{ e.merchant_reference or '—' }}</code></td>
+          <td><code style="font-size:0.85rem;">{{ e.transaction_id or '—' }}</code></td>
           <td class="muted">{{ e.note }}</td>
         </tr>
         {% endfor %}

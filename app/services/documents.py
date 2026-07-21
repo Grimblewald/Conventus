@@ -6,10 +6,27 @@ never author raw LaTeX — every structured value is LaTeX-escaped before it
 reaches the skeleton, so there is no `\\input`/macro-bomb surface and no OS
 sandbox is needed. This module is the single compile code path; preview and
 send (later build steps) are callers of `render_document`, never re-implementations.
+
+Compile queue (plan §6)
+-----------------------
+tectonic is CPU/RAM-heavy and the VPS is small, so every compile is funnelled
+through ONE process-wide queue served by a small daemon worker pool
+(`DOC_COMPILE_WORKERS`, default 1). `render_document` splits into two phases:
+"prepare" (DB read, LaTeX escaping, job-dir + assets — runs in the caller's
+request/app context) and "compile" (pure tectonic run on the prepared job dir —
+runs on a worker, touches no DB, needs no app context). There stays exactly one
+compile code path: the pure step is `_compile`, and every caller — preview, warm
+pregen, boot warm — reaches it through `render_document` → the queue.
+
+Single-process assumption: the queue, worker pool and backlog counter are plain
+in-process objects. This is deliberate — the deploy is a single Flask/gunicorn
+worker behind a Cloudflare tunnel (THE process). A multi-process deploy would
+need an external broker; that is out of scope by design.
 """
 from __future__ import annotations
 
 import os
+import queue
 import re
 import shutil
 import subprocess
@@ -239,6 +256,166 @@ def _trim_log(data) -> str:
     return "\n".join((data or "").splitlines()[-40:])
 
 
+# ---------------------------------------------------------------------------
+# Process-wide compile queue (plan §6). Serialises tectonic across the whole
+# process at capped concurrency. See the module docstring for the single-process
+# rationale.
+# ---------------------------------------------------------------------------
+
+# Total wall-clock a request will wait for its PDF (queue wait + compile). Past
+# this the caller gives up with a RenderError; the abandoned job is skipped or
+# discarded by the worker, keeping the queue consistent. Config override:
+# `DOC_COMPILE_TIMEOUT`.
+_QUEUE_WAIT_TIMEOUT = 120
+
+_compile_queue: "queue.Queue[_CompileJob]" = queue.Queue()
+_running_jobs = 0                      # jobs a worker is actively compiling
+_running_guard = threading.Lock()
+_workers_started = False
+_workers_guard = threading.Lock()
+
+
+def _compile(tectonic: str, job_dir: Path, tex_path: Path,
+             source_date_epoch: int) -> bytes:
+    """The ONE compile step: run tectonic on a prepared job dir and return the
+    PDF bytes (or raise RenderError). Pure — no DB, no app context, no escaping;
+    everything it needs is passed in, so it is safe to run on a worker thread.
+    This is the single point every caller's compile funnels through."""
+    # Network stays ON (a cold cache must still fetch packages).
+    env = dict(os.environ, SOURCE_DATE_EPOCH=str(source_date_epoch))
+    try:
+        proc = subprocess.run(
+            [tectonic, "--outdir", str(job_dir), str(tex_path)],
+            capture_output=True, timeout=_COMPILE_TIMEOUT,
+            env=env, cwd=str(job_dir),
+        )
+    except subprocess.TimeoutExpired as e:
+        raise RenderError(
+            f"tectonic timed out after {_COMPILE_TIMEOUT}s",
+            log=_trim_log((e.stdout or b"") + (e.stderr or b"")))
+
+    if proc.returncode != 0:
+        raise RenderError(
+            f"tectonic exited {proc.returncode}",
+            log=_trim_log(proc.stdout + proc.stderr))
+
+    pdf = job_dir / "document.pdf"
+    if not pdf.exists():
+        raise RenderError("tectonic produced no PDF",
+                          log=_trim_log(proc.stdout + proc.stderr))
+    return pdf.read_bytes()
+
+
+class _CompileJob:
+    """A prepared compile handed to the worker pool. The caller fills the job
+    dir, enqueues, and waits on `done`; the worker runs `_compile` and stashes
+    the bytes or the RenderError. `abandoned` lets a timed-out caller tell a
+    not-yet-started job to skip the (now pointless) compile."""
+
+    __slots__ = ("tectonic", "job_dir", "tex_path", "epoch",
+                 "done", "pdf", "error", "abandoned")
+
+    def __init__(self, tectonic: str, job_dir: Path, tex_path: Path,
+                 epoch: int) -> None:
+        self.tectonic = tectonic
+        self.job_dir = job_dir
+        self.tex_path = tex_path
+        self.epoch = epoch
+        self.done = threading.Event()
+        self.pdf: bytes | None = None
+        self.error: RenderError | None = None
+        self.abandoned = False
+
+    def execute(self) -> None:
+        try:
+            self.pdf = _compile(self.tectonic, self.job_dir, self.tex_path,
+                                self.epoch)
+        except RenderError as e:
+            self.error = e
+        except Exception as e:                # never let a worker die on a job
+            self.error = RenderError(f"compile crashed: {e}")
+        finally:
+            self.done.set()
+
+
+def _compile_worker() -> None:
+    """Daemon worker: pull jobs forever, one compile at a time. Survives any
+    single job's failure (execute() swallows everything) so the pool keeps
+    serving after a bad template blows up a compile."""
+    while True:
+        job = _compile_queue.get()
+        try:
+            if job.abandoned:
+                job.done.set()
+                continue
+            with _running_guard:
+                global _running_jobs
+                _running_jobs += 1
+            try:
+                job.execute()
+            finally:
+                with _running_guard:
+                    _running_jobs -= 1
+        finally:
+            _compile_queue.task_done()
+
+
+def _worker_count() -> int:
+    try:
+        n = int(current_app.config.get("DOC_COMPILE_WORKERS") or 1)
+    except RuntimeError:
+        n = 1
+    return max(1, n)
+
+
+def _ensure_workers() -> None:
+    """Start the worker pool exactly once, on first submission (thread-safe
+    double-checked start)."""
+    global _workers_started
+    if _workers_started:
+        return
+    with _workers_guard:
+        if _workers_started:
+            return
+        for i in range(_worker_count()):
+            threading.Thread(target=_compile_worker,
+                             name=f"doc-compile-{i}", daemon=True).start()
+        _workers_started = True
+
+
+def _wait_timeout() -> int:
+    try:
+        return int(current_app.config.get("DOC_COMPILE_TIMEOUT")
+                   or _QUEUE_WAIT_TIMEOUT)
+    except RuntimeError:
+        return _QUEUE_WAIT_TIMEOUT
+
+
+def compile_backlog() -> int:
+    """How many compile jobs are queued or actively running right now — i.e.
+    the number a new submission would sit behind. Cheap; routes read it BEFORE
+    kicking a render to report queue position (plan §6). 0 means "compiles
+    immediately"."""
+    return _compile_queue.qsize() + _running_jobs
+
+
+def _submit_and_wait(job: _CompileJob) -> bytes:
+    """Enqueue a prepared job, block for its result up to the configured total
+    wall-clock bound, and return the PDF bytes. On expiry the job is abandoned
+    (skipped if still queued, its result discarded if mid-flight) and a
+    RenderError is raised — the queue is left consistent."""
+    _ensure_workers()
+    _compile_queue.put(job)
+    if not job.done.wait(timeout=_wait_timeout()):
+        job.abandoned = True
+        raise RenderError(
+            f"compile did not finish within {_wait_timeout()}s "
+            f"(queue backlog too deep or tectonic stalled)")
+    if job.error is not None:
+        raise job.error
+    return job.pdf if job.pdf is not None else b""
+
+
 def render_document(kind: str, vars_: dict[str, str],
                     assets: dict[str, Path] | None = None, *,
                     source_date_epoch: int = SOURCE_DATE_EPOCH,
@@ -249,9 +426,16 @@ def render_document(kind: str, vars_: dict[str, str],
     with the DocumentTemplate fields, so the preview caller can render an
     uncommitted edit without a second code path), assembles the .tex from the
     shared skeleton (escaped structured content), copies any `assets` (`logo` /
-    `signature` — referenced by the skeleton only when present), runs tectonic
-    with SOURCE_DATE_EPOCH set for byte-reproducibility, and returns the PDF
+    `signature` — referenced by the skeleton only when present), then compiles
+    with SOURCE_DATE_EPOCH set for byte-reproducibility and returns the PDF
     bytes. The per-job directory is always removed in a finally.
+
+    Two phases (plan §6): everything up to and including writing the .tex is the
+    "prepare" step and runs here, in the caller's context (it touches the DB and
+    escapes admin input). The tectonic run itself is handed to the process-wide
+    compile queue and awaited, so bursts never exhaust the small VPS. The public
+    signature and behaviour are unchanged — one code path, bytes out, RenderError
+    on failure, job dir cleaned in finally.
     """
     from ..models import get_document_template
 
@@ -279,29 +463,9 @@ def render_document(kind: str, vars_: dict[str, str],
         tex_path = job / "document.tex"
         tex_path.write_text(tex, encoding="utf-8")
 
-        # Network stays ON (a cold cache must still fetch packages).
-        env = dict(os.environ, SOURCE_DATE_EPOCH=str(source_date_epoch))
-        try:
-            proc = subprocess.run(
-                [tectonic, "--outdir", str(job), str(tex_path)],
-                capture_output=True, timeout=_COMPILE_TIMEOUT,
-                env=env, cwd=str(job),
-            )
-        except subprocess.TimeoutExpired as e:
-            raise RenderError(
-                f"tectonic timed out after {_COMPILE_TIMEOUT}s",
-                log=_trim_log((e.stdout or b"") + (e.stderr or b"")))
-
-        if proc.returncode != 0:
-            raise RenderError(
-                f"tectonic exited {proc.returncode}",
-                log=_trim_log(proc.stdout + proc.stderr))
-
-        pdf = job / "document.pdf"
-        if not pdf.exists():
-            raise RenderError("tectonic produced no PDF",
-                              log=_trim_log(proc.stdout + proc.stderr))
-        return pdf.read_bytes()
+        # Compile via the shared queue (capped concurrency) and wait for bytes.
+        return _submit_and_wait(
+            _CompileJob(tectonic, job, tex_path, source_date_epoch))
     finally:
         shutil.rmtree(job, ignore_errors=True)
 
@@ -445,7 +609,10 @@ def warm_pregen_async(app, kind: str) -> None:
     Resilient: PregenBusy (a warm already running) and any compile error are
     swallowed with a log — a failed warm just means the next preview recompiles.
     Skipped under TESTING so the suite never fires background tectonic compiles.
-    Step 5 will move this onto the shared compile queue."""
+    The compile itself rides the shared queue (warm_pregen → preview_document →
+    render_document → queue), so a boot/save warm never contends with an
+    on-demand render for CPU; this daemon thread only owns the per-kind pregen
+    lock while it waits for its queued compile."""
     if app.config.get("TESTING"):
         return
 

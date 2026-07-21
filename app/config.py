@@ -114,6 +114,13 @@ class BaseConfig:
     MAIL_BACKEND = os.environ.get("MAIL_BACKEND", "console").lower()
     MAIL_FROM = os.environ.get("MAIL_FROM", "Name Your Society <noreply@your-domain.example.org>")
 
+    # --- Document rendering (tectonic compile queue, plan §6) ---------------
+    # Concurrent tectonic processes. Default 1 — the VPS is small and tectonic
+    # is CPU/RAM-heavy; bump only on a bigger host. Total wall-clock a request
+    # waits for its PDF (queue wait + compile) before giving up with an error.
+    DOC_COMPILE_WORKERS = _int("DOC_COMPILE_WORKERS", 1)
+    DOC_COMPILE_TIMEOUT = _int("DOC_COMPILE_TIMEOUT", 120)
+
     # --- Update checker (optional) ------------------------------------------
     UPDATE_REMOTE_URL = (os.environ.get("UPDATE_REMOTE_URL") or "").strip()
     UPDATE_BRANCH = (os.environ.get("UPDATE_BRANCH") or "main").strip()

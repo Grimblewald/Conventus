@@ -382,8 +382,9 @@ def _warm_document_pregen(app: Flask) -> None:
     document kind after boot, so the first "Download preview" serves instantly
     instead of waiting on a cold compile. Skipped under the migration CLI (no
     business compiling there) and in tests; resilient by design — a tectonic
-    hiccup logs and never crashes boot. Step 5 will move this onto the shared
-    compile queue.
+    hiccup logs and never crashes boot. The warm compile rides the shared
+    compile queue (via warm_pregen_async → warm_pregen → render_document), so it
+    is serialised against on-demand renders rather than competing for CPU.
 
     The TESTING flag is only set by the test harness *after* create_app(), so we
     also skip whenever pytest is loaded — otherwise the boot warm would fire real

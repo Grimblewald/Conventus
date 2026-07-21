@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import os
 import shutil
+import threading
+import time
 import types
 
 import pytest
@@ -307,6 +309,144 @@ def test_editor_page_has_preview_button(ctx, admin_client):
     assert "Download preview" in html
     assert "/admin/financial/document/preview" in html
     assert 'name="pdf_body"' in html
+
+
+# --- compile queue (plan §6) -------------------------------------------------
+#
+# These stub the pure compile step (`docs._compile`) so no real tectonic runs —
+# the queue machinery is exercised, not the LaTeX toolchain. A tiny draft
+# template keeps render_document off the DB so worker/thread contexts stay
+# simple.
+
+_DRAFT = types.SimpleNamespace(pdf_body="", gst_registered=False)
+
+
+def _render_in_thread(app, results, idx, **kw):
+    """Run render_document on its own thread inside an app context, stashing the
+    (index, exception-or-bytes) into `results`."""
+    def _run():
+        try:
+            with app.app_context():
+                out = render_document("invoice", _vars(), template=_DRAFT, **kw)
+            results[idx] = out
+        except Exception as e:                # noqa: BLE001 - recorded for asserts
+            results[idx] = e
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    return t
+
+
+def test_concurrency_cap_serialises(app, monkeypatch):
+    """With DOC_COMPILE_WORKERS=1, two concurrent renders never compile at the
+    same time — the second's compile starts only after the first's ends."""
+    app.config["DOC_COMPILE_WORKERS"] = 1
+    intervals = []
+    lock = threading.Lock()
+
+    def slow_compile(tectonic, job_dir, tex_path, epoch):
+        start = time.monotonic()
+        time.sleep(0.15)
+        end = time.monotonic()
+        with lock:
+            intervals.append((start, end))
+        return b"%PDF-fake"
+
+    monkeypatch.setattr(docs, "_compile", slow_compile)
+
+    results: dict[int, object] = {}
+    t1 = _render_in_thread(app, results, 0)
+    t2 = _render_in_thread(app, results, 1)
+    t1.join(10); t2.join(10)
+
+    assert results[0] == b"%PDF-fake"
+    assert results[1] == b"%PDF-fake"
+    # No overlap: one interval must sit entirely after the other.
+    (a0, a1), (b0, b1) = sorted(intervals)
+    assert a1 <= b0 + 0.01, f"compiles overlapped: {intervals}"
+
+
+def test_backlog_reports_position(app, monkeypatch):
+    """compile_backlog() counts running + queued jobs, so a caller can report
+    its position. Uses a gate so jobs pile up deterministically."""
+    app.config["DOC_COMPILE_WORKERS"] = 1
+    gate = threading.Event()
+
+    def gated_compile(tectonic, job_dir, tex_path, epoch):
+        gate.wait(5)
+        return b"%PDF-fake"
+
+    monkeypatch.setattr(docs, "_compile", gated_compile)
+    assert docs.compile_backlog() == 0
+
+    results: dict[int, object] = {}
+    t1 = _render_in_thread(app, results, 0)   # worker picks it up, blocks on gate
+    _wait_until(lambda: docs.compile_backlog() == 1)
+    t2 = _render_in_thread(app, results, 1)   # queued behind the running one
+    _wait_until(lambda: docs.compile_backlog() == 2)
+
+    gate.set()
+    t1.join(10); t2.join(10)
+    assert results[0] == b"%PDF-fake" and results[1] == b"%PDF-fake"
+    _wait_until(lambda: docs.compile_backlog() == 0)
+
+
+def test_queue_survives_a_raising_job(app, monkeypatch):
+    """A job whose compile raises surfaces a RenderError but does NOT kill the
+    worker — a following render still succeeds."""
+    app.config["DOC_COMPILE_WORKERS"] = 1
+    state = {"boom": True}
+
+    def flaky_compile(tectonic, job_dir, tex_path, epoch):
+        if state["boom"]:
+            state["boom"] = False
+            raise ValueError("kaboom")
+        return b"%PDF-ok"
+
+    monkeypatch.setattr(docs, "_compile", flaky_compile)
+
+    with app.app_context():
+        with pytest.raises(RenderError) as ei:
+            render_document("invoice", _vars(), template=_DRAFT)
+        assert "kaboom" in str(ei.value)
+        # Worker is still alive and serving.
+        assert render_document("invoice", _vars(), template=_DRAFT) == b"%PDF-ok"
+
+
+def test_render_document_cleans_job_dir_via_queue(app, monkeypatch):
+    """Behaviour unchanged: bytes out, job dir removed in finally, even though
+    the compile now happens on a worker."""
+    monkeypatch.setattr(docs, "_compile",
+                        lambda *a, **k: b"%PDF-queued")
+    with app.app_context():
+        out = render_document("invoice", _vars(), template=_DRAFT)
+    assert out == b"%PDF-queued"
+    assert not any(_doc_render_root().iterdir())
+
+
+def test_queued_preview_route_flashes_position_and_does_not_block(
+        ctx, admin_client, monkeypatch):
+    """When the queue is backed up, the preview route reports the position and
+    returns immediately WITHOUT compiling (never blocks the request)."""
+    monkeypatch.setattr(docs, "compile_backlog", lambda: 2)
+    called = []
+    monkeypatch.setattr(docs, "preview_pdf",
+                        lambda *a, **k: called.append(1) or b"%PDF")
+
+    resp = admin_client.post("/admin/financial/document/preview",
+                             data={"kind": "invoice"}, follow_redirects=True)
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "queued" in body and "position" in body
+    assert called == []                       # never blocked on a compile
+
+
+def _wait_until(pred, timeout=5.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if pred():
+            return
+        time.sleep(0.01)
+    raise AssertionError("condition not met within timeout")
 
 
 # --- storage posture: the render root is not web-served ----------------------

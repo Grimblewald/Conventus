@@ -239,10 +239,21 @@ def financial_document_preview():
 
     from ...models import DocumentTemplate
     from ...services.documents import (
-        PregenBusy, RenderError, preview_pdf,
+        PregenBusy, RenderError, compile_backlog, preview_pdf,
     )
 
     kind = (request.form.get("kind") or "invoice").strip()
+
+    # Queue-position report (plan §6). A synchronous request can't both wait on
+    # a deep queue AND flash a position, so when compiles are already backed up
+    # we tell the admin where they'd sit and return immediately — they retry in
+    # a few seconds (by then the pregen is likely warm and serves instantly).
+    # Only when the queue is idle (backlog 0) do we render inline as before.
+    backlog = compile_backlog()
+    if backlog > 0:
+        flash(f"Your document is queued — position {backlog + 1} in line. "
+              "Retry the download in a few seconds.", "info")
+        return redirect(url_for("admin.financial_invoice"))
 
     # An unsaved draft carrying the submitted editor fields, so edits that
     # aren't committed yet still drive the preview. Not added to the session —

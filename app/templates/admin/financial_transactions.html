@@ -31,6 +31,17 @@
     flashed here, audit-logged, and recorded in the ledger as a
     <code>reconcile.*</code> event.
   </p>
+  <form method="POST" action="{{ url_for('admin.financial_download_documents_zip', q=q or None) }}"
+        style="display:inline;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="q" value="{{ q }}">
+    <button class="btn btn-ghost" type="submit">Download documents (zip)</button>
+  </form>
+  <p class="muted" style="margin:0; font-size:0.85rem; flex-basis:100%;">
+    Regenerates every issued document matching the current search, byte-for-byte
+    from its stored snapshot, and streams them as one zip. Capped at the 20 most
+    recent matches per download.
+  </p>
 </div>
 
 {% if not groups %}
@@ -76,6 +87,24 @@
         {% endfor %}
       </tbody>
     </table>
+    {% if g.documents %}
+    <div style="margin-top:12px;">
+      <div class="muted" style="font-size:0.8rem; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:6px;">Documents</div>
+      {% for d in g.documents %}
+      <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:4px;">
+        <span style="font-size:0.9rem;">
+          <code>{{ d.kind }}</code> · issued {{ d.issued_at.strftime('%-d %b %Y %H:%M') }}
+          {% if d.recipient %} · {{ d.recipient }}{% endif %}
+        </span>
+        <form method="POST" action="{{ url_for('admin.financial_download_issued_document', doc_id=d.id) }}"
+              style="display:inline;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-ghost btn-sm" type="submit">Download</button>
+        </form>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
     {% if g.cancel_ref %}
     <form method="POST" action="{{ url_for('admin.financial_test_payment_cancel', ref=g.cancel_ref) }}"
           style="margin-top:8px;" data-confirm="Void the uncaptured authorization for {{ g.cancel_ref }}? The card hold will be released.">

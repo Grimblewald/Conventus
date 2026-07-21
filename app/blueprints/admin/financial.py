@@ -492,13 +492,12 @@ def financial_member_payments():
     return redirect(url_for("admin.financial"))
 
 
-@admin_bp.route("/financial/transactions")
-@requires_permission("financial.manage")
-def financial_transactions():
-    """Financial event ledger, grouped per transaction and searchable."""
+def _transaction_events(q: str):
+    """The searchable financial-event ledger, newest first (latest 500). Shared
+    by the transactions view and the bulk document download so both apply the
+    exact same filter."""
     from ...models import PaymentEvent, Registration, User
 
-    q = (request.args.get("q") or "").strip()
     query = (PaymentEvent.query
              .outerjoin(Registration, PaymentEvent.registration_id == Registration.id)
              .outerjoin(User, Registration.user_id == User.id))
@@ -511,13 +510,40 @@ def financial_transactions():
             PaymentEvent.note.ilike(like),
             User.email.ilike(like),
         ))
-    events = (query.order_by(PaymentEvent.created_at.desc(),
-                             PaymentEvent.id.desc())
-              .limit(500).all())
+    return (query.order_by(PaymentEvent.created_at.desc(),
+                           PaymentEvent.id.desc())
+            .limit(500).all())
+
+
+def _issued_by_reference(refs):
+    """Map merchant reference → its IssuedDocument rows (newest first) for the
+    given references, so each transaction group can list its stored documents."""
+    from ...models import IssuedDocument
+
+    by_ref: dict[str, list] = {}
+    if not refs:
+        return by_ref
+    docs = (IssuedDocument.query
+            .filter(IssuedDocument.reference.in_(list(refs)))
+            .order_by(IssuedDocument.issued_at.desc(), IssuedDocument.id.desc())
+            .all())
+    for d in docs:
+        by_ref.setdefault(d.reference, []).append(d)
+    return by_ref
+
+
+@admin_bp.route("/financial/transactions")
+@requires_permission("financial.manage")
+def financial_transactions():
+    """Financial event ledger, grouped per transaction and searchable."""
+    q = (request.args.get("q") or "").strip()
+    events = _transaction_events(q)
 
     grouped: dict[str, list] = {}
     for e in events:
         grouped.setdefault(e.group_key, []).append(e)
+
+    by_ref = _issued_by_reference(grouped.keys())
 
     groups = []
     for key, evts in grouped.items():
@@ -535,10 +561,100 @@ def financial_transactions():
         if doc_evts and max(doc_evts, key=lambda e: e.id).event_type == "document.pending":
             pending_ref = ref
         groups.append({"key": key, "events": evts, "state": state,
-                       "cancel_ref": cancel_ref, "pending_ref": pending_ref})
+                       "cancel_ref": cancel_ref, "pending_ref": pending_ref,
+                       "documents": by_ref.get(key, [])})
 
     return render_template("admin/financial_transactions.html",
                            groups=groups, q=q, event_count=len(events))
+
+
+# Cap on a bulk document download so it stays inside the request/compile-queue
+# budget (plan §12) — each document is a fresh regeneration.
+_BULK_DOC_CAP = 20
+
+
+@admin_bp.route("/financial/document/issued/<int:doc_id>/download", methods=["POST"])
+@requires_permission("financial.manage")
+def financial_download_issued_document(doc_id):
+    """Regenerate a single stored document (plan §12) and stream it as a PDF.
+    Rebuilds byte-identically from the snapshot; a compile failure flashes."""
+    from io import BytesIO
+
+    from ...models import IssuedDocument
+    from ...services.documents import RenderError, regenerate_document
+    from ...services.invoice import _safe_ref
+
+    issued = db.session.get(IssuedDocument, doc_id)
+    if not issued:
+        flash("That document could not be found.", "error")
+        return redirect(url_for("admin.financial_transactions"))
+
+    try:
+        pdf = regenerate_document(issued)
+    except RenderError as e:
+        flash(f"The document could not be regenerated: {e}"
+              + (f"\n{e.log}" if e.log else ""), "error")
+        return redirect(url_for("admin.financial_transactions"))
+
+    return send_file(BytesIO(pdf), mimetype="application/pdf", as_attachment=True,
+                     download_name=f"{issued.kind}-{_safe_ref(issued.reference)}.pdf")
+
+
+@admin_bp.route("/financial/documents/download-zip", methods=["POST"])
+@requires_permission("financial.manage")
+def financial_download_documents_zip():
+    """Regenerate every stored document matching the current search filter and
+    stream them as a single in-memory zip (plan §12), capped at _BULK_DOC_CAP so
+    the compile queue can't be swamped by one request. When more match, the cap
+    is applied to the most-recent and a clear message is flashed."""
+    import zipfile
+    from io import BytesIO
+
+    from ...services.documents import RenderError, regenerate_document
+    from ...services.invoice import _safe_ref
+
+    q = (request.args.get("q") or request.form.get("q") or "").strip()
+    events = _transaction_events(q)
+    refs = {e.group_key for e in events}
+    by_ref = _issued_by_reference(refs)
+    issued = [d for docs in by_ref.values() for d in docs]
+    issued.sort(key=lambda d: (d.issued_at, d.id), reverse=True)
+
+    if not issued:
+        flash("No stored documents match the current filter.", "info")
+        return redirect(url_for("admin.financial_transactions", q=q or None))
+
+    total = len(issued)
+    capped = issued[:_BULK_DOC_CAP]
+    if total > _BULK_DOC_CAP:
+        flash(f"{total} documents match — only the {_BULK_DOC_CAP} most recent "
+              f"are included in the zip. Narrow the search to reach the rest.",
+              "warning")
+
+    buf = BytesIO()
+    errors = 0
+    written = 0
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for d in capped:
+            try:
+                pdf = regenerate_document(d)
+            except RenderError:
+                errors += 1
+                continue
+            # id keeps names unique when a reference issued several documents.
+            zf.writestr(f"{d.kind}-{_safe_ref(d.reference)}-{d.id}.pdf", pdf)
+            written += 1
+
+    if not written:
+        flash("None of the matching documents could be regenerated.", "error")
+        return redirect(url_for("admin.financial_transactions", q=q or None))
+    if errors:
+        flash(f"{errors} document(s) could not be regenerated and were skipped.",
+              "warning")
+
+    buf.seek(0)
+    return send_file(buf, mimetype="application/zip", as_attachment=True,
+                     download_name="documents.zip")
 
 
 def _transaction_state(evts) -> str:

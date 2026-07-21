@@ -104,7 +104,11 @@ def resend_pending_document(evt: PaymentEvent) -> bool:
         kind = "receipt"
         vars_ = _manual_receipt_vars(ref, to, evt.amount or 0)
     attachment = _render_attachment(kind, vars_, vars_["transaction_id"])
-    return _send_rendered(kind, vars_, to=to, attachment=attachment)
+    ok = _send_rendered(kind, vars_, to=to, attachment=attachment)
+    if ok:
+        _record_issued(kind, vars_, reference=evt.merchant_reference or "",
+                       recipient=to, amount_cents=evt.amount)
+    return ok
 
 
 # ---------------------------------------------------------------------------
@@ -181,9 +185,13 @@ def send_manual_invoice(to: str, *, recipient_name: str, description: str,
                                     _external=True)
     log.info("Sending manual invoice %s to %s (cc %s)", reference, to, cc or [])
     attachment = _render_attachment("invoice", vars_, reference)
-    return _send_rendered("invoice", vars_, to=to, cc=cc,
-                          subject_override=subject_override,
-                          body_override=body_override, attachment=attachment)
+    ok = _send_rendered("invoice", vars_, to=to, cc=cc,
+                        subject_override=subject_override,
+                        body_override=body_override, attachment=attachment)
+    if ok:
+        _record_issued("invoice", vars_, reference=reference, recipient=to,
+                       amount_cents=amount_cents)
+    return ok
 
 
 def default_manual_invoice_body(tpl) -> str:
@@ -304,6 +312,44 @@ def _safe_ref(reference: str) -> str:
     return (ref or "document")[:60]
 
 
+def _record_issued(kind: str, vars_: dict, *, reference: str, recipient: str,
+                   amount_cents: int | None) -> None:
+    """Append an IssuedDocument snapshot for a real send that just attached a
+    PDF (plan §12, ATO 5-year retention). Captures the EXACT resolved variables
+    and the render-affecting template fields used, so `regenerate_document` can
+    rebuild the PDF byte-identically later even after the live template changes.
+    Called next to `_render_attachment`'s successful send paths only — never for
+    test invoices or previews. Best-effort: a snapshot failure must never break
+    a send that already went out."""
+    import json
+
+    from ..models import db, IssuedDocument
+    try:
+        tpl = get_document_template(kind)
+        template_json = json.dumps({
+            "pdf_body": tpl.pdf_body or "",
+            "gst_registered": bool(tpl.gst_registered),
+            "business_number": tpl.business_number or "",
+            "payment_instructions": tpl.payment_instructions or "",
+        })
+        db.session.add(IssuedDocument(
+            kind=kind,
+            reference=reference or "",
+            recipient=recipient or "",
+            amount=amount_cents,
+            vars_json=json.dumps({k: str(v) for k, v in vars_.items()}),
+            template_json=template_json,
+            content_hash=tpl.content_hash,
+        ))
+        db.session.commit()
+    except Exception:
+        log.exception("Failed to record issued document (%s / %s)", kind, reference)
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
+
+
 def _send_rendered(kind: str, vars_: dict, to: str, subject_prefix: str = "",
                    cc: list[str] | None = None, subject_override: str = "",
                    body_override: str = "", body_suffix: str = "",
@@ -360,6 +406,9 @@ def _send_auto_document(kind: str, vars_: dict, *, to: str,
         return True
 
     ok = _send_rendered(kind, vars_, to=to, attachment=attachment)
+    if ok:
+        _record_issued(kind, vars_, reference=merchant_reference, recipient=to,
+                       amount_cents=amount_cents)
     record_payment_event(
         transaction_id=transaction_id,
         merchant_reference=merchant_reference,

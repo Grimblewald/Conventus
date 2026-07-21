@@ -471,6 +471,38 @@ def render_document(kind: str, vars_: dict[str, str],
 
 
 # ---------------------------------------------------------------------------
+# Regeneration store (plan §12) — a CALLER of render_document. Rebuilds a stored
+# IssuedDocument's PDF byte-identically from its snapshots. Lives here (not in
+# the send layer) because it is pure rendering: stored vars + a template
+# stand-in → the one renderer, with the pinned SOURCE_DATE_EPOCH. It touches no
+# send/email concerns, so this is the cleaner home.
+# ---------------------------------------------------------------------------
+
+def regenerate_document(issued) -> bytes:
+    """Rebuild the PDF for a stored `IssuedDocument` from its snapshots.
+
+    Renders through the ONE renderer using the resolved variables captured at
+    issue time and a template stand-in built from the stored render-affecting
+    fields (so the result is faithful even if the live DocumentTemplate has been
+    edited since). With the pinned SOURCE_DATE_EPOCH the bytes are identical to
+    the originally issued document. Raises RenderError on a compile failure."""
+    import json
+    import types
+
+    vars_ = json.loads(issued.vars_json or "{}")
+    tpl_fields = json.loads(issued.template_json or "{}")
+    template = types.SimpleNamespace(
+        kind=issued.kind,
+        pdf_body=tpl_fields.get("pdf_body", "") or "",
+        gst_registered=bool(tpl_fields.get("gst_registered", False)),
+        business_number=tpl_fields.get("business_number", "") or "",
+        payment_instructions=tpl_fields.get("payment_instructions", "") or "",
+        content_hash=issued.content_hash or "",
+    )
+    return render_document(issued.kind, vars_, template=template)
+
+
+# ---------------------------------------------------------------------------
 # Preview — a CALLER of render_document, never a second renderer (plan §5).
 # ---------------------------------------------------------------------------
 

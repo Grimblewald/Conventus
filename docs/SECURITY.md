@@ -44,6 +44,20 @@ codebase stores none.
 | Status integrity           | Stale/out-of-order failure events never downgrade a paid registration; duplicate captures (possible double payments), disputes, and failed refunds email admins and are audit-logged |
 | Traceability               | Every verified gateway event is appended to a per-transaction ledger (Admin → Financial → Transactions) |
 
+## Document rendering
+
+Invoice / receipt / adjustment-note PDFs are compiled from **one curated,
+in-repo LaTeX skeleton** (`app/latex/document.tex`) by tectonic.
+
+| Concern                    | How it's handled                                                                 |
+| -------------------------- | ---------------------------------------------------------------------------------- |
+| No admin-authored LaTeX    | Admins edit structured content fields (wording, business number, payment instructions) — never raw `.tex`. There is no `\input`/macro-bomb surface, so no OS-level sandbox is needed |
+| Escaping                   | Every structured value is LaTeX-escaped (`& % _ $ # { } ~ ^ \`) before it reaches the skeleton — `app/services/documents.py::latex_escape` |
+| No shell-escape             | tectonic is invoked without `\write18`/shell-escape; it cannot run arbitrary commands from document content |
+| Output storage              | Rendered PDFs live under `var/doc-render/` — never web-served (Flask only maps `/static`), gitignored, and excluded from backups. On-demand renders are streamed to the requester and deleted in a `finally`; only the warm preview cache (`var/doc-render/pregen/`) is long-lived |
+| Compile concurrency         | A process-wide queue caps concurrent tectonic processes (`DOC_COMPILE_WORKERS`, default 1) so bursts (bulk receipts, simultaneous previews) can't exhaust CPU/RAM on a small VPS |
+| No fallback                 | tectonic is a hard dependency, by design — there is no "degrade to plain email" path if it's missing or broken. `scripts/install-tectonic.sh` installs and pre-warms it; the admin Financial dashboard surfaces a loud warning if it's ever unavailable |
+
 ## Backups
 
 * Regular backups (admin download, `scripts/backup.py`, and the scheduled

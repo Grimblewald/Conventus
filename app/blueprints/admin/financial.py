@@ -32,10 +32,14 @@ def financial():
 
     invoice_tpl = get_document_template("invoice")
 
+    from ...services.documents import tectonic_health
+    doc_health = tectonic_health()
+
     return render_template(
         "admin/financial.html",
         config=anzw_cfg,
         invoice=invoice_tpl,
+        doc_health=doc_health,
     )
 
 

@@ -32,10 +32,15 @@ sudo apt install jq
 
 # curl, openssl — should already be present; install if not
 sudo apt install curl openssl
+
+# tectonic — LaTeX engine for invoice/receipt/adjustment-note PDFs. No
+# fallback exists if it's missing, so install it now even if you won't send
+# documents on day one.
+scripts/install-tectonic.sh
 ```
 
-- macOS: `brew install cloudflared jq`
-- Other platforms: [cloudflared downloads](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/) · [jq downloads](https://jqlang.github.io/jq/download/)
+- macOS: `brew install cloudflared jq tectonic`
+- Other platforms: [cloudflared downloads](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/) · [jq downloads](https://jqlang.github.io/jq/download/) · `scripts/install-tectonic.sh` works anywhere `curl` does
 
 ### 2. Point your domain's nameservers to Cloudflare
 

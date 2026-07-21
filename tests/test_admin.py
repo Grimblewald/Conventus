@@ -220,6 +220,29 @@ class TestFinancialInvoiceTemplate:
             assert get_document_template("invoice").from_email == "billing@some-other-domain.example.org"
 
 
+class TestFinancialDocumentHealth:
+    """The Financial dashboard surfaces tectonic_health() loudly — plan §7/§11:
+    there is no plain-format fallback, so a broken/missing tectonic must never
+    be silent."""
+
+    def test_dashboard_shows_ok_when_tectonic_present(self, seeded, admin_client):
+        resp = admin_client.get("/admin/financial")
+        assert resp.status_code == 200
+        assert b"PDF documents" in resp.data
+        assert b"tectonic ready" in resp.data
+        assert b"unavailable" not in resp.data.lower()
+
+    def test_dashboard_warns_when_tectonic_missing(self, seeded, admin_client, app):
+        app.config["TECTONIC_BIN"] = "/nonexistent/tectonic-xyz"
+        try:
+            resp = admin_client.get("/admin/financial")
+            assert resp.status_code == 200
+            assert b"PDF document rendering is unavailable" in resp.data
+            assert b"scripts/install-tectonic.sh" in resp.data
+        finally:
+            app.config.pop("TECTONIC_BIN", None)
+
+
 class TestUpdatePage:
     def test_update_page_requires_system_backup(self, admin_client):
         resp = admin_client.get("/admin/update")

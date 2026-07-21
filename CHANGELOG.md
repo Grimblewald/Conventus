@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.3.0] — 2026-07-21  **MIGRATION REQUIRED**
+
+### Added
+- PDF document system: invoice, receipt, and adjustment-note PDFs compiled
+  by tectonic from one curated, in-repo LaTeX skeleton
+  (`app/latex/document.tex`) and attached to plaintext emails — one
+  renderer (`app/services/documents.py::render_document`), used by preview,
+  send, and the warm boot cache alike
+  - `DocumentTemplate` model (`kind` = `invoice` | `receipt` | `adjustment`),
+    replacing the old single `invoice_template`; each kind holds its email
+    cover, PDF body, and business/tax fields independently
+  - Admin template editor gains a **PDF body** section and a **Download
+    preview** button; unset variables render as their bold field name
+    (never a guessed `$0.00`), so previews are never mistaken for real data
+  - A warm pregen cache compiles the all-placeholder preview at boot and on
+    every template save, so "Download preview" serves instantly instead of
+    a cold compile; a process-wide compile queue (`DOC_COMPILE_WORKERS`)
+    caps concurrent tectonic processes and reports queue position back to
+    the requester
+  - `scripts/install-tectonic.sh` — idempotent installer: fetches tectonic
+    to `~/.local/bin`, pre-warms its package cache against the document
+    skeleton's package set, and fails loudly on a broken toolchain
+  - The admin Financial dashboard surfaces a **PDF documents** status line
+    (OK / loud warning) so a missing or broken tectonic is never silent —
+    there is deliberately no plain-format fallback
+
+### Changed
+- **MIGRATION:** `invoice_template` is replaced by `document_template`
+  (one row per kind); the migration copies the existing invoice row across
+  and seeds `receipt`/`adjustment` defaults — run `db upgrade` once.
+- Emails sent from a template may now carry a PDF attachment; **HTML email
+  is removed** (`send_mail`'s `html`/`add_alternative` path is gone — every
+  send is plaintext body + optional attachment)
+
 ## [0.2.0] — 2026-07-20  **MIGRATION REQUIRED**
 
 ### Added

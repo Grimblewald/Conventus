@@ -129,13 +129,41 @@ Filter by action substring or actor email.
 * **Testing** — send the invoice template (rendered with sample data) to
   any address, and run a small test payment (≤ $10) not tied to any
   registration; settlement is confirmed by webhook → admin email + audit.
-* **Invoice Template** — subject, plain/HTML body, from name/address, and
-  footer for the emails sent automatically when a payment or refund
-  settles. Variables like `{user_name}`, `{amount}`, `{transaction_id}`
-  are listed on the dashboard.
+* **Invoice/Receipt/Adjustment Note documents** — every payment document is
+  a real PDF, compiled from one shared, curated LaTeX skeleton (tectonic,
+  no admin-authored raw LaTeX — see [SECURITY.md](SECURITY.md#document-rendering)),
+  attached to a plaintext email. There is one template per kind
+  (`invoice` / `receipt` / `adjustment`), each with:
+  - **Email cover** — subject, plaintext body, from name/address, footer.
+  - **PDF body** — free-text, inserted below the line-item table in the
+    PDF; `{variable}` placeholders are filled per document, everything
+    else prints as written.
+  - **Tax & business details** — ABN, GST-registered flag (drives the
+    "Tax Invoice" title and the GST/ex-GST breakdown rows), payment
+    instructions.
+
+  The full variable vocabulary — `{user_name} {user_email}
+  {conference_title} {conference_dates} {tier_name} {amount} {gst_amount}
+  {amount_ex_gst} {currency_code} {currency_symbol} {transaction_id}
+  {payment_date} {due_date} {site_name} {registration_id} {invoice_type}
+  {business_number} {recipient_abn} {payment_instructions}
+  {payment_link}` — is listed on both the dashboard and each template
+  editor. **Download preview** renders the current form (including unsaved
+  edits) as a PDF with every unset variable shown as its **bold field
+  name** — e.g. `{amount}` prints as **amount** — rather than a guessed or
+  zeroed value, so it's obvious at a glance what's real data vs. a
+  placeholder. Preview never records anything (no ledger row, no email
+  sent); a warmed cache serves instantly when the saved template is
+  unchanged, otherwise it recompiles on the spot.
+
+  The Financial dashboard also shows a **PDF documents** status line —
+  green when tectonic is installed and ready, a loud warning (pointing at
+  `scripts/install-tectonic.sh`) if it's missing, since there is no
+  fallback: without tectonic, no invoice/receipt/adjustment note can be
+  generated at all.
 * **Send Invoice** — manually bill arbitrary recipients (e.g. sponsors)
   with To/CC, amount, and reference; uses the same template (review its
-  wording — the default reads as a receipt).
+  wording — the default reads as a receipt) and attaches the rendered PDF.
 * **Transactions** — searchable per-transaction ledger of every checkout
   created, gateway webhook event (with the status change it caused), and
   manual invoice sent.

@@ -458,3 +458,37 @@ def test_render_root_not_under_static(ctx):
     static = os.path.join(str(ctx.root_path), "static")
     assert "static" not in root
     assert not root.startswith(static)
+
+
+# --- deploy health probe (plan §7/§11): "tectonic absent/unhealthy must be
+# LOUD" — a cheap status check, never a compile, for admin/deploy surfacing. --
+
+def test_tectonic_health_false_when_binary_missing(ctx, monkeypatch):
+    monkeypatch.setitem(ctx.config, "TECTONIC_BIN", "/nonexistent/tectonic-xyz")
+    ok, reason = docs.tectonic_health()
+    assert ok is False
+    assert "not found" in reason
+
+
+def test_tectonic_health_true_when_binary_present(ctx):
+    ok, reason = docs.tectonic_health()
+    assert ok is True
+    assert "tectonic" in reason
+
+
+def test_tectonic_health_notes_cold_pregen(ctx):
+    # _clean_render_root wipes var/doc-render (including any pregen) before
+    # each test, so with nothing warmed yet the probe still reports healthy
+    # (the binary IS there) but flags the cache as not warm.
+    ok, reason = docs.tectonic_health()
+    assert ok is True
+    assert "not yet warmed" in reason
+
+
+def test_tectonic_health_notes_warm_pregen(ctx):
+    pregen_dir = docs._pregen_dir()
+    pregen_dir.mkdir(parents=True, exist_ok=True)
+    (pregen_dir / "invoice-deadbeef.pdf").write_bytes(b"%PDF-fake")
+    ok, reason = docs.tectonic_health()
+    assert ok is True
+    assert "pregen warm" in reason

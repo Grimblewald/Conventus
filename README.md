@@ -20,9 +20,10 @@ SQLite.  Lightweight enough to deploy on a Pi or an old phone.
   - **Members** + per-role **Permissions** matrix
   - **Audit log**
   - **Financial** — payment provider configuration (ANZ Worldline hosted
-    checkout), OTP-gated sandbox/live switching, invoice template editor,
-    manual invoicing with To/CC, a searchable per-transaction event ledger,
-    and an explicit open/close switch for member payments
+    checkout), OTP-gated sandbox/live switching, invoice/receipt/adjustment
+    PDF document templates (tectonic/LaTeX, downloadable preview), manual
+    invoicing with To/CC, a searchable per-transaction event ledger, and an
+    explicit open/close switch for member payments
   - **System → Backup** — full-site zip download & OTP-gated restore with
     chunked transfer; optional AES-256 password-protected full backup
     including `.env`
@@ -30,8 +31,9 @@ SQLite.  Lightweight enough to deploy on a Pi or an old phone.
     panel, with an auto-restart that polls until the site returns
 - Online payments via ANZ Worldline's Hosted Checkout (card data never
   touches the server — PCI SAQ-A scope), webhook-driven status updates
-  with HMAC signature verification, invoice emails, refund/dispute and
-  double-payment alerting
+  with HMAC signature verification, PDF invoice/receipt/adjustment-note
+  documents emailed automatically, refund/dispute and double-payment
+  alerting
 - Hardened OTP login, CSRF on every form, CSP via Talisman, image
   validation, rate-limited OTP issuance, attempt counter + lockout
 - Postgres or SQLite via `DATABASE_URL`; Redis-backed rate limiting is opt-in
@@ -68,7 +70,14 @@ The recommended host is a small Linux VPS rented from **[Binary Lane][bl]** as i
    cd Conventus
    ```
 
-4. **Launch the site**
+4. **Install tectonic** (renders invoice/receipt/adjustment-note PDFs — no
+   fallback exists if it's missing)
+
+   ```bash
+   scripts/install-tectonic.sh
+   ```
+
+5. **Launch the site**
 
    ```bash
    uv run python -m app launch
@@ -79,7 +88,7 @@ The recommended host is a small Linux VPS rented from **[Binary Lane][bl]** as i
    one-time setup password — visit your domain and step through the
    wizard.  After that the admin panel is yours.
 
-5. **Register service** (so the site starts on boot)
+6. **Register service** (so the site starts on boot)
 
    ```bash
    uv run python -m app register-service
@@ -172,7 +181,8 @@ app/
 └── static/                 # site.css (vars-driven) + site.js
 deploy/                     # systemd user units (tunnel, backup, healthcheck)
 scripts/                    # launch_cloudflared.sh, launch.sh, update.sh,
-                            # backup.py, healthcheck.py, admin_cli.py
+                            # install-tectonic.sh, backup.py, healthcheck.py,
+                            # admin_cli.py
 migrations/                 # Alembic/Flask-Migrate
 tests/                      # pytest suite
 placeholder.yaml            # seeded by the wizard on first run

@@ -250,6 +250,33 @@ def _resolve_tectonic() -> str:
         + (" and ~/.local/bin" if configured == "tectonic" else "") + ")")
 
 
+def tectonic_health() -> tuple[bool, str]:
+    """Cheap status probe for deploy/admin surfacing (plan §7/§11): "tectonic
+    absent/unhealthy must be LOUD" since there is no plain-format fallback.
+
+    Resolves the binary via `_resolve_tectonic` (same lookup the renderer
+    uses) and, if found, checks whether the warm pregen cache directory
+    already holds at least one compiled PDF — a cheap proxy that a compile
+    has actually succeeded on this box, without spending a compile on the
+    check itself. NEVER compiles inline; this must stay fast enough to call
+    on every dashboard render.
+
+    Returns `(False, reason)` when the binary is missing, or `(True, status)`
+    when it's present — the status notes whether the pregen cache is warm
+    yet (it may legitimately not be, e.g. right after a fresh install before
+    boot's background warm has finished)."""
+    try:
+        path = _resolve_tectonic()
+    except RenderError as e:
+        return False, str(e)
+
+    pregen_dir = _pregen_dir()
+    warm = pregen_dir.is_dir() and any(pregen_dir.glob("*.pdf"))
+    if warm:
+        return True, f"tectonic {path}; pregen warm"
+    return True, f"tectonic {path}; pregen not yet warmed"
+
+
 def _trim_log(data) -> str:
     if isinstance(data, (bytes, bytearray)):
         data = data.decode("utf-8", errors="replace")

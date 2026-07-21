@@ -99,6 +99,18 @@ fi
 uv run flask db upgrade
 ok "Migrations applied."
 
+# 3b. tectonic presence check — the PDF document system (invoices, receipts,
+# adjustment notes) has no plain-format fallback, so a missing tectonic must
+# be loud. This never auto-installs and never fails the update: a site that
+# doesn't send documents yet shouldn't be blocked from updating.
+if ! command -v tectonic >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/tectonic" ]; then
+    echo ""
+    echo -e "${RED}⚠ tectonic not found.${NC} PDF documents (invoices/receipts/adjustment"
+    echo "  notes) cannot be generated until it's installed. Run:"
+    echo "    scripts/install-tectonic.sh"
+    echo ""
+fi
+
 # 4. Restart
 info "Restarting service…"
 fuser -k "$PORT/tcp" 2>/dev/null || true

@@ -27,6 +27,7 @@ class CheckoutResult:
     """Result of initiating a payment checkout."""
     redirect_url: str | None = None
     payment_id: str = ""
+    merchant_reference: str = ""
     error: str = ""
 
 

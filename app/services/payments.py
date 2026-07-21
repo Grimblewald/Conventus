@@ -73,7 +73,7 @@ def initiate_payment(registration: Registration) -> str | None:
     from ..models import record_payment_event
     record_payment_event(
         transaction_id=result.payment_id,
-        merchant_reference=f"reg_{registration.id}",
+        merchant_reference=result.merchant_reference,
         registration_id=registration.id,
         event_type="checkout.created",
         amount=registration.amount,

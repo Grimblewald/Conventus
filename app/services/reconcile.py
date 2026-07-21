@@ -241,8 +241,10 @@ def _fetch_status(gateway, reg: Registration):
         return gateway.get_payment_status(reg.transaction_id)
 
     checkout = (PaymentEvent.query
-                .filter_by(merchant_reference=f"reg_{reg.id}",
-                           event_type="checkout.created")
+                .filter(db.or_(
+                    PaymentEvent.merchant_reference == f"reg_{reg.id}",
+                    PaymentEvent.merchant_reference.like(f"reg\\_{reg.id}-%", escape="\\")),
+                        PaymentEvent.event_type == "checkout.created")
                 .order_by(PaymentEvent.id.desc())
                 .first())
     if not checkout or not checkout.transaction_id:

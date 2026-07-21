@@ -6,6 +6,8 @@ the admin Financial panel), not in environment variables.
 from __future__ import annotations
 
 import logging
+import re
+
 from flask import url_for
 
 from . import CheckoutResult, ConnectionTestResult, PaymentGateway, PaymentStatus, WebhookResult
@@ -19,6 +21,30 @@ _WORLDLINE_LIVE_BASE = "https://payment.anzworldline-solutions.com.au"
 _SUCCESSFUL_EVENTS = ("payment.captured", "payment.paid")
 _FAILED_EVENTS = ("payment.rejected", "payment.rejected_capture", "payment.cancelled")
 _REFUND_EVENTS = ("payment.refunded", "refund.refunded")
+
+# Matches both current references (reg_5-c2u9-a3f1) and legacy ones (reg_5).
+_REG_REF = re.compile(r"^reg_(\d+)")
+
+
+def _registration_reference(registration) -> str:
+    """Payment-unique merchant reference, ≤30 chars (platform limit).
+
+    Human-readable segments (registration, conference, user) plus 32 bits
+    of hex so every checkout attempt gets its own reference — retries and
+    double payments stay distinguishable in the ledger and Merchant Portal.
+    The reg_<id> prefix (which webhooks parse to find the registration)
+    partitions the space per registration, so the hex only has to be
+    unique among one registration's handful of attempts — collision is
+    negligible. Falls back to a shorter form if the ids are large enough
+    to blow the 30-char budget.
+    """
+    import secrets
+    suffix = secrets.token_hex(4)
+    ref = (f"reg_{registration.id}-c{registration.conference_id}"
+           f"u{registration.user_id}-{suffix}")
+    if len(ref) > 30:
+        ref = f"reg_{registration.id}-{suffix}"
+    return ref[:30]
 
 
 class ANZWorldlineGateway(PaymentGateway):
@@ -64,7 +90,7 @@ class ANZWorldlineGateway(PaymentGateway):
         return self._create_hosted_checkout(
             amount=amount,
             currency=currency,
-            merchant_reference=f"reg_{reg_id}",
+            merchant_reference=_registration_reference(registration),
             return_url=url_for("member.pay_result", reg_id=reg_id, _external=True),
         )
 
@@ -131,9 +157,12 @@ class ANZWorldlineGateway(PaymentGateway):
                 redirect_url = "https://payment." + response.partial_redirect_url
 
             if not redirect_url:
-                return CheckoutResult(error="No redirect URL in Worldline response", payment_id=payment_id)
+                return CheckoutResult(error="No redirect URL in Worldline response",
+                                      payment_id=payment_id,
+                                      merchant_reference=merchant_reference)
 
-            return CheckoutResult(redirect_url=redirect_url, payment_id=payment_id)
+            return CheckoutResult(redirect_url=redirect_url, payment_id=payment_id,
+                                  merchant_reference=merchant_reference)
 
         except Exception as exc:
             log.exception("Worldline Hosted Checkout creation failed")
@@ -196,11 +225,9 @@ class ANZWorldlineGateway(PaymentGateway):
                     amount = output.amount_of_money.amount
 
             reg_id = None
-            if ref.startswith("reg_"):
-                try:
-                    reg_id = int(ref[len("reg_"):])
-                except ValueError:
-                    pass
+            m = _REG_REF.match(ref)
+            if m:
+                reg_id = int(m.group(1))
 
             common = dict(registration_id=reg_id, transaction_id=transaction_id,
                           event_type=event_type, merchant_reference=ref, amount=amount)

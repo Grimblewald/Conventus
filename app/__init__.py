@@ -210,6 +210,11 @@ def _init_extensions(app: Flask) -> None:
     # silent empty schema.
     from sqlalchemy.exc import OperationalError
     if not _running_migration_cli():
+        # create_all only creates tables for models already registered on
+        # db.metadata — and on a cold process nothing has imported the model
+        # modules yet (blueprints load later), so without this import a fresh
+        # DB would bootstrap zero tables.
+        from . import models  # noqa: F401
         with app.app_context():
             db.create_all()
             try:

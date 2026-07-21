@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Payment Result · {{ site.site_name }}{% endblock %}
+{% block content %}
+<section class="block">
+  <div class="container container-narrow">
+    <div class="section-head">
+      <div>
+        <div class="eyebrow">Payment</div>
+        <h2>Invoice {{ reference }}</h2>
+      </div>
+    </div>
+
+    <div class="card" style="padding:24px;">
+      <table class="table">
+        <tr><th>Reference</th><td><code>{{ reference }}</code></td></tr>
+        <tr><th>Amount</th><td>{{ site.currency_symbol }}{{ amount | format_amount }} {{ site.currency_code }}</td></tr>
+      </table>
+    </div>
+
+    <div class="card" style="padding:24px; margin-top:18px; {% if state == 'paid' %}border-color:#4caf50;{% elif state == 'processing' %}border-color:#ff9800;{% else %}border-color:var(--c-card-border);{% endif %}">
+      {% if state == "paid" %}
+        <h3 style="margin-top:0; color:#4caf50;">Payment Successful</h3>
+        <p>Thank you — your payment has been received. A receipt will be emailed to you shortly.</p>
+      {% elif state == "refunded" %}
+        <h3 style="margin-top:0;">Payment Refunded</h3>
+        <p>This invoice has been refunded. If you have any questions, please contact us.</p>
+      {% elif state == "processing" %}
+        <h3 style="margin-top:0; color:#ff9800;">Payment Processing</h3>
+        <p>Your payment is being processed. This may take a few moments — refresh this page shortly to see the confirmation.</p>
+      {% else %}
+        <h3 style="margin-top:0;">Payment Pending</h3>
+        <p>We haven't recorded this payment yet. If you completed the payment on ANZ Worldline's page, it may take a moment to appear — refresh this page shortly.</p>
+        <a href="{{ url_for('public.pay_invoice', reference=reference) }}" class="btn" style="margin-top:12px;">Try payment again</a>
+      {% endif %}
+    </div>
+
+    <a class="btn btn-ghost" href="{{ url_for('public.home') }}" style="margin-top:24px;">← Back to home</a>
+  </div>
+</section>
+{% endblock %}

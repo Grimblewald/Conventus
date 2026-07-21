@@ -495,6 +495,11 @@ def payment_webhook():
         elif (result.merchant_reference or "").startswith("test_"):
             _record_test_payment_event(result)
             ledger_note = "admin test payment"
+        elif result.merchant_reference:
+            # A non-registration, non-test reference — e.g. a manual invoice
+            # paid via its durable link (§8). Send the receipt on capture; any
+            # other unreferenced event just lands in the ledger below.
+            ledger_note = _handle_manual_invoice_event(result)
 
         if result.event_type:
             from ...models import record_payment_event
@@ -590,6 +595,134 @@ def _record_test_payment_event(result) -> None:
                   f"If this was a live test charge, remember to refund it from "
                   f"the Worldline Merchant Portal."),
         )
+
+
+def _handle_manual_invoice_event(result) -> str:
+    """Handle a webhook for a manual-invoice reference (durable pay link, §8).
+
+    On a captured payment for a reference that was issued as a manual invoice,
+    send the receipt to the stored recipient (idempotent — a redelivered
+    capture won't re-send once a document.sent exists). Returns a short ledger
+    note. Never raises: a render failure is absorbed by the send layer's §7
+    path, and any other error is logged so the webhook still returns 200."""
+    from ...models import PaymentEvent
+
+    ref = result.merchant_reference or ""
+    evts = PaymentEvent.query.filter_by(merchant_reference=ref).all()
+    if not any(e.event_type == "invoice.sent" for e in evts):
+        return "unreferenced event"          # not a manual invoice
+    if (result.event_type or "").lower() not in ("payment.captured", "payment.paid"):
+        return "manual invoice event"
+    if any(e.event_type == "document.sent" for e in evts):
+        return "manual invoice paid (receipt already sent)"
+    try:
+        from ...services.invoice import send_manual_invoice_receipt
+        send_manual_invoice_receipt(ref, amount_cents=result.amount,
+                                    transaction_id=result.transaction_id)
+    except Exception:
+        current_app.logger.exception("Manual invoice receipt failed for %s", ref)
+    return "manual invoice paid — receipt sent"
+
+
+# ---------------------------------------------------------------------------
+# Durable invoice pay link + success page (plan §8)
+# ---------------------------------------------------------------------------
+
+def _invoice_events(reference: str):
+    """All ledger events for a manual-invoice reference, or None when the
+    reference is not a known manual invoice (no `invoice.sent` event)."""
+    from ...models import PaymentEvent
+    evts = PaymentEvent.query.filter_by(merchant_reference=reference).all()
+    if not evts or not any(e.event_type == "invoice.sent" for e in evts):
+        return None
+    return evts
+
+
+def _invoice_pay_state(evts) -> str:
+    """Best-known payment state of a manual invoice from its ledger events."""
+    suffixes = {e.event_type.rsplit(".", 1)[-1] for e in evts}
+    if "refunded" in suffixes:
+        return "refunded"
+    if suffixes & {"captured", "paid"}:
+        return "paid"
+    if "created" in suffixes:                # checkout.created — awaiting capture
+        return "processing"
+    return "open"
+
+
+def _invoice_amount(evts) -> int:
+    """The amount owed on a manual invoice — from its `invoice.sent` event."""
+    sent = [e.amount for e in evts if e.event_type == "invoice.sent" and e.amount]
+    if sent:
+        return sent[-1]
+    amounts = [e.amount for e in evts if e.amount]
+    return amounts[0] if amounts else 0
+
+
+@public_bp.route("/pay/invoice/<reference>")
+@limiter.limit("10 per hour;3 per minute")
+def pay_invoice(reference):
+    """Durable invoice pay link (§8): mint a fresh hosted checkout for the
+    invoice and redirect to Worldline. Rejects unknown/paid/refunded references
+    with a generic themed page (no enumeration-friendly detail)."""
+    from ...models import record_payment_event
+    from ...services.payments import _active_gateway
+
+    evts = _invoice_events(reference)
+    if evts is None or _invoice_pay_state(evts) in ("paid", "refunded"):
+        return render_template("public/pay_invoice_message.html",
+                               heading="Payment link not available",
+                               message=("This payment link is not valid or is no "
+                                        "longer available. If you believe this is "
+                                        "an error, please contact us."),
+                               reference=""), 200
+
+    gateway = _active_gateway()
+    site = get_site_settings()
+    amount = _invoice_amount(evts)
+    if not gateway or not amount:
+        return render_template("public/pay_invoice_message.html",
+                               heading="Online payment unavailable",
+                               message=("Online card payment is currently "
+                                        "unavailable. Please pay by bank transfer "
+                                        "using the EFT details on your invoice, "
+                                        "quoting the reference below."),
+                               reference=reference), 200
+
+    result = gateway.create_invoice_checkout(
+        amount=amount, reference=reference,
+        return_url=url_for("public.pay_invoice_result", reference=reference,
+                           _external=True),
+        currency=(site.currency_code or "AUD").upper())
+    if result.error or not result.redirect_url:
+        return render_template("public/pay_invoice_message.html",
+                               heading="Online payment unavailable",
+                               message=("We couldn't start the online payment just "
+                                        "now. Please try again shortly, or pay by "
+                                        "bank transfer using the EFT details on "
+                                        "your invoice."),
+                               reference=reference), 200
+
+    record_payment_event(
+        transaction_id=result.payment_id, merchant_reference=reference,
+        event_type="checkout.created", amount=amount,
+        note="hosted checkout created from durable invoice link")
+    return redirect(result.redirect_url)
+
+
+@public_bp.route("/pay/invoice/<reference>/result")
+def pay_invoice_result(reference):
+    """Return-from-checkout page for a durable invoice payment (§8): reflects
+    the ledger state like the member pay_result pattern."""
+    evts = _invoice_events(reference)
+    if evts is None:
+        return render_template("public/pay_invoice_message.html",
+                               heading="Payment link not available",
+                               message="This payment link is not available.",
+                               reference=""), 200
+    return render_template("public/pay_invoice_result.html",
+                           reference=reference, state=_invoice_pay_state(evts),
+                           amount=_invoice_amount(evts))
 
 
 @public_bp.route("/.well-known/security.txt")

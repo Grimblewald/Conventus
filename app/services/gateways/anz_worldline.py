@@ -104,6 +104,19 @@ class ANZWorldlineGateway(PaymentGateway):
             return_url=url_for("admin.financial", _external=True),
         )
 
+    def create_invoice_checkout(self, amount: int, reference: str,
+                                return_url: str,
+                                currency: str = "AUD") -> CheckoutResult:
+        """Mint a fresh hosted checkout for a manual invoice's durable pay link
+        (§8), reusing the invoice's own merchant reference so the capture lands
+        back on the same ledger group."""
+        return self._create_hosted_checkout(
+            amount=amount,
+            currency=currency,
+            merchant_reference=reference,
+            return_url=return_url,
+        )
+
     def _create_hosted_checkout(self, amount: int, currency: str,
                                 merchant_reference: str, return_url: str) -> CheckoutResult:
         client = self._client()

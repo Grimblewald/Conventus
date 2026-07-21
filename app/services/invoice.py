@@ -1,10 +1,27 @@
-"""Invoice email rendering and sending."""
+"""Document send layer: renders the PDF for a document kind and emails the
+plaintext cover with it attached.
+
+This module is the `send_document` layer of the plan (§2): the three public
+senders below are thin wrappers that resolve real variables, render the
+matching PDF kind through the ONE renderer (`documents.render_document`) and
+email the DocumentTemplate cover with the PDF attached. It never re-implements
+rendering. Automatic (webhook-triggered) sends carry the §7 failure handling;
+manual/test sends surface a compile error to the admin instead.
+"""
 from __future__ import annotations
 
 import logging
+import re
+import types
 from datetime import datetime
 
-from ..models import Registration, get_site_settings, get_document_template
+from flask import url_for
+
+from ..models import (
+    PaymentEvent, Registration, record_payment_event,
+    get_site_settings, get_document_template,
+)
+from .documents import RenderError, render_document
 from .jinja_filters import format_amount
 from .mail import send_mail
 
@@ -12,7 +29,7 @@ log = logging.getLogger(__name__)
 
 
 def _business_vars(tpl, amount_cents: int, gst: bool | None = None) -> dict:
-    """Business/tax variables shared by every invoice email.
+    """Business/tax variables shared by every document.
 
     GST-inclusive pricing: the GST component of an inclusive total is
     total ÷ 11 (10% GST). When GST is off, the breakdown collapses to
@@ -31,41 +48,77 @@ def _business_vars(tpl, amount_cents: int, gst: bool | None = None) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Automatic sends (webhook / reconcile) — receipt on payment, adjustment on
+# refund, with the §7 failure handling around the render.
+# ---------------------------------------------------------------------------
+
 def send_invoice_email(reg: Registration) -> bool:
-    tpl = get_document_template("invoice")
-    site = get_site_settings()
-    user = reg.user
-    conf = reg.conference
+    """Auto document for a settled registration: a receipt when paid, an
+    adjustment note when refunded (plan §2 mapping). Renders the matching PDF
+    and emails that kind's cover with it attached; on a compile failure the
+    payment is already final, so §7 keeps the webhook safe."""
+    kind = "adjustment" if reg.status == "refunded" else "receipt"
+    vars_ = _registration_vars(reg, kind)
+    log.info("Sending %s to %s for reg %d", kind, vars_["user_email"], reg.id)
+    return _send_auto_document(
+        kind, vars_, to=vars_["user_email"], reg=reg,
+        merchant_reference=_reg_merchant_reference(reg),
+        transaction_id=reg.transaction_id or "", amount_cents=reg.amount)
 
-    vars_ = {
-        "user_name": user.full_name or user.email,
-        "user_email": user.email,
-        "conference_title": conf.title,
-        "conference_dates": conf.date_range,
-        "tier_name": reg.tier_name,
-        "amount": format_amount(reg.amount),
-        "currency_code": site.currency_code,
-        "currency_symbol": site.currency_symbol,
-        "transaction_id": reg.transaction_id or "N/A",
-        "payment_date": datetime.utcnow().strftime("%-d %B %Y"),
-        "site_name": site.site_name,
-        "registration_id": str(reg.id),
-        **_business_vars(tpl, reg.amount),
-    }
 
-    kind = "refund" if reg.status == "refunded" else "payment"
-    log.info("Sending %s invoice to %s for reg %d", kind, user.email, reg.id)
+def send_manual_invoice_receipt(reference: str, *, amount_cents: int | None = None,
+                                transaction_id: str = "") -> bool:
+    """Send the receipt for a manual invoice paid through its durable link (§8),
+    triggered by the capture webhook. The recipient is recovered from the
+    invoice's ledger note. Auto-send, so §7 failure handling applies. Returns
+    False (a no-op) when the recipient can't be recovered."""
+    recipient = _invoice_recipient(reference)
+    if not recipient:
+        log.warning("Cannot send receipt for %s — recipient not recoverable", reference)
+        return False
+    vars_ = _manual_receipt_vars(reference, recipient, amount_cents or 0)
+    log.info("Sending receipt to %s for invoice %s", recipient, reference)
+    return _send_auto_document(
+        "receipt", vars_, to=recipient, reg=None, merchant_reference=reference,
+        transaction_id=transaction_id, amount_cents=amount_cents)
 
-    return _send_rendered(vars_, to=user.email)
 
+def resend_pending_document(evt: PaymentEvent) -> bool:
+    """Re-render and re-send a document whose earlier automatic send failed
+    (§7 retry). Raises RenderError if it still won't compile so the admin sees
+    the log; records nothing itself — the caller records `document.sent`. The
+    kind and recipient are reconstructed from the pending event."""
+    if evt.registration_id:
+        reg = Registration.query.get(evt.registration_id)
+        if not reg:
+            raise RenderError("registration no longer exists")
+        kind = "adjustment" if reg.status == "refunded" else "receipt"
+        vars_ = _registration_vars(reg, kind)
+        to = vars_["user_email"]
+    else:
+        ref = evt.merchant_reference
+        to = _invoice_recipient(ref)
+        if not to:
+            raise RenderError(f"recipient for {ref} not recoverable")
+        kind = "receipt"
+        vars_ = _manual_receipt_vars(ref, to, evt.amount or 0)
+    attachment = _render_attachment(kind, vars_, vars_["transaction_id"])
+    return _send_rendered(kind, vars_, to=to, attachment=attachment)
+
+
+# ---------------------------------------------------------------------------
+# Manual + test sends (admin-triggered) — a compile error surfaces inline.
+# ---------------------------------------------------------------------------
 
 def send_test_invoice(to_email: str) -> bool:
     """Render the invoice template with sample data and email it to *to_email*.
 
-    Lets admins proof the template without any payment taking place.
+    Lets admins proof the template without any payment taking place. A compile
+    failure raises RenderError for the route to surface inline (§7 manual rule).
     """
-    tpl = get_document_template("invoice")
     site = get_site_settings()
+    tpl = get_document_template("invoice")
     vars_ = {
         "user_name": "Test Attendee",
         "user_email": to_email,
@@ -82,7 +135,9 @@ def send_test_invoice(to_email: str) -> bool:
         **_business_vars(tpl, 100),
     }
     log.info("Sending test invoice to %s", to_email)
-    return _send_rendered(vars_, to=to_email, subject_prefix="[TEST] ")
+    attachment = _render_attachment("invoice", vars_, "TEST-000000")
+    return _send_rendered("invoice", vars_, to=to_email, subject_prefix="[TEST] ",
+                          attachment=attachment)
 
 
 def send_manual_invoice(to: str, *, recipient_name: str, description: str,
@@ -95,7 +150,10 @@ def send_manual_invoice(to: str, *, recipient_name: str, description: str,
 
     Used for out-of-band billing (e.g. sponsors). Maps onto the template's
     registration-centric variables: *description* fills {conference_title},
-    *item* fills {tier_name}, *reference* fills {transaction_id}.
+    *item* fills {tier_name}, *reference* fills {transaction_id}. Embeds the
+    durable pay link (§8) as {payment_link}, resolved here (the renderer stays
+    agnostic). A compile failure raises RenderError for the route to surface
+    inline (§7 manual rule) — nothing is sent.
     """
     tpl = get_document_template("invoice")
     site = get_site_settings()
@@ -116,9 +174,16 @@ def send_manual_invoice(to: str, *, recipient_name: str, description: str,
     }
     vars_["due_date"] = due_date
     vars_["recipient_abn"] = recipient_abn
+    # Durable pay link — the SEND path resolves it; preview shows the bold
+    # placeholder. Points at our /pay/invoice/<ref> route, not the ephemeral
+    # Worldline URL, which expires (§8).
+    vars_["payment_link"] = url_for("public.pay_invoice", reference=reference,
+                                    _external=True)
     log.info("Sending manual invoice %s to %s (cc %s)", reference, to, cc or [])
-    return _send_rendered(vars_, to=to, cc=cc, subject_override=subject_override,
-                          body_override=body_override)
+    attachment = _render_attachment("invoice", vars_, reference)
+    return _send_rendered("invoice", vars_, to=to, cc=cc,
+                          subject_override=subject_override,
+                          body_override=body_override, attachment=attachment)
 
 
 def default_manual_invoice_body(tpl) -> str:
@@ -138,28 +203,124 @@ def default_manual_invoice_body(tpl) -> str:
         "Amount due: {currency_symbol}{amount} {currency_code}\n"
         + gst_line +
         "Due date: {due_date}\n\n"
+        "Pay online:\n{payment_link}\n\n"
         "Payment details:\n{payment_instructions}\n\n"
         "Please quote reference {transaction_id} with your payment.\n\n"
         "{site_name}"
     )
 
 
-def _send_rendered(vars_: dict, to: str, subject_prefix: str = "",
-                   cc: list[str] | None = None,
-                   subject_override: str = "",
-                   body_override: str = "") -> bool:
-    tpl = get_document_template("invoice")
+# ---------------------------------------------------------------------------
+# Variable resolution — shared by the initial send and the §7 retry.
+# ---------------------------------------------------------------------------
+
+def _registration_vars(reg: Registration, kind: str) -> dict:
+    """Real document variables for a settled registration."""
+    tpl = get_document_template(kind)
+    site = get_site_settings()
+    user = reg.user
+    conf = reg.conference
+    return {
+        "user_name": user.full_name or user.email,
+        "user_email": user.email,
+        "conference_title": conf.title,
+        "conference_dates": conf.date_range,
+        "tier_name": reg.tier_name,
+        "amount": format_amount(reg.amount),
+        "currency_code": site.currency_code,
+        "currency_symbol": site.currency_symbol,
+        "transaction_id": reg.transaction_id or "N/A",
+        "payment_date": datetime.utcnow().strftime("%-d %B %Y"),
+        "site_name": site.site_name,
+        "registration_id": str(reg.id),
+        **_business_vars(tpl, reg.amount),
+    }
+
+
+def _manual_receipt_vars(reference: str, recipient: str,
+                         amount_cents: int) -> dict:
+    """Real document variables for a manual invoice's receipt (paid via the
+    durable link). The invoice's own reference fills {transaction_id}."""
+    tpl = get_document_template("receipt")
+    site = get_site_settings()
+    return {
+        "user_name": recipient,
+        "user_email": recipient,
+        "conference_title": "",
+        "conference_dates": "",
+        "tier_name": "",
+        "amount": format_amount(amount_cents),
+        "currency_code": site.currency_code,
+        "currency_symbol": site.currency_symbol,
+        "transaction_id": reference,
+        "payment_date": datetime.utcnow().strftime("%-d %B %Y"),
+        "site_name": site.site_name,
+        "registration_id": "N/A",
+        **_business_vars(tpl, amount_cents),
+    }
+
+
+def _reg_merchant_reference(reg: Registration) -> str:
+    """The merchant reference this registration's payment is grouped under in
+    the ledger, so a document.* event lands in the same transaction group as
+    the payment. Falls back to the legacy reg_<id> form."""
+    e = (PaymentEvent.query
+         .filter(PaymentEvent.registration_id == reg.id,
+                 PaymentEvent.merchant_reference != "")
+         .order_by(PaymentEvent.id.desc())
+         .first())
+    return e.merchant_reference if e else f"reg_{reg.id}"
+
+
+def _invoice_recipient(reference: str) -> str:
+    """Recover a manual invoice's recipient email from its `invoice.sent` ledger
+    note (recorded as `to <email> ...` — plan §8, no schema change). '' if not
+    found."""
+    evt = (PaymentEvent.query
+           .filter_by(merchant_reference=reference, event_type="invoice.sent")
+           .order_by(PaymentEvent.id.desc())
+           .first())
+    if not evt:
+        return ""
+    m = re.search(r"to\s+(\S+@\S+)", evt.note or "")
+    return m.group(1) if m else ""
+
+
+# ---------------------------------------------------------------------------
+# Render + email primitives (raise on compile failure).
+# ---------------------------------------------------------------------------
+
+def _render_attachment(kind: str, vars_: dict, reference: str) -> tuple:
+    """Render the `kind` PDF through the one renderer and wrap it as a send_mail
+    attachment tuple. Raises RenderError on compile failure (callers decide how
+    to handle it — inline for manual sends, degraded for auto sends)."""
+    pdf = render_document(kind, vars_)
+    filename = f"{kind}-{_safe_ref(reference)}.pdf"
+    return (filename, pdf, "application/pdf")
+
+
+def _safe_ref(reference: str) -> str:
+    ref = re.sub(r"[^A-Za-z0-9._-]", "", str(reference or ""))
+    return (ref or "document")[:60]
+
+
+def _send_rendered(kind: str, vars_: dict, to: str, subject_prefix: str = "",
+                   cc: list[str] | None = None, subject_override: str = "",
+                   body_override: str = "", body_suffix: str = "",
+                   attachment: tuple | None = None) -> bool:
+    """Email the plaintext cover for `kind` (its DocumentTemplate email fields),
+    optionally with a rendered PDF attached and/or an appended paragraph."""
+    tpl = get_document_template(kind)
     site = get_site_settings()
 
-    subject_tpl = subject_override or tpl.subject
-    subject = subject_prefix + _render(subject_tpl, vars_)
-
-    body_tpl = body_override or tpl.email_body
-    body = _render(body_tpl, vars_)
+    subject = subject_prefix + _render(subject_override or tpl.subject, vars_)
+    body = _render(body_override or tpl.email_body, vars_)
 
     footer = _render(tpl.footer_text, vars_) if tpl.footer_text else ""
     if footer:
         body += f"\n\n{footer}"
+    if body_suffix:
+        body += body_suffix
 
     sender_name = _render(tpl.from_name, vars_) if tpl.from_name else None
 
@@ -170,7 +331,125 @@ def _send_rendered(vars_: dict, to: str, subject_prefix: str = "",
         sender_name=sender_name or f"{site.site_name}",
         sender_email=(tpl.from_email or "").strip() or None,
         cc=cc,
+        attachments=[attachment] if attachment else None,
     )
+
+
+# ---------------------------------------------------------------------------
+# §7 automatic-send failure handling.
+# ---------------------------------------------------------------------------
+
+def _send_auto_document(kind: str, vars_: dict, *, to: str,
+                        reg: Registration | None, merchant_reference: str,
+                        transaction_id: str = "",
+                        amount_cents: int | None = None) -> bool:
+    """Auto (webhook/reconcile) document send with the §7 failure handling.
+
+    Renders the `kind` PDF, emails the cover with it attached, and records a
+    `document.sent` ledger event. On RenderError the payment/refund is already
+    final, so instead we email a plaintext confirmation, alert admins with the
+    compile log, and record `document.pending` for later retry. Always returns
+    True — a webhook must never fail because a document didn't render."""
+    reference = vars_.get("transaction_id") or merchant_reference
+    try:
+        attachment = _render_attachment(kind, vars_, reference)
+    except RenderError as err:
+        _document_render_failed(
+            kind, vars_, to=to, reg=reg, merchant_reference=merchant_reference,
+            transaction_id=transaction_id, amount_cents=amount_cents, err=err)
+        return True
+
+    ok = _send_rendered(kind, vars_, to=to, attachment=attachment)
+    record_payment_event(
+        transaction_id=transaction_id,
+        merchant_reference=merchant_reference,
+        registration_id=reg.id if reg else None,
+        event_type="document.sent",
+        amount=amount_cents,
+        note=f"{kind} document emailed to {to}")
+    return ok
+
+
+_DOC_NAMES = {"receipt": "receipt", "adjustment": "adjustment note",
+              "invoice": "invoice"}
+
+
+def _document_render_failed(kind: str, vars_: dict, *, to: str,
+                            reg: Registration | None, merchant_reference: str,
+                            transaction_id: str, amount_cents: int | None,
+                            err: RenderError) -> None:
+    """§7: a compile failed on an automatic send. The payment/refund already
+    succeeded, so confirm it in plaintext, alert admins with the compile log,
+    and record `document.pending` so the failure is visible and retryable."""
+    doc_name = _DOC_NAMES.get(kind, "document")
+    action = "refund" if kind == "adjustment" else "payment"
+    log.exception("Rendering the %s for %s failed: %s",
+                  doc_name, merchant_reference, err)
+
+    # 1. Degraded email — the payment is confirmed; the formal document follows.
+    notice = (
+        f"\n\nYour {action} has been processed successfully. Unfortunately an "
+        f"internal error prevented us from generating your formal {doc_name} at "
+        f"this time. The error has been logged and our administrators have been "
+        f"notified; we will send the {doc_name} to you as soon as the issue is "
+        f"resolved.")
+    _send_rendered(kind, vars_, to=to, body_suffix=notice)
+
+    # 2. Alert admins through the payment-attention channel, with the log.
+    reason = (
+        f"Generating the {doc_name} for a completed {action} failed. The "
+        f"{action} itself succeeded and is recorded — only the document is "
+        f"outstanding. Fix the document template, then use “Send pending "
+        f"document” for reference {merchant_reference} on the transactions "
+        f"ledger.\n\nCompile log:\n" + (err.log or str(err)))
+    if reg is not None:
+        from ..blueprints.public import _notify_payment_attention
+        _notify_payment_attention(
+            reg, types.SimpleNamespace(event_type="document.render_failed",
+                                       amount=reg.amount,
+                                       transaction_id=reg.transaction_id),
+            reason=reason)
+    else:
+        _alert_admins_document_failure(merchant_reference, amount_cents, reason)
+
+    # 3. Ledger event so the pending document shows in the transactions view.
+    record_payment_event(
+        transaction_id=transaction_id,
+        merchant_reference=merchant_reference,
+        registration_id=reg.id if reg else None,
+        event_type="document.pending",
+        amount=amount_cents,
+        note=f"{kind}: {_error_summary(err)}")
+
+
+def _alert_admins_document_failure(reference: str, amount_cents: int | None,
+                                   reason: str) -> None:
+    """Payment-attention alert for a failure with no registration (a manual
+    invoice paid via its link). Mirrors the webhook's admin channel."""
+    from ..models.user import User
+    from ..security import audit
+
+    site = get_site_settings()
+    amount = format_amount(amount_cents) if amount_cents is not None else "?"
+    audit.record("financial.payment_attention",
+                 target_kind="invoice", target_id=reference,
+                 summary=f"Document render failed for invoice {reference} (${amount})")
+    admins = User.query.filter(User.role_name == "admin",
+                               User.deleted_at.is_(None)).all()
+    for admin in admins:
+        send_mail(
+            to=admin.email,
+            subject=f"[{site.site_name}] Document needs attention: {reference}",
+            body=(f"A document could not be generated after a payment.\n\n"
+                  f"Invoice reference: {reference}\n"
+                  f"Amount: ${amount}\n\n"
+                  f"{reason}"))
+
+
+def _error_summary(err: RenderError) -> str:
+    """A short, single-line summary of a compile failure for the ledger note."""
+    tail = (err.log or str(err)).strip().splitlines()
+    return (tail[-1] if tail else str(err))[:200]
 
 
 def _render(template: str, vars_: dict) -> str:

@@ -331,6 +331,7 @@ def financial_test_payment():
 @requires_permission("financial.manage")
 def financial_test_invoice():
     """Send the invoice template, rendered with sample data, to a chosen address."""
+    from ...services.documents import RenderError
     from ...services.invoice import send_test_invoice
 
     to = (request.form.get("email") or "").strip() or current_user.email
@@ -338,7 +339,12 @@ def financial_test_invoice():
         flash("Enter a valid email address for the test invoice.", "error")
         return redirect(url_for("admin.financial"))
 
-    ok = send_test_invoice(to)
+    try:
+        ok = send_test_invoice(to)
+    except RenderError as e:
+        flash(f"The test invoice PDF could not be generated: {e}"
+              + (f"\n{e.log}" if e.log else ""), "error")
+        return redirect(url_for("admin.financial"))
     audit.record("financial.test_invoice_sent",
                  target_kind="document_template", target_id="invoice",
                  summary=f"Test invoice sent to {to} by {current_user.email}")
@@ -353,8 +359,9 @@ def financial_test_invoice():
 @requires_permission("financial.manage")
 def financial_send_invoice():
     """Send a templated invoice for an agreed amount to chosen recipients
-    (e.g. sponsors). Email only — no payment link is created."""
+    (e.g. sponsors), with the PDF attached and a durable pay link embedded."""
     from ...models import PaymentEvent
+    from ...services.documents import RenderError
     from ...services.invoice import default_manual_invoice_body, send_manual_invoice
     from ...services.jinja_filters import format_amount, parse_cents
 
@@ -403,14 +410,24 @@ def financial_send_invoice():
                                    form=request.form, suggested_ref=suggested_ref,
                                    tpl=tpl, default_body=default_body)
 
-        ok = send_manual_invoice(
-            to, cc=cc or None, recipient_name=recipient_name,
-            description=description, item=item, amount_cents=amount,
-            reference=reference, period=period,
-            subject_override=subject_override, body_override=body_override,
-            due_date=due_date, recipient_abn=recipient_abn,
-            include_gst=include_gst,
-        )
+        # §7 manual rule: a compile failure surfaces inline so the admin can fix
+        # the template — nothing is recorded or sent (no degraded manual sends).
+        try:
+            ok = send_manual_invoice(
+                to, cc=cc or None, recipient_name=recipient_name,
+                description=description, item=item, amount_cents=amount,
+                reference=reference, period=period,
+                subject_override=subject_override, body_override=body_override,
+                due_date=due_date, recipient_abn=recipient_abn,
+                include_gst=include_gst,
+            )
+        except RenderError as e:
+            flash(f"The invoice PDF could not be generated: {e}"
+                  + (f"\n{e.log}" if e.log else "")
+                  + "\nFix the document template, then try again.", "error")
+            return render_template("admin/financial_send_invoice.html",
+                                   form=request.form, suggested_ref=suggested_ref,
+                                   tpl=tpl, default_body=default_body)
         audit.record("financial.invoice_sent",
                      target_kind="invoice", target_id=reference,
                      summary=(f"Invoice {reference} for ${format_amount(amount)} "
@@ -511,8 +528,14 @@ def financial_transactions():
             if any(e.transaction_id and e.event_type != "checkout.created"
                    and not e.event_type.startswith("invoice.") for e in evts):
                 cancel_ref = ref
+        # Offer "Send pending document" when the group's most recent document.*
+        # event is a document.pending (a §7 failed render awaiting retry).
+        pending_ref = ""
+        doc_evts = [e for e in evts if e.event_type.startswith("document.")]
+        if doc_evts and max(doc_evts, key=lambda e: e.id).event_type == "document.pending":
+            pending_ref = ref
         groups.append({"key": key, "events": evts, "state": state,
-                       "cancel_ref": cancel_ref})
+                       "cancel_ref": cancel_ref, "pending_ref": pending_ref})
 
     return render_template("admin/financial_transactions.html",
                            groups=groups, q=q, event_count=len(events))
@@ -637,4 +660,46 @@ def financial_test_payment_cancel(ref):
         flash(f"Authorization for {ref} cancelled "
               f"(Worldline status {result.raw_status}). The hold on the card "
               f"will drop off within a few days.", "success")
+    return redirect(url_for("admin.financial_transactions"))
+
+
+@admin_bp.route("/financial/document/<ref>/send-pending", methods=["POST"])
+@requires_permission("financial.manage")
+def financial_send_pending_document(ref):
+    """Retry a document whose automatic send failed (§7). Re-renders and
+    re-sends the same document for a reference whose latest document.* event is
+    still document.pending; on success records document.sent, otherwise surfaces
+    the compile log so the admin can fix the template first."""
+    from ...models import PaymentEvent, record_payment_event
+    from ...services.documents import RenderError
+    from ...services.invoice import resend_pending_document
+
+    doc_evt = (PaymentEvent.query
+               .filter(PaymentEvent.merchant_reference == ref,
+                       PaymentEvent.event_type.like("document.%"))
+               .order_by(PaymentEvent.id.desc())
+               .first())
+    if not doc_evt or doc_evt.event_type != "document.pending":
+        flash(f"No pending document to send for {ref}.", "error")
+        return redirect(url_for("admin.financial_transactions"))
+
+    try:
+        resend_pending_document(doc_evt)
+    except RenderError as e:
+        flash(f"The document still failed to generate: {e}"
+              + (f"\n{e.log}" if e.log else "")
+              + "\nFix the document template, then try again.", "error")
+        return redirect(url_for("admin.financial_transactions"))
+
+    record_payment_event(
+        transaction_id=doc_evt.transaction_id,
+        merchant_reference=ref,
+        registration_id=doc_evt.registration_id,
+        event_type="document.sent",
+        amount=doc_evt.amount,
+        note=f"pending document re-sent by {current_user.email}")
+    audit.record("financial.document_resent",
+                 target_kind="invoice", target_id=ref,
+                 summary=f"Pending document for {ref} re-sent by {current_user.email}")
+    flash(f"Document for {ref} generated and sent.", "success")
     return redirect(url_for("admin.financial_transactions"))

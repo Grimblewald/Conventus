@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}{{ heading }} · {{ site.site_name }}{% endblock %}
+{% block content %}
+<section class="block">
+  <div class="container container-narrow">
+    <div class="section-head">
+      <div>
+        <div class="eyebrow">Payment</div>
+        <h2>{{ heading }}</h2>
+      </div>
+    </div>
+
+    <div class="card" style="padding:24px;">
+      <p>{{ message }}</p>
+      {% if reference %}
+        <p class="muted">Reference: <code>{{ reference }}</code></p>
+      {% endif %}
+    </div>
+
+    <a class="btn btn-ghost" href="{{ url_for('public.home') }}" style="margin-top:24px;">← Back to home</a>
+  </div>
+</section>
+{% endblock %}

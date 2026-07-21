@@ -83,6 +83,13 @@
       <button class="btn btn-ghost btn-sm" type="submit">Cancel authorization</button>
     </form>
     {% endif %}
+    {% if g.pending_ref %}
+    <form method="POST" action="{{ url_for('admin.financial_send_pending_document', ref=g.pending_ref) }}"
+          style="margin-top:8px;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-sm" type="submit">Send pending document</button>
+    </form>
+    {% endif %}
   </div>
 </details>
 {% endfor %}

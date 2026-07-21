@@ -218,6 +218,9 @@ class InvoiceTemplate(db.Model):
     from_name = db.Column(db.String(120), default="")
     from_email = db.Column(db.String(200), default="")
     footer_text = db.Column(db.String(400), default="Thank you from {site_name}")
+    business_number = db.Column(db.String(40), default="")     # ABN
+    payment_instructions = db.Column(db.Text, default="")      # e.g. EFT details
+    gst_registered = db.Column(db.Boolean, default=False, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow,
                            onupdate=datetime.utcnow, nullable=False)
 

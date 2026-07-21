@@ -44,6 +44,40 @@
     <p class="muted">Appended to the email body. Available: {site_name}</p>
   </div>
 
+  <hr style="margin:20px 0; border-color:var(--c-card-border);">
+  <h3 style="margin-top:0;">Tax &amp; business details</h3>
+  <p class="muted">Used for invoices/receipts. In Australia a compliant tax invoice needs your ABN and, if GST-registered, a GST line.</p>
+
+  <div class="form-group" style="margin-bottom:16px;">
+    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+      <input type="checkbox" name="gst_registered" value="1" {% if invoice.gst_registered %}checked{% endif %}>
+      <strong>Registered for GST</strong>
+    </label>
+    <p class="muted" style="margin:4px 0 0 28px;">When on, amounts are treated as GST-inclusive, invoices are titled "Tax Invoice", and {gst_amount}/{amount_ex_gst} are computed (total ÷ 11). When off, invoices are titled "Invoice" and GST shows as 0.</p>
+  </div>
+
+  <div class="form-group" style="margin-bottom:16px;">
+    <label for="business_number"><strong>ABN</strong></label>
+    <input type="text" id="business_number" name="business_number" class="input" value="{{ invoice.business_number or '' }}" placeholder="e.g. 12 345 678 901">
+    <p class="muted">Fills {business_number}. An invoice for a taxable sale without an ABN can trigger 47% withholding by the payer.</p>
+  </div>
+
+  <div class="form-group" style="margin-bottom:16px;">
+    <label for="payment_instructions"><strong>Payment instructions</strong></label>
+    <textarea id="payment_instructions" name="payment_instructions" class="input" rows="4" style="font-family:monospace;">{{ invoice.payment_instructions or '' }}</textarea>
+    <p class="muted">Fills {payment_instructions} — e.g. EFT / BSB / account details for invoices billed for later payment.</p>
+  </div>
+
+  <div class="card" style="padding:12px 16px; margin-bottom:16px; background:var(--c-page-bg);">
+    <p class="muted" style="margin:0; font-size:0.85rem;">
+      All variables: {user_name} {user_email} {conference_title} {conference_dates}
+      {tier_name} {amount} {gst_amount} {amount_ex_gst} {currency_code}
+      {currency_symbol} {transaction_id} {payment_date} {due_date} {site_name}
+      {registration_id} {invoice_type} {business_number} {recipient_abn}
+      {payment_instructions}
+    </p>
+  </div>
+
   <div style="display:flex; gap:8px; margin-top:20px;">
     <button type="submit" class="btn">Save Template</button>
     <a href="{{ url_for('admin.financial') }}" class="btn btn-ghost">Cancel</a>

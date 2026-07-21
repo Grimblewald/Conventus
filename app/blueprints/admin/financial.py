@@ -193,6 +193,9 @@ def financial_invoice():
         tpl.from_name = (request.form.get("from_name") or "").strip()
         tpl.from_email = (request.form.get("from_email") or "").strip()
         tpl.footer_text = (request.form.get("footer_text") or "").strip()
+        tpl.business_number = (request.form.get("business_number") or "").strip()
+        tpl.payment_instructions = (request.form.get("payment_instructions") or "").strip()
+        tpl.gst_registered = request.form.get("gst_registered") == "1"
         db.session.commit()
         audit.record("financial.invoice_template_updated",
                      target_kind="invoice_template", target_id=str(tpl.id),
@@ -277,10 +280,13 @@ def financial_test_invoice():
 def financial_send_invoice():
     """Send a templated invoice for an agreed amount to chosen recipients
     (e.g. sponsors). Email only — no payment link is created."""
-    from ...services.invoice import send_manual_invoice
+    from ...models import PaymentEvent
+    from ...services.invoice import default_manual_invoice_body, send_manual_invoice
     from ...services.jinja_filters import format_amount, parse_cents
 
+    tpl = get_invoice_template()
     suggested_ref = f"INV-{datetime.utcnow().strftime('%Y%m%d')}-{secrets.token_hex(2).upper()}"
+    default_body = default_manual_invoice_body(tpl)
 
     if request.method == "POST":
         to = (request.form.get("to") or "").strip()
@@ -292,6 +298,10 @@ def financial_send_invoice():
         reference = (request.form.get("reference") or "").strip() or suggested_ref
         period = (request.form.get("period") or "").strip()
         subject_override = (request.form.get("subject") or "").strip()
+        body_override = (request.form.get("body") or "").strip()
+        due_date = (request.form.get("due_date") or "").strip()
+        recipient_abn = (request.form.get("recipient_abn") or "").strip()
+        include_gst = request.form.get("include_gst") == "1"
 
         errors = []
         if "@" not in to:
@@ -299,6 +309,12 @@ def financial_send_invoice():
         errors += [f"Invalid CC address: {a}" for a in cc if "@" not in a]
         if not description:
             errors.append("Describe what the invoice is for.")
+        if len(reference) > 30:
+            errors.append("Reference must be 30 characters or fewer (payment "
+                          "platform limit, keeps future payment links possible).")
+        elif PaymentEvent.query.filter_by(merchant_reference=reference).count():
+            errors.append(f"Reference {reference} has already been used — "
+                          f"invoice references must be unique.")
         try:
             amount = parse_cents(request.form.get("amount") or "")
         except ValueError:
@@ -310,13 +326,16 @@ def financial_send_invoice():
             for e in errors:
                 flash(e, "error")
             return render_template("admin/financial_send_invoice.html",
-                                   form=request.form, suggested_ref=suggested_ref)
+                                   form=request.form, suggested_ref=suggested_ref,
+                                   tpl=tpl, default_body=default_body)
 
         ok = send_manual_invoice(
             to, cc=cc or None, recipient_name=recipient_name,
             description=description, item=item, amount_cents=amount,
             reference=reference, period=period,
-            subject_override=subject_override,
+            subject_override=subject_override, body_override=body_override,
+            due_date=due_date, recipient_abn=recipient_abn,
+            include_gst=include_gst,
         )
         audit.record("financial.invoice_sent",
                      target_kind="invoice", target_id=reference,
@@ -339,10 +358,12 @@ def financial_send_invoice():
             return redirect(url_for("admin.financial_send_invoice"))
         flash("Failed to send the invoice — check the mail settings.", "error")
         return render_template("admin/financial_send_invoice.html",
-                               form=request.form, suggested_ref=suggested_ref)
+                               form=request.form, suggested_ref=suggested_ref,
+                               tpl=tpl, default_body=default_body)
 
     return render_template("admin/financial_send_invoice.html",
-                           form={}, suggested_ref=suggested_ref)
+                           form={}, suggested_ref=suggested_ref,
+                           tpl=tpl, default_body=default_body)
 
 
 @admin_bp.route("/financial/member-payments", methods=["POST"])

@@ -11,9 +11,9 @@ from flask_login import current_user
 from . import admin_bp
 from ...extensions import db
 from ...models import (
-    OTPCode, PaymentGatewayConfig, InvoiceTemplate,
+    OTPCode, PaymentGatewayConfig,
     get_payment_gateway_config, get_active_payment_gateway,
-    get_invoice_template,
+    get_document_template,
 )
 from ...security import audit, requires_permission
 from ...services.mail import send_mail
@@ -28,7 +28,7 @@ def financial():
         db.session.add(anzw_cfg)
         db.session.commit()
 
-    invoice_tpl = get_invoice_template()
+    invoice_tpl = get_document_template("invoice")
 
     return render_template(
         "admin/financial.html",
@@ -184,11 +184,11 @@ def financial_toggle_sandbox_confirm(provider):
 @admin_bp.route("/financial/invoice", methods=["GET", "POST"])
 @requires_permission("financial.manage")
 def financial_invoice():
-    tpl = get_invoice_template()
+    tpl = get_document_template("invoice")
 
     if request.method == "POST":
         tpl.subject = (request.form.get("subject") or "").strip()
-        tpl.body_text = (request.form.get("body_text") or "").strip()
+        tpl.email_body = (request.form.get("email_body") or "").strip()
         tpl.from_name = (request.form.get("from_name") or "").strip()
         tpl.from_email = (request.form.get("from_email") or "").strip()
         tpl.footer_text = (request.form.get("footer_text") or "").strip()
@@ -197,7 +197,7 @@ def financial_invoice():
         tpl.gst_registered = request.form.get("gst_registered") == "1"
         db.session.commit()
         audit.record("financial.invoice_template_updated",
-                     target_kind="invoice_template", target_id=str(tpl.id),
+                     target_kind="document_template", target_id=str(tpl.id),
                      summary="Invoice template updated")
 
         # from_email on a different domain to the SMTP sender fails SPF/DKIM
@@ -278,7 +278,7 @@ def financial_test_invoice():
 
     ok = send_test_invoice(to)
     audit.record("financial.test_invoice_sent",
-                 target_kind="invoice_template", target_id="1",
+                 target_kind="document_template", target_id="invoice",
                  summary=f"Test invoice sent to {to} by {current_user.email}")
     if ok:
         flash(f"Test invoice sent to {to}.", "success")
@@ -296,7 +296,7 @@ def financial_send_invoice():
     from ...services.invoice import default_manual_invoice_body, send_manual_invoice
     from ...services.jinja_filters import format_amount, parse_cents
 
-    tpl = get_invoice_template()
+    tpl = get_document_template("invoice")
     suggested_ref = f"INV-{datetime.utcnow().strftime('%Y%m%d')}-{secrets.token_hex(2).upper()}"
     default_body = default_manual_invoice_body(tpl)
 

@@ -12,8 +12,8 @@ from .otp import OTPCode
 from .content import (
     SiteSettings, Page, NavItem, FooterColumn, FooterLink,
     get_site_settings,
-    PaymentGatewayConfig, InvoiceTemplate, get_payment_gateway_config,
-    get_active_payment_gateway, get_invoice_template,
+    PaymentGatewayConfig, DocumentTemplate, get_payment_gateway_config,
+    get_active_payment_gateway, get_document_template,
 )
 from .committee import CommitteeMember
 from .conference import Conference, PriceTier
@@ -36,9 +36,9 @@ __all__ = [
     "OTPCode",
     "SiteSettings", "Page", "NavItem", "FooterColumn", "FooterLink",
     "get_site_settings",
-    "PaymentGatewayConfig", "InvoiceTemplate",
+    "PaymentGatewayConfig", "DocumentTemplate",
     "get_payment_gateway_config", "get_active_payment_gateway",
-    "get_invoice_template",
+    "get_document_template",
     "CommitteeMember",
     "Conference", "PriceTier",
     "Sponsor", "SponsorTier",

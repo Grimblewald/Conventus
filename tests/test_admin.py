@@ -197,7 +197,7 @@ class TestFinancialInvoiceTemplate:
     def test_save_same_domain_from_email_no_warning(self, seeded, admin_client):
         """MAIL_FROM defaults to the your-domain.example.org sandbox address."""
         resp = admin_client.post("/admin/financial/invoice", data={
-            "subject": "Invoice", "body_text": "Body",
+            "subject": "Invoice", "email_body": "Body",
             "from_email": "billing@your-domain.example.org",
         }, follow_redirects=True)
         assert resp.status_code == 200
@@ -208,7 +208,7 @@ class TestFinancialInvoiceTemplate:
         """from_email on a domain the SMTP sender doesn't own risks SPF/DKIM
         failure — warn but still save."""
         resp = admin_client.post("/admin/financial/invoice", data={
-            "subject": "Invoice", "body_text": "Body",
+            "subject": "Invoice", "email_body": "Body",
             "from_email": "billing@some-other-domain.example.org",
         }, follow_redirects=True)
         assert resp.status_code == 200
@@ -216,8 +216,8 @@ class TestFinancialInvoiceTemplate:
         assert b"SPF/DKIM" in resp.data
 
         with app.app_context():
-            from app.models import get_invoice_template
-            assert get_invoice_template().from_email == "billing@some-other-domain.example.org"
+            from app.models import get_document_template
+            assert get_document_template("invoice").from_email == "billing@some-other-domain.example.org"
 
 
 class TestUpdatePage:

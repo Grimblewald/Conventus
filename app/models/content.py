@@ -198,37 +198,104 @@ def get_active_payment_gateway() -> PaymentGatewayConfig | None:
 
 
 # ---------------------------------------------------------------------------
-# Invoice template
+# Document template — one row per kind (invoice / receipt / adjustment).
+# Consolidates the email cover, the PDF body, and the business/tax details.
+# The pdf_body column is not consumed yet (the renderer lands in a later step).
 # ---------------------------------------------------------------------------
 
-class InvoiceTemplate(db.Model):
-    __tablename__ = "invoice_template"
+class DocumentTemplate(db.Model):
+    __tablename__ = "document_template"
 
     id = db.Column(db.Integer, primary_key=True)
-    subject = db.Column(db.String(200), default="Payment Receipt — {conference_title}")
-    body_text = db.Column(db.Text, default=(
-        "Dear {user_name},\n\n"
-        "Your payment for {conference_title} has been received.\n\n"
-        "Registration: {tier_name}\n"
-        "Amount: {currency_symbol}{amount} {currency_code}\n"
-        "Transaction ID: {transaction_id}\n\n"
-        "Thank you,\n{site_name}"
-    ))
-    body_html = db.Column(db.Text, nullable=True)
+    kind = db.Column(db.String(20), unique=True, index=True, nullable=False)
+
+    # --- Email cover -------------------------------------------------------
+    subject = db.Column(db.String(200), default="")
+    email_body = db.Column(db.Text, default="")
     from_name = db.Column(db.String(120), default="")
     from_email = db.Column(db.String(200), default="")
-    footer_text = db.Column(db.String(400), default="Thank you from {site_name}")
+    footer_text = db.Column(db.String(400), default="")
+
+    # --- PDF document body (inserted into a curated LaTeX skeleton later) --
+    pdf_body = db.Column(db.Text, default="")
+
+    # --- Business & tax ----------------------------------------------------
     business_number = db.Column(db.String(40), default="")     # ABN
     payment_instructions = db.Column(db.Text, default="")      # e.g. EFT details
     gst_registered = db.Column(db.Boolean, default=False, nullable=False)
+
     updated_at = db.Column(db.DateTime, default=datetime.utcnow,
                            onupdate=datetime.utcnow, nullable=False)
 
+    @property
+    def content_hash(self) -> str:
+        # Hash of the render-affecting fields, for cache keying (plan §5).
+        # Computed on demand — not stored.
+        import hashlib
+        raw = "|".join([
+            self.kind or "",
+            self.pdf_body or "",
+            self.business_number or "",
+            self.payment_instructions or "",
+            "1" if self.gst_registered else "0",
+        ])
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
-def get_invoice_template() -> InvoiceTemplate:
-    t = db.session.get(InvoiceTemplate, 1)
+
+# Per-kind seed wording. Every kind draws from the same variable vocabulary
+# ({invoice_type}, {gst_amount}, {amount_ex_gst}, …) so any kind renders
+# sensibly whether or not GST is registered.
+_DOCUMENT_DEFAULTS = {
+    "invoice": {
+        "subject": "Payment Receipt — {conference_title}",
+        "email_body": (
+            "Dear {user_name},\n\n"
+            "Your payment for {conference_title} has been received.\n\n"
+            "Registration: {tier_name}\n"
+            "Amount: {currency_symbol}{amount} {currency_code}\n"
+            "Transaction ID: {transaction_id}\n\n"
+            "Thank you,\n{site_name}"
+        ),
+        "footer_text": "Thank you from {site_name}",
+    },
+    "receipt": {
+        "subject": "Receipt — {conference_title}",
+        "email_body": (
+            "Dear {user_name},\n\n"
+            "Payment received — this is your receipt for {conference_title}.\n\n"
+            "{invoice_type} {transaction_id}\n"
+            "Item: {tier_name}\n"
+            "Amount paid: {currency_symbol}{amount} {currency_code}\n"
+            "Includes GST: {currency_symbol}{gst_amount}\n"
+            "Date: {payment_date}\n\n"
+            "Thank you,\n{site_name}"
+        ),
+        "footer_text": "Thank you from {site_name}",
+    },
+    "adjustment": {
+        "subject": "Adjustment Note — {conference_title}",
+        "email_body": (
+            "Dear {user_name},\n\n"
+            "This is an adjustment note for {conference_title}.\n\n"
+            "Reference: {transaction_id}\n"
+            "Item: {tier_name}\n"
+            "Adjustment amount: {currency_symbol}{amount} {currency_code}\n"
+            "Includes GST: {currency_symbol}{gst_amount}\n"
+            "Date: {payment_date}\n\n"
+            "Any refund due will be returned to your original payment method.\n\n"
+            "{site_name}"
+        ),
+        "footer_text": "Thank you from {site_name}",
+    },
+}
+
+
+def get_document_template(kind: str) -> DocumentTemplate:
+    """Lazy-seed getter, keyed by kind. First access for a kind creates the
+    row from `_DOCUMENT_DEFAULTS[kind]`."""
+    t = DocumentTemplate.query.filter_by(kind=kind).first()
     if not t:
-        t = InvoiceTemplate(id=1)
+        t = DocumentTemplate(kind=kind, **_DOCUMENT_DEFAULTS[kind])
         db.session.add(t)
         db.session.commit()
     return t

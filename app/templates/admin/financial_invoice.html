@@ -28,8 +28,8 @@
   </div>
 
   <div class="form-group" style="margin-bottom:16px;">
-    <label for="body_text"><strong>Email Body (plain text)</strong></label>
-    <textarea id="body_text" name="body_text" class="input" rows="10" style="font-family:monospace;">{{ invoice.body_text or '' }}</textarea>
+    <label for="email_body"><strong>Email Body (plain text)</strong></label>
+    <textarea id="email_body" name="email_body" class="input" rows="10" style="font-family:monospace;">{{ invoice.email_body or '' }}</textarea>
     <p class="muted">Available: {user_name} {user_email} {conference_title} {conference_dates} {tier_name} {amount} {currency_code} {currency_symbol} {transaction_id} {payment_date} {site_name} {registration_id}</p>
   </div>
 

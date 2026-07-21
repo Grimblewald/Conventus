@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from ..models import Registration, get_site_settings, get_invoice_template
+from ..models import Registration, get_site_settings, get_document_template
 from .jinja_filters import format_amount
 from .mail import send_mail
 
@@ -32,7 +32,7 @@ def _business_vars(tpl, amount_cents: int, gst: bool | None = None) -> dict:
 
 
 def send_invoice_email(reg: Registration) -> bool:
-    tpl = get_invoice_template()
+    tpl = get_document_template("invoice")
     site = get_site_settings()
     user = reg.user
     conf = reg.conference
@@ -64,7 +64,7 @@ def send_test_invoice(to_email: str) -> bool:
 
     Lets admins proof the template without any payment taking place.
     """
-    tpl = get_invoice_template()
+    tpl = get_document_template("invoice")
     site = get_site_settings()
     vars_ = {
         "user_name": "Test Attendee",
@@ -97,7 +97,7 @@ def send_manual_invoice(to: str, *, recipient_name: str, description: str,
     registration-centric variables: *description* fills {conference_title},
     *item* fills {tier_name}, *reference* fills {transaction_id}.
     """
-    tpl = get_invoice_template()
+    tpl = get_document_template("invoice")
     site = get_site_settings()
     vars_ = {
         "user_name": recipient_name or to,
@@ -148,13 +148,13 @@ def _send_rendered(vars_: dict, to: str, subject_prefix: str = "",
                    cc: list[str] | None = None,
                    subject_override: str = "",
                    body_override: str = "") -> bool:
-    tpl = get_invoice_template()
+    tpl = get_document_template("invoice")
     site = get_site_settings()
 
     subject_tpl = subject_override or tpl.subject
     subject = subject_prefix + _render(subject_tpl, vars_)
 
-    body_tpl = body_override or tpl.body_text
+    body_tpl = body_override or tpl.email_body
     body = _render(body_tpl, vars_)
 
     footer = _render(tpl.footer_text, vars_) if tpl.footer_text else ""

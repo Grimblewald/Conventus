@@ -85,6 +85,69 @@ class TestMailService:
             assert part.get_content_type() != "text/html"
 
 
+class TestDocumentTemplate:
+    def test_lazy_seed_each_kind(self, app):
+        """Each kind seeds an independent row with its own default wording."""
+        with app.app_context():
+            from app.models import get_document_template, DocumentTemplate
+
+            for kind in ("invoice", "receipt", "adjustment"):
+                t = get_document_template(kind)
+                assert t.kind == kind
+                assert t.id is not None
+                assert t.subject and t.email_body
+
+            inv = get_document_template("invoice")
+            rec = get_document_template("receipt")
+            adj = get_document_template("adjustment")
+            # Three independent rows, one per kind.
+            assert len({inv.id, rec.id, adj.id}) == 3
+            # Kind-specific default wording (checked against the seed source so
+            # the assertion survives another test mutating a saved row).
+            from app.models.content import _DOCUMENT_DEFAULTS
+            assert "received" in _DOCUMENT_DEFAULTS["invoice"]["email_body"].lower()
+            assert "receipt" in rec.email_body.lower()
+            assert "adjustment" in adj.email_body.lower()
+
+    def test_lazy_seed_is_idempotent(self, app):
+        with app.app_context():
+            from app.models import get_document_template, DocumentTemplate
+            first = get_document_template("receipt")
+            again = get_document_template("receipt")
+            assert first.id == again.id
+            assert DocumentTemplate.query.filter_by(kind="receipt").count() == 1
+
+    def test_content_hash_stable_and_sensitive(self, app):
+        """Hash tracks the render-affecting fields and is otherwise stable."""
+        with app.app_context():
+            from app.models import DocumentTemplate
+            t = DocumentTemplate(kind="invoice", pdf_body="body",
+                                 business_number="12 345", gst_registered=False)
+            h0 = t.content_hash
+            assert t.content_hash == h0
+
+            t.pdf_body = "different body"
+            assert t.content_hash != h0
+            t.pdf_body = "body"
+            assert t.content_hash == h0
+
+            t.business_number = "99 999"
+            assert t.content_hash != h0
+            t.business_number = "12 345"
+            t.gst_registered = True
+            assert t.content_hash != h0
+
+    def test_content_hash_ignores_email_only_fields(self, app):
+        with app.app_context():
+            from app.models import DocumentTemplate
+            t = DocumentTemplate(kind="invoice", pdf_body="body")
+            h0 = t.content_hash
+            t.subject = "New subject"
+            t.email_body = "New body"
+            t.from_name = "Someone"
+            assert t.content_hash == h0
+
+
 class TestAdminCLI:
     def test_ensure_roles_exist_idempotent(self, app):
         with app.app_context():

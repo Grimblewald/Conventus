@@ -15,6 +15,7 @@ from app.services.documents import (
     RawLatex, RenderError, assemble_tex, latex_escape, render_document,
     _doc_render_root,
 )
+from app.services import documents as docs
 
 
 def _write_png(path):
@@ -182,6 +183,130 @@ def test_all_three_kinds_render(ctx):
     for kind in ("invoice", "receipt", "adjustment"):
         pdf = render_document(kind, _vars())
         assert pdf[:4] == b"%PDF", kind
+
+
+# --- preview: bold-placeholder fill (assembly-level, no compile) -------------
+
+def test_placeholder_fill_bold_names(ctx):
+    """Every unset variable — including the numeric ones — renders as its bold
+    field name, never a computed $0.00."""
+    from app.services.documents import assemble_tex, placeholder_vars
+    from app.models import get_document_template
+    tpl = get_document_template("invoice")
+    tex = assemble_tex("invoice", tpl, placeholder_vars("invoice"))
+    assert r"\textbf{amount}" in tex
+    assert r"\textbf{gst\_amount}" in tex
+    assert r"\textbf{amount\_ex\_gst}" in tex
+    assert "$0.00" not in tex
+
+
+def test_pdf_body_rawlatex_var_renders_raw_with_escaped_literals(app):
+    """The pdf_body fix: a RawLatex value substituted into {var} stays live
+    LaTeX while the literal text around it is still escaped."""
+    tpl = types.SimpleNamespace(pdf_body="Total {amount} due now & later",
+                                gst_registered=False)
+    with app.app_context():
+        tex = assemble_tex("invoice", tpl,
+                           _vars(amount=RawLatex(r"\textbf{amount}")))
+    assert r"\textbf{amount}" in tex        # RawLatex var injected raw
+    assert r"due now \& later" in tex       # surrounding literal still escaped
+
+
+# --- preview: warm pregen + serve-vs-recompile rule --------------------------
+
+def test_warm_pregen_and_serve_skips_tectonic(ctx, monkeypatch):
+    """A first warm compiles for real and caches; serving a matching (saved)
+    template then returns the cached bytes without invoking the renderer."""
+    dest = docs.warm_pregen("invoice")      # real compile (1)
+    assert dest.exists()
+    assert dest.read_bytes()[:4] == b"%PDF"
+
+    calls = []
+    real = docs.render_document
+    monkeypatch.setattr(docs, "render_document",
+                        lambda *a, **k: (calls.append(1), real(*a, **k))[1])
+    pdf = docs.preview_pdf("invoice")       # no overrides, saved hash → pregen
+    assert pdf[:4] == b"%PDF"
+    assert calls == []                       # served from cache, no recompile
+
+
+def test_override_recompiles_for_real(ctx):
+    """Any data override takes the recompile branch and compiles a fresh PDF."""
+    pdf = docs.preview_pdf("invoice", overrides={"user_name": "Real Person"})
+    assert pdf[:4] == b"%PDF"
+
+
+def test_serve_vs_recompile_decision(ctx, monkeypatch):
+    """The exact §5 rule, counted with a stubbed renderer: match+no-override
+    serves the cache (compiling once to populate it); an override or a
+    hash-mismatched draft recompiles."""
+    from app.models import DocumentTemplate
+    calls = []
+    monkeypatch.setattr(docs, "render_document",
+                        lambda *a, **k: (calls.append(1), b"%PDF-fake")[1])
+
+    docs.preview_pdf("invoice")             # cache miss → warm → 1 compile
+    assert len(calls) == 1
+    docs.preview_pdf("invoice")             # cache hit → no recompile
+    assert len(calls) == 1
+    docs.preview_pdf("invoice", overrides={"amount": "5.00"})   # override
+    assert len(calls) == 2
+    draft = DocumentTemplate(kind="invoice", pdf_body="a different body")
+    docs.preview_pdf("invoice", template=draft)                 # hash mismatch
+    assert len(calls) == 3
+
+
+def test_pregen_busy_when_warm_in_progress(ctx):
+    """A preview that needs the pregen while a warm holds the per-kind lock gets
+    PregenBusy rather than starting a second compile."""
+    lock = docs._pregen_lock("invoice")
+    assert lock.acquire(blocking=False)
+    try:
+        with pytest.raises(docs.PregenBusy):
+            docs.get_pregen("invoice")       # file absent (root cleaned) + locked
+    finally:
+        lock.release()
+
+
+def test_preview_writes_no_payment_event(ctx, monkeypatch):
+    """A preview is a pure caller of the renderer — it never records a ledger
+    row."""
+    from app.models import PaymentEvent
+    monkeypatch.setattr(docs, "render_document", lambda *a, **k: b"%PDF-fake")
+    before = PaymentEvent.query.count()
+    pdf = docs.preview_document("invoice", overrides={"amount": "9.99"})
+    assert pdf == b"%PDF-fake"
+    assert PaymentEvent.query.count() == before
+
+
+# --- preview: route + editor button ------------------------------------------
+
+def test_document_preview_route_returns_pdf(ctx, admin_client, monkeypatch):
+    """The POST route streams a PDF download and persists nothing."""
+    from app.models import PaymentEvent
+    monkeypatch.setattr(docs, "render_document", lambda *a, **k: b"%PDF-1.4 fake")
+    before = PaymentEvent.query.count()
+    resp = admin_client.post("/admin/financial/document/preview", data={
+        "kind": "invoice", "pdf_body": "Body {amount}",
+        "business_number": "X", "gst_registered": "1",
+    })
+    assert resp.status_code == 200
+    assert resp.mimetype == "application/pdf"
+    disp = resp.headers.get("Content-Disposition", "")
+    assert "attachment" in disp
+    assert "preview-invoice.pdf" in disp
+    assert PaymentEvent.query.count() == before
+
+
+def test_editor_page_has_preview_button(ctx, admin_client):
+    """The editor's second submit button posts the SAME form to the preview
+    route (unsaved edits travel), and the pdf_body field exists."""
+    resp = admin_client.get("/admin/financial/invoice")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "Download preview" in html
+    assert "/admin/financial/document/preview" in html
+    assert 'name="pdf_body"' in html
 
 
 # --- storage posture: the render root is not web-served ----------------------

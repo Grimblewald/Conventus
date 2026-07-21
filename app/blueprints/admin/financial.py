@@ -5,7 +5,9 @@ from __future__ import annotations
 import secrets
 from datetime import datetime, timedelta
 
-from flask import current_app, flash, redirect, render_template, request, url_for
+from flask import (
+    current_app, flash, redirect, render_template, request, send_file, url_for,
+)
 from flask_login import current_user
 
 from . import admin_bp
@@ -192,6 +194,7 @@ def financial_invoice():
         tpl.from_name = (request.form.get("from_name") or "").strip()
         tpl.from_email = (request.form.get("from_email") or "").strip()
         tpl.footer_text = (request.form.get("footer_text") or "").strip()
+        tpl.pdf_body = (request.form.get("pdf_body") or "").strip()
         tpl.business_number = (request.form.get("business_number") or "").strip()
         tpl.payment_instructions = (request.form.get("payment_instructions") or "").strip()
         tpl.gst_registered = request.form.get("gst_registered") == "1"
@@ -199,6 +202,12 @@ def financial_invoice():
         audit.record("financial.invoice_template_updated",
                      target_kind="document_template", target_id=str(tpl.id),
                      summary="Invoice template updated")
+
+        # The saved content changed the pregen's cache key — re-warm off-request
+        # (in a thread) so the next preview serves the fresh cache without
+        # stalling this save.
+        from ...services.documents import warm_pregen_async
+        warm_pregen_async(current_app._get_current_object(), "invoice")
 
         # from_email on a different domain to the SMTP sender fails SPF/DKIM
         # alignment on most providers — warn, don't block the save.
@@ -216,6 +225,48 @@ def financial_invoice():
         return redirect(url_for("admin.financial"))
 
     return render_template("admin/financial_invoice.html", invoice=tpl)
+
+
+@admin_bp.route("/financial/document/preview", methods=["POST"])
+@requires_permission("financial.manage")
+def financial_document_preview():
+    """Download a PDF preview of the document editor's CURRENT (possibly unsaved)
+    form. Serves the warm pregen when the submitted content matches the saved
+    template and no data variable is overridden, otherwise recompiles fresh —
+    the exact serve-vs-recompile rule lives in `documents.preview_pdf`. Never
+    persists anything (preview is a pure caller of the one renderer)."""
+    from io import BytesIO
+
+    from ...models import DocumentTemplate
+    from ...services.documents import (
+        PregenBusy, RenderError, preview_pdf,
+    )
+
+    kind = (request.form.get("kind") or "invoice").strip()
+
+    # An unsaved draft carrying the submitted editor fields, so edits that
+    # aren't committed yet still drive the preview. Not added to the session —
+    # it exists only to render and to compare content_hash against the saved row.
+    draft = DocumentTemplate(
+        kind=kind,
+        pdf_body=(request.form.get("pdf_body") or "").strip(),
+        business_number=(request.form.get("business_number") or "").strip(),
+        payment_instructions=(request.form.get("payment_instructions") or "").strip(),
+        gst_registered=request.form.get("gst_registered") == "1",
+    )
+
+    try:
+        pdf = preview_pdf(kind, template=draft)
+    except PregenBusy:
+        flash("Preview is still compiling — retry in a few seconds.", "warning")
+        return redirect(url_for("admin.financial_invoice"))
+    except RenderError as e:
+        flash(f"Preview failed to compile: {e}"
+              + (f"\n{e.log}" if e.log else ""), "error")
+        return redirect(url_for("admin.financial_invoice"))
+
+    return send_file(BytesIO(pdf), mimetype="application/pdf",
+                     as_attachment=True, download_name=f"preview-{kind}.pdf")
 
 
 @admin_bp.route("/financial/anz_worldline/test-payment", methods=["POST"])

@@ -109,6 +109,7 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
     _register_setup_gate(app)
     _register_key_expiry_check(app)
     _register_error_handlers(app)
+    _warm_document_pregen(app)
 
     return app
 
@@ -369,6 +370,24 @@ def _register_key_expiry_check(app: Flask) -> None:
             check_key_expiry()
         except Exception:
             app.logger.warning("Key expiry check skipped", exc_info=True)
+
+
+def _warm_document_pregen(app: Flask) -> None:
+    """Kick daemon threads that warm the all-placeholders preview cache for every
+    document kind after boot, so the first "Download preview" serves instantly
+    instead of waiting on a cold compile. Skipped under the migration CLI (no
+    business compiling there) and in tests; resilient by design — a tectonic
+    hiccup logs and never crashes boot. Step 5 will move this onto the shared
+    compile queue.
+
+    The TESTING flag is only set by the test harness *after* create_app(), so we
+    also skip whenever pytest is loaded — otherwise the boot warm would fire real
+    tectonic compiles into every test session."""
+    if _running_migration_cli() or app.config.get("TESTING") or "pytest" in sys.modules:
+        return
+    from .services.documents import warm_pregen_async
+    for kind in ("invoice", "receipt", "adjustment"):
+        warm_pregen_async(app, kind)
 
 
 def _register_error_handlers(app: Flask) -> None:

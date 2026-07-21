@@ -10,6 +10,7 @@
 
 <form method="POST" class="card" style="padding:24px;">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="kind" value="invoice">
 
   <div class="form-group" style="margin-bottom:16px;">
     <label for="subject"><strong>Email Subject</strong></label>
@@ -37,6 +38,16 @@
     <label for="footer_text"><strong>Footer Text</strong></label>
     <input type="text" id="footer_text" name="footer_text" class="input" value="{{ invoice.footer_text or '' }}">
     <p class="muted">Appended to the email body. Available: {site_name}</p>
+  </div>
+
+  <hr style="margin:20px 0; border-color:var(--c-card-border);">
+  <h3 style="margin-top:0;">PDF document body</h3>
+  <p class="muted">Free-text body inserted into the invoice PDF (below the line-item table). Variables in curly braces are allowed and are filled per invoice; anything else is printed as written.</p>
+
+  <div class="form-group" style="margin-bottom:16px;">
+    <label for="pdf_body"><strong>PDF body</strong></label>
+    <textarea id="pdf_body" name="pdf_body" class="input" rows="6" style="font-family:monospace;">{{ invoice.pdf_body or '' }}</textarea>
+    <p class="muted">Available: {user_name} {conference_title} {tier_name} {amount} {currency_symbol} {currency_code} {transaction_id} {payment_date} {due_date} {business_number} {payment_instructions}</p>
   </div>
 
   <hr style="margin:20px 0; border-color:var(--c-card-border);">
@@ -75,7 +86,11 @@
 
   <div style="display:flex; gap:8px; margin-top:20px;">
     <button type="submit" class="btn">Save Template</button>
+    <button type="submit" class="btn btn-ghost"
+            formaction="{{ url_for('admin.financial_document_preview') }}"
+            formmethod="POST">Download preview</button>
     <a href="{{ url_for('admin.financial') }}" class="btn btn-ghost">Cancel</a>
   </div>
+  <p class="muted" style="margin-top:8px; font-size:0.85rem;">Download preview renders a PDF of the current form — including unsaved edits — with every variable shown as its bold field name.</p>
 </form>
 {% endblock %}

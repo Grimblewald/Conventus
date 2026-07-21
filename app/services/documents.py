@@ -14,6 +14,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import threading
 from pathlib import Path
 
 from flask import current_app
@@ -37,6 +38,12 @@ class RenderError(Exception):
     def __init__(self, message: str, *, log: str = "") -> None:
         super().__init__(message)
         self.log = log
+
+
+class PregenBusy(Exception):
+    """A warm pregen compile for this kind is already running. Raised when a
+    preview needs that pregen mid-flight so the caller can ask the user to retry
+    in a few seconds instead of piling on a second compile of the same kind."""
 
 
 class RawLatex(str):
@@ -88,6 +95,39 @@ def _flag(name: str, on: bool) -> RawLatex:
     return RawLatex(f"\\{name}{'true' if on else 'false'}")
 
 
+def _expand_body(raw_body, vars_: dict) -> str:
+    """Expand `{var}` placeholders inside the template's pdf_body, escaping the
+    literal text and each substituted value INDEPENDENTLY.
+
+    The whole-body-then-escape approach is wrong once a value can be RawLatex:
+    a `\\textbf{...}` placeholder substituted in would itself be escaped into
+    literal text. So we split the body on `{known_var}` occurrences, latex_escape
+    the literal segments, and insert each value escaped-or-raw by its
+    RawLatex-ness (same rule as `esc()`), so a bold-placeholder stays live LaTeX
+    while the admin's surrounding prose is neutralised. A RawLatex body as a
+    whole still bypasses escaping entirely (the test/preview escape hatch)."""
+    if isinstance(raw_body, RawLatex):
+        return _render(raw_body, vars_)
+    if not raw_body:
+        return ""
+    if not vars_:
+        return latex_escape(raw_body)
+    # Longest names first so a prefix key (e.g. "amount") can't shadow a longer
+    # one ("amount_ex_gst"); the trailing `}` already disambiguates, but this
+    # keeps the alternation order unsurprising.
+    names = sorted(vars_, key=len, reverse=True)
+    pattern = re.compile(r"\{(" + "|".join(re.escape(n) for n in names) + r")\}")
+    out: list[str] = []
+    pos = 0
+    for m in pattern.finditer(raw_body):
+        out.append(latex_escape(raw_body[pos:m.start()]))
+        val = vars_[m.group(1)]
+        out.append(val if isinstance(val, RawLatex) else latex_escape(str(val)))
+        pos = m.end()
+    out.append(latex_escape(raw_body[pos:]))
+    return "".join(out)
+
+
 def assemble_tex(kind: str, tpl, vars_: dict, *, has_logo: bool = False,
                  has_signature: bool = False, logo_name: str = "",
                  signature_name: str = "") -> str:
@@ -101,12 +141,11 @@ def assemble_tex(kind: str, tpl, vars_: dict, *, has_logo: bool = False,
     doc_title = {"receipt": "Receipt", "adjustment": "Adjustment Note"}.get(
         kind, v.get("invoice_type") or "Invoice")
 
-    # pdf_body: expand {var} placeholders, then escape — unless the caller
-    # handed a RawLatex body (the preview/test escape hatch).
+    # pdf_body: expand {var} placeholders with per-value escaping so a RawLatex
+    # value (e.g. a preview's bold placeholder) survives raw while the literal
+    # text around it stays escaped. See `_expand_body`.
     raw_body = tpl.pdf_body or ""
-    body_expanded = _render(raw_body, v)
-    body_tex = (body_expanded if isinstance(raw_body, RawLatex)
-                else latex_escape(body_expanded))
+    body_tex = _expand_body(raw_body, v)
 
     def esc(key: str) -> str:
         val = v.get(key, "")
@@ -202,11 +241,14 @@ def _trim_log(data) -> str:
 
 def render_document(kind: str, vars_: dict[str, str],
                     assets: dict[str, Path] | None = None, *,
-                    source_date_epoch: int = SOURCE_DATE_EPOCH) -> bytes:
+                    source_date_epoch: int = SOURCE_DATE_EPOCH,
+                    template=None) -> bytes:
     """Compile a document to PDF bytes.
 
-    Loads the DocumentTemplate for `kind`, assembles the .tex from the shared
-    skeleton (escaped structured content), copies any `assets` (`logo` /
+    Loads the DocumentTemplate for `kind` (or uses `template`, an unsaved draft
+    with the DocumentTemplate fields, so the preview caller can render an
+    uncommitted edit without a second code path), assembles the .tex from the
+    shared skeleton (escaped structured content), copies any `assets` (`logo` /
     `signature` — referenced by the skeleton only when present), runs tectonic
     with SOURCE_DATE_EPOCH set for byte-reproducibility, and returns the PDF
     bytes. The per-job directory is always removed in a finally.
@@ -214,7 +256,7 @@ def render_document(kind: str, vars_: dict[str, str],
     from ..models import get_document_template
 
     assets = assets or {}
-    tpl = get_document_template(kind)
+    tpl = template if template is not None else get_document_template(kind)
     tectonic = _resolve_tectonic()
 
     root = _doc_render_root()
@@ -262,3 +304,159 @@ def render_document(kind: str, vars_: dict[str, str],
         return pdf.read_bytes()
     finally:
         shutil.rmtree(job, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# Preview — a CALLER of render_document, never a second renderer (plan §5).
+# ---------------------------------------------------------------------------
+
+# The full variable vocabulary the skeleton consumes (every `esc()` text value
+# plus invoice_type, which feeds the invoice title). Every preview variable
+# lives here so an unfilled preview shows the field NAMES — including the
+# numeric fields, which must never render as a computed $0.00.
+_PREVIEW_VARS = (
+    "site_name", "business_number", "user_name", "user_email", "recipient_abn",
+    "conference_title", "conference_dates", "tier_name", "transaction_id",
+    "registration_id", "payment_date", "due_date", "currency_symbol",
+    "currency_code", "amount", "gst_amount", "amount_ex_gst",
+    "payment_instructions", "payment_link", "invoice_type",
+)
+
+
+def placeholder_vars(kind: str) -> dict[str, RawLatex]:
+    """Full variable dict for a preview: every value a bold `\\textbf{name}`
+    placeholder (the name itself LaTeX-escaped). Every variable is set to a
+    truthy RawLatex, so the optional skeleton sections all appear showing their
+    field names — and the numeric fields (amount / gst_amount / amount_ex_gst)
+    read as their bold names, never a computed $0.00. Callers overlay real
+    values on top."""
+    return {name: RawLatex(r"\textbf{" + latex_escape(name) + "}")
+            for name in _PREVIEW_VARS}
+
+
+def preview_document(kind: str, overrides: dict | None = None,
+                     template=None) -> bytes:
+    """Render a preview PDF for `kind`. A CALLER of `render_document`: it fills
+    every variable with a bold-placeholder name, overlays any real `overrides`
+    the editor supplied, and compiles via the one renderer. Writes NOTHING — no
+    PaymentEvent, no DB row, ever. `template` optionally supplies an unsaved
+    draft (a DocumentTemplate-shaped object) so an uncommitted edit can be
+    previewed without a second code path."""
+    vars_ = placeholder_vars(kind)
+    if overrides:
+        vars_.update(overrides)
+    return render_document(kind, vars_, template=template)
+
+
+# --- Warm pregen cache: one long-lived PDF per kind, keyed by content_hash. --
+
+# Per-kind collision lock (plan §5). Guards warm generation so two warms never
+# race and a preview never spawns a second compile for a kind already warming.
+_pregen_locks: dict[str, threading.Lock] = {}
+_pregen_locks_guard = threading.Lock()
+
+
+def _pregen_lock(kind: str) -> threading.Lock:
+    with _pregen_locks_guard:
+        lock = _pregen_locks.get(kind)
+        if lock is None:
+            lock = _pregen_locks[kind] = threading.Lock()
+        return lock
+
+
+def _pregen_dir() -> Path:
+    return _doc_render_root() / "pregen"
+
+
+def _pregen_path(kind: str, content_hash: str) -> Path:
+    return _pregen_dir() / f"{kind}-{content_hash}.pdf"
+
+
+def warm_pregen(kind: str) -> Path:
+    """Compile the all-placeholders preview for the SAVED template and cache it
+    atomically at `var/doc-render/pregen/<kind>-<content_hash>.pdf`, removing any
+    stale pregen files for that kind. Held under the per-kind lock; if a warm for
+    this kind is already running, raises PregenBusy rather than compiling twice.
+    """
+    from ..models import get_document_template
+
+    lock = _pregen_lock(kind)
+    if not lock.acquire(blocking=False):
+        raise PregenBusy(kind)
+    try:
+        content_hash = get_document_template(kind).content_hash
+        pdf = preview_document(kind)          # saved template, all placeholders
+        d = _pregen_dir()
+        d.mkdir(parents=True, exist_ok=True)
+        dest = _pregen_path(kind, content_hash)
+        # tmp + rename so a reader never sees a half-written file.
+        fd, tmp = tempfile.mkstemp(prefix=f".{kind}-", suffix=".tmp", dir=str(d))
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(pdf)
+            os.replace(tmp, dest)
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+        # Drop stale hashes for this kind now the current one is in place.
+        for old in d.glob(f"{kind}-*.pdf"):
+            if old != dest:
+                old.unlink(missing_ok=True)
+        return dest
+    finally:
+        lock.release()
+
+
+def get_pregen(kind: str) -> bytes:
+    """Return the cached warm-pregen bytes for the SAVED template, generating
+    them if absent. Raises PregenBusy when the pregen is missing AND a warm
+    compile for this kind is already running — so the caller tells the user to
+    retry rather than starting a competing compile."""
+    from ..models import get_document_template
+
+    dest = _pregen_path(kind, get_document_template(kind).content_hash)
+    if dest.exists():
+        return dest.read_bytes()
+    warm_pregen(kind)                         # raises PregenBusy if lock is held
+    return dest.read_bytes()
+
+
+def preview_pdf(kind: str, overrides: dict | None = None,
+                template=None) -> bytes:
+    """Apply the serve-vs-recompile rule (plan §5) and return preview PDF bytes.
+
+    Serve the warm pregen IFF no override variable is set AND the (possibly
+    draft) template's content matches the saved template (content_hash). Any
+    override, or an edited/unsaved body whose hash differs, recompiles fresh via
+    `preview_document` (bytes returned, nothing persists — the job dir is deleted
+    in render_document's finally). Raises PregenBusy if the pregen must be served
+    but a warm compile for the kind is mid-flight."""
+    from ..models import get_document_template
+
+    saved_hash = get_document_template(kind).content_hash
+    draft_hash = template.content_hash if template is not None else saved_hash
+    if not overrides and draft_hash == saved_hash:
+        return get_pregen(kind)
+    return preview_document(kind, overrides, template=template)
+
+
+def warm_pregen_async(app, kind: str) -> None:
+    """Warm `kind`'s pregen on a daemon thread so the request/boot stays snappy.
+    Resilient: PregenBusy (a warm already running) and any compile error are
+    swallowed with a log — a failed warm just means the next preview recompiles.
+    Skipped under TESTING so the suite never fires background tectonic compiles.
+    Step 5 will move this onto the shared compile queue."""
+    if app.config.get("TESTING"):
+        return
+
+    def _run():
+        with app.app_context():
+            try:
+                warm_pregen(kind)
+            except PregenBusy:
+                pass
+            except Exception:
+                app.logger.warning("Pregen warm failed for %s", kind,
+                                   exc_info=True)
+
+    threading.Thread(target=_run, name=f"pregen-{kind}", daemon=True).start()

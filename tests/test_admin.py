@@ -193,6 +193,33 @@ class TestUserManagement:
             assert u.deleted_at is None
 
 
+class TestFinancialInvoiceTemplate:
+    def test_save_same_domain_from_email_no_warning(self, seeded, admin_client):
+        """MAIL_FROM defaults to the your-domain.example.org sandbox address."""
+        resp = admin_client.post("/admin/financial/invoice", data={
+            "subject": "Invoice", "body_text": "Body",
+            "from_email": "billing@your-domain.example.org",
+        }, follow_redirects=True)
+        assert resp.status_code == 200
+        assert b"Invoice template saved" in resp.data
+        assert b"SPF/DKIM" not in resp.data
+
+    def test_save_different_domain_from_email_warns(self, seeded, admin_client, app):
+        """from_email on a domain the SMTP sender doesn't own risks SPF/DKIM
+        failure — warn but still save."""
+        resp = admin_client.post("/admin/financial/invoice", data={
+            "subject": "Invoice", "body_text": "Body",
+            "from_email": "billing@some-other-domain.example.org",
+        }, follow_redirects=True)
+        assert resp.status_code == 200
+        assert b"Invoice template saved" in resp.data
+        assert b"SPF/DKIM" in resp.data
+
+        with app.app_context():
+            from app.models import get_invoice_template
+            assert get_invoice_template().from_email == "billing@some-other-domain.example.org"
+
+
 class TestUpdatePage:
     def test_update_page_requires_system_backup(self, admin_client):
         resp = admin_client.get("/admin/update")

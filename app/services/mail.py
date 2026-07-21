@@ -40,21 +40,23 @@ def connect_mailer() -> None:
 
 def send_mail(to: str, subject: str, body: str, sender_name: str | None = None,
               reply_to: str | None = None, sender_email: str | None = None,
-              html: str | None = None, cc: list[str] | None = None) -> bool:
+              attachments: list[tuple[str, bytes, str]] | None = None,
+              cc: list[str] | None = None) -> bool:
     """Returns True on success, False on failure. Never raises.
 
     If *sender_name* is given, it replaces the display-name portion of
     MAIL_FROM (e.g. "Contact Form" <noreply@example.org>). If
-    *sender_email* is given, it replaces the address portion. If *html*
-    is given, it is attached as an HTML alternative to the plain body.
-    *cc* addresses receive a copy and appear in the Cc header.
+    *sender_email* is given, it replaces the address portion. Emails are
+    always plaintext; *attachments* is a list of (filename, content,
+    mimetype) tuples attached to the message. *cc* addresses receive a
+    copy and appear in the Cc header.
     """
     backend = os.environ.get("MAIL_BACKEND", "console").strip().lower()
     try:
         if backend == "smtp":
-            _send_smtp(to, subject, body, sender_name, reply_to, sender_email, html, cc)
+            _send_smtp(to, subject, body, sender_name, reply_to, sender_email, attachments, cc)
         else:
-            _send_console(to, subject, body, sender_name, reply_to, sender_email, html, cc)
+            _send_console(to, subject, body, sender_name, reply_to, sender_email, attachments, cc)
         return True
     except Exception:
         log.exception("send_mail(%r) failed", to)
@@ -65,15 +67,15 @@ def _send_console(to: str, subject: str, body: str,
                   sender_name: str | None = None,
                   reply_to: str | None = None,
                   sender_email: str | None = None,
-                  html: str | None = None,
+                  attachments: list[tuple[str, bytes, str]] | None = None,
                   cc: list[str] | None = None) -> None:
     bar = "=" * 72
     from_bits = " ".join(filter(None, [sender_name, sender_email]))
     from_label = f" (from: {from_bits})" if from_bits else ""
     reply_label = f" (reply-to: {reply_to})" if reply_to else ""
     cc_label = f" (cc: {', '.join(cc)})" if cc else ""
-    html_label = " (+html alternative)" if html else ""
-    print(f"\n{bar}\n[mail:console] to={to}{cc_label}{from_label}{reply_label}{html_label}\n[mail:console] subject={subject}\n"
+    attach_label = f" (+{len(attachments)} attachment(s))" if attachments else ""
+    print(f"\n{bar}\n[mail:console] to={to}{cc_label}{from_label}{reply_label}{attach_label}\n[mail:console] subject={subject}\n"
           f"{'-' * 72}\n{body}\n{bar}\n", flush=True)
 
 
@@ -81,7 +83,7 @@ def _send_smtp(to: str, subject: str, body: str,
                sender_name: str | None = None,
                reply_to: str | None = None,
                sender_email: str | None = None,
-               html: str | None = None,
+               attachments: list[tuple[str, bytes, str]] | None = None,
                cc: list[str] | None = None) -> None:
     from flask import current_app
     raw_from = current_app.config.get("MAIL_FROM", "").strip() or "noreply@example.org"
@@ -107,8 +109,9 @@ def _send_smtp(to: str, subject: str, body: str,
     if reply_to:
         msg["Reply-To"] = reply_to
     msg.set_content(body)
-    if html:
-        msg.add_alternative(html, subtype="html")
+    for filename, content, mimetype in attachments or []:
+        maintype, subtype = mimetype.split("/", 1)
+        msg.add_attachment(content, maintype=maintype, subtype=subtype, filename=filename)
 
     conn = _get_smtp_connection()
     try:

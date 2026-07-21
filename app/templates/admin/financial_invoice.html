@@ -34,11 +34,6 @@
   </div>
 
   <div class="form-group" style="margin-bottom:16px;">
-    <label for="body_html"><strong>Email Body (HTML, optional)</strong></label>
-    <textarea id="body_html" name="body_html" class="input" rows="10" style="font-family:monospace;">{{ invoice.body_html or '' }}</textarea>
-  </div>
-
-  <div class="form-group" style="margin-bottom:16px;">
     <label for="footer_text"><strong>Footer Text</strong></label>
     <input type="text" id="footer_text" name="footer_text" class="input" value="{{ invoice.footer_text or '' }}">
     <p class="muted">Appended to the email body. Available: {site_name}</p>

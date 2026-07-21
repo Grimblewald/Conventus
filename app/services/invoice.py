@@ -161,13 +161,6 @@ def _send_rendered(vars_: dict, to: str, subject_prefix: str = "",
     if footer:
         body += f"\n\n{footer}"
 
-    html = None
-    if tpl.body_html and not body_override:
-        from markupsafe import escape
-        html = _render(tpl.body_html, vars_)
-        if footer:
-            html += f"\n<p>{escape(footer)}</p>"
-
     sender_name = _render(tpl.from_name, vars_) if tpl.from_name else None
 
     return send_mail(
@@ -176,7 +169,6 @@ def _send_rendered(vars_: dict, to: str, subject_prefix: str = "",
         body=body,
         sender_name=sender_name or f"{site.site_name}",
         sender_email=(tpl.from_email or "").strip() or None,
-        html=html,
         cc=cc,
     )
 

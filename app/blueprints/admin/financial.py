@@ -189,7 +189,6 @@ def financial_invoice():
     if request.method == "POST":
         tpl.subject = (request.form.get("subject") or "").strip()
         tpl.body_text = (request.form.get("body_text") or "").strip()
-        tpl.body_html = (request.form.get("body_html") or "").strip() or None
         tpl.from_name = (request.form.get("from_name") or "").strip()
         tpl.from_email = (request.form.get("from_email") or "").strip()
         tpl.footer_text = (request.form.get("footer_text") or "").strip()
@@ -200,6 +199,19 @@ def financial_invoice():
         audit.record("financial.invoice_template_updated",
                      target_kind="invoice_template", target_id=str(tpl.id),
                      summary="Invoice template updated")
+
+        # from_email on a different domain to the SMTP sender fails SPF/DKIM
+        # alignment on most providers — warn, don't block the save.
+        if tpl.from_email:
+            from email.utils import parseaddr
+            _, sender_addr = parseaddr(current_app.config.get("MAIL_FROM", ""))
+            sender_domain = sender_addr.split("@")[-1].lower() if "@" in sender_addr else ""
+            from_domain = tpl.from_email.split("@")[-1].lower() if "@" in tpl.from_email else ""
+            if sender_domain and from_domain and from_domain != sender_domain:
+                flash(f"From email domain ({from_domain}) differs from the configured "
+                     f"mail sender domain ({sender_domain}) — this invoice mail may "
+                     f"fail SPF/DKIM checks and land in spam.", "warning")
+
         flash("Invoice template saved.", "success")
         return redirect(url_for("admin.financial"))
 

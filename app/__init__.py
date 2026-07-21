@@ -14,7 +14,9 @@ from __future__ import annotations
 import base64
 import hashlib
 import logging
+import os
 import re
+import sys
 from datetime import date, datetime
 from pathlib import Path
 
@@ -64,6 +66,28 @@ def _inline_script_hashes() -> list[str]:
                 h = hashlib.sha256(body.encode()).digest()
                 hashes.append(f"'sha256-{base64.b64encode(h).decode()}'")
     return hashes
+
+
+def _running_migration_cli() -> bool:
+    """True when this process is a `flask db …` (Flask-Migrate) invocation.
+
+    Constraint: migrations must observe the *pre-migration* schema so that
+    `op.create_table` runs against the real starting point. If we let
+    `db.create_all()` fire while the migration CLI is booting the app, it
+    would pre-create the new tables from the current models, and the pending
+    `flask db upgrade` would then collide ("table already exists"). So schema
+    bootstrap (and role seeding) is skipped whenever the migration CLI drives.
+
+    Detection is by argv: program name is `flask` (or `.../flask`) and `db`
+    appears among the arguments (e.g. `flask db upgrade`, `flask db current`).
+    """
+    argv = sys.argv or []
+    if not argv:
+        return False
+    prog = os.path.basename(argv[0])
+    if prog != "flask" and not argv[0].endswith("/flask"):
+        return False
+    return "db" in argv[1:]
 
 
 def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
@@ -169,24 +193,34 @@ def _init_extensions(app: Flask) -> None:
     # delegates to db.create_all(), so either path produces the same
     # schema.
     #
+    # EXCEPTION — the `flask db` CLI: when this app is booted *by* the
+    # migration CLI (`flask db current`, `flask db upgrade`, …) we must NOT
+    # bootstrap the schema. Migrations have to see the true pre-migration
+    # schema; if create_all pre-created the pending new tables from the
+    # current models, `flask db upgrade` would then collide on
+    # `op.create_table` ("table already exists"). Role seeding likewise has
+    # no business running inside a migration invocation. So both are skipped
+    # when the migration CLI is driving. Normal server boots are unchanged.
+    #
     # Narrow exception handling: we *only* swallow the legitimate "you
     # haven't migrated yet" case (no tables exist + roles table missing).
     # Everything else — bad URI, permission denied, ambiguous mapper, etc.
     # — must surface so the operator sees the real error instead of a
     # silent empty schema.
     from sqlalchemy.exc import OperationalError
-    with app.app_context():
-        db.create_all()
-        try:
-            from .models.user import ensure_roles_exist
-            ensure_roles_exist()
-        except OperationalError as e:
-            # Almost always "no such table: roles" on a fresh DB where
-            # create_all itself couldn't run (e.g. migration head present
-            # but tables not yet created). Log loudly, don't crash boot.
-            app.logger.warning(
-                "ensure_roles_exist() skipped — roles table not present: %s", e,
-            )
+    if not _running_migration_cli():
+        with app.app_context():
+            db.create_all()
+            try:
+                from .models.user import ensure_roles_exist
+                ensure_roles_exist()
+            except OperationalError as e:
+                # Almost always "no such table: roles" on a fresh DB where
+                # create_all itself couldn't run (e.g. migration head present
+                # but tables not yet created). Log loudly, don't crash boot.
+                app.logger.warning(
+                    "ensure_roles_exist() skipped — roles table not present: %s", e,
+                )
 
     # User loader
     from .models.user import User  # local import — model needs db ready

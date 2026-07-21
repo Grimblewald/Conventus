@@ -17,6 +17,11 @@ depends_on = None
 
 
 def upgrade():
+    # Idempotency guard: db.create_all() on boot may have already created this
+    # table (and its indexes) from the current models, which match this schema
+    # exactly — so skip the whole block when it's already present.
+    if 'payment_events' in sa.inspect(op.get_bind()).get_table_names():
+        return
     op.create_table('payment_events',
         sa.Column('id', sa.Integer(), nullable=False),
         sa.Column('created_at', sa.DateTime(), nullable=False),

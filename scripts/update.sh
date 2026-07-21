@@ -85,6 +85,10 @@ chmod +x scripts/*.sh 2>/dev/null || true
 
 # 3. Migrate database
 info "Applying database migrations…"
+# NB: the app factory suppresses db.create_all() when booted by the `flask db`
+# CLI (see app/__init__.py::_running_migration_cli), so the commands below see
+# the true pre-migration schema — pending `op.create_table`s don't collide with
+# tables that create_all would otherwise have pre-created from the new models.
 # If the DB was restored from a raw backup, the alembic_version table
 # may be missing.  Stamp the baseline so only incremental migrations
 # run (avoids the initial db.create_all() creating columns that later

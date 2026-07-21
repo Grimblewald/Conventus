@@ -1,0 +1,138 @@
+% Conventus document skeleton — ONE trusted, in-repo LaTeX skeleton shared by
+% all three document kinds (invoice / receipt / adjustment note). Option A:
+% admins never author raw LaTeX; the renderer substitutes escaped structured
+% content into the @@tokens@@ below. Never place admin-authored content here.
+%
+% SUBSTITUTION CONTRACT — the renderer (app/services/documents.py::assemble_tex)
+% replaces every token of the form @@name@@ before compiling. The @@...@@
+% delimiter cannot occur in normal LaTeX, so ordinary braces here stay
+% unambiguous. (The token NAMES are listed bare below — never as literal
+% @@name@@ tokens — so a multi-line substituted value can't leak out of this
+% comment block.)
+%
+%   Boolean flags — raw \...true / \...false control sequences:
+%     flag_gst, flag_logo, flag_signature, flag_recipient_abn, flag_due_date,
+%     flag_business_number, flag_payment_instructions, flag_payment_link,
+%     flag_pdf_body
+%   Asset filenames — raw basenames of files copied into the job dir:
+%     logo_file, signature_file
+%   Text values — LaTeX-escaped (unless RawLatex):
+%     doc_title, site_name, business_number, user_name, user_email,
+%     recipient_abn, conference_title, conference_dates, tier_name,
+%     transaction_id, registration_id, payment_date, due_date,
+%     currency_symbol, currency_code, amount, gst_amount, amount_ex_gst,
+%     payment_instructions, payment_link, pdf_body
+%
+% Packages used are limited to those verified warm in the tectonic cache:
+% geometry, fontenc, helvet, graphicx, tabularx, xcolor, array.
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[margin=22mm]{geometry}
+\usepackage{helvet}
+\renewcommand{\familydefault}{\sfdefault}
+\usepackage{graphicx}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{xcolor}
+
+\definecolor{rulegrey}{gray}{0.72}
+\definecolor{ink}{gray}{0.10}
+\definecolor{muted}{gray}{0.42}
+
+\newif\ifgst        @@flag_gst@@
+\newif\ifhaslogo    @@flag_logo@@
+\newif\ifhassig     @@flag_signature@@
+\newif\ifrabn       @@flag_recipient_abn@@
+\newif\ifduedate    @@flag_due_date@@
+\newif\ifbnum       @@flag_business_number@@
+\newif\ifpayinstr   @@flag_payment_instructions@@
+\newif\ifpaylink    @@flag_payment_link@@
+\newif\ifpdfbody    @@flag_pdf_body@@
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt}
+\pagestyle{empty}
+\color{ink}
+
+% A thin near-black/grey horizontal rule — the only decoration used.
+\newcommand{\docrule}{\textcolor{rulegrey}{\rule{\linewidth}{0.4pt}}}
+\newcommand{\fieldlabel}[1]{{\color{muted}\small\MakeUppercase{#1}}}
+
+\begin{document}
+
+% --- Header: title (left) and optional logo (right) --------------------
+\noindent
+\begin{minipage}[t]{0.62\linewidth}
+  {\LARGE\bfseries @@doc_title@@}\\[3pt]
+  {\color{muted}@@site_name@@}\ifbnum\\{\color{muted}\small ABN @@business_number@@}\fi
+\end{minipage}\hfill
+\ifhaslogo
+\begin{minipage}[t]{0.34\linewidth}
+  \raggedleft\includegraphics[height=22mm,keepaspectratio]{@@logo_file@@}
+\end{minipage}
+\fi
+
+\vspace{4pt}
+\docrule
+
+% --- Parties (bill-to) and reference / dates ---------------------------
+\noindent
+\begin{minipage}[t]{0.56\linewidth}
+  \fieldlabel{Bill to}\\[3pt]
+  @@user_name@@\\
+  @@user_email@@\ifrabn\\ABN @@recipient_abn@@\fi
+\end{minipage}\hfill
+\begin{minipage}[t]{0.40\linewidth}
+  \raggedleft
+  \fieldlabel{Reference}\ @@transaction_id@@\\
+  \fieldlabel{Issued}\ @@payment_date@@\ifduedate\\\fieldlabel{Due}\ @@due_date@@\fi
+\end{minipage}
+
+\vspace{6pt}
+
+% --- Line-item table ----------------------------------------------------
+\noindent\renewcommand{\arraystretch}{1.4}
+\begin{tabularx}{\linewidth}{@{}X l r@{}}
+  \multicolumn{1}{@{}l}{\fieldlabel{Description}} & \fieldlabel{Item} & \fieldlabel{Amount}\\
+  \multicolumn{3}{@{}l@{}}{\docrule}\\[-2pt]
+  @@conference_title@@ & @@tier_name@@ & @@currency_symbol@@@@amount@@~@@currency_code@@\\
+  \ifgst
+  \multicolumn{2}{@{}l}{{\color{muted}Subtotal (excl.\ GST)}} & {\color{muted}@@currency_symbol@@@@amount_ex_gst@@}\\
+  \multicolumn{2}{@{}l}{{\color{muted}GST (10\%)}} & {\color{muted}@@currency_symbol@@@@gst_amount@@}\\
+  \fi
+  \multicolumn{3}{@{}l@{}}{\docrule}\\[-2pt]
+  \multicolumn{2}{@{}l}{\textbf{Total}} & \textbf{@@currency_symbol@@@@amount@@~@@currency_code@@}\\
+\end{tabularx}
+
+\vspace{4pt}
+
+% --- Online payment link (optional) ------------------------------------
+\ifpaylink
+\fieldlabel{Pay online}\\
+\texttt{@@payment_link@@}
+\fi
+
+% --- Payment instructions (optional) -----------------------------------
+\ifpayinstr
+\fieldlabel{Payment details}\\
+@@payment_instructions@@
+\fi
+
+% --- Free-text body from the template's pdf_body (optional) ------------
+\ifpdfbody
+\vspace{2pt}
+@@pdf_body@@
+\fi
+
+% --- Signature image (optional) ----------------------------------------
+\ifhassig
+\vspace{8pt}
+\noindent\includegraphics[height=18mm,keepaspectratio]{@@signature_file@@}
+\fi
+
+% --- Footer -------------------------------------------------------------
+\vfill
+\docrule\\[2pt]
+\noindent{\color{muted}\small @@site_name@@\ifbnum\ \textperiodcentered\ ABN @@business_number@@\fi\ \textperiodcentered\ Reference @@transaction_id@@}
+
+\end{document}

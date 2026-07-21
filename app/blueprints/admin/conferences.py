@@ -1529,19 +1529,9 @@ def _compile_pdf(src: Path, c: Conference, cache_file: Path):
 # LaTeX template helpers
 # ---------------------------------------------------------------------------
 
-def _latex_escape(text: str) -> str:
-    """Escape special characters for LaTeX text mode."""
-    text = text.replace("\\", "\\textbackslash{}")
-    text = text.replace("&", "\\&")
-    text = text.replace("%", "\\%")
-    text = text.replace("$", "\\$")
-    text = text.replace("#", "\\#")
-    text = text.replace("_", "\\_")
-    text = text.replace("{", "\\{")
-    text = text.replace("}", "\\}")
-    text = text.replace("~", "\\textasciitilde{}")
-    text = text.replace("^", "\\^{}")
-    return text
+# The LaTeX text-mode escape lives with the document renderer now (single home
+# for the escaping table); the booklet export reuses it via this import.
+from ...services.documents import latex_escape as _latex_escape
 
 
 def _booklet_preamble(conference, inputs: list[str],

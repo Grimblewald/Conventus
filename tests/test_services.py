@@ -120,9 +120,9 @@ class TestDocumentTemplate:
     def test_content_hash_stable_and_sensitive(self, app):
         """Hash tracks the render-affecting fields and is otherwise stable."""
         with app.app_context():
-            from app.models import DocumentTemplate
-            t = DocumentTemplate(kind="invoice", pdf_body="body",
-                                 business_number="12 345", gst_registered=False)
+            from app.extensions import db
+            from app.models import DocumentTemplate, get_financial_identity
+            t = DocumentTemplate(kind="invoice", pdf_body="body")
             h0 = t.content_hash
             assert t.content_hash == h0
 
@@ -131,11 +131,16 @@ class TestDocumentTemplate:
             t.pdf_body = "body"
             assert t.content_hash == h0
 
-            t.business_number = "99 999"
+            # The shared identity feeds every kind's render, so editing it
+            # re-keys the cache too.
+            ident = get_financial_identity()
+            original_abn = ident.abn
+            ident.abn = "99 999"
+            db.session.commit()
             assert t.content_hash != h0
-            t.business_number = "12 345"
-            t.gst_registered = True
-            assert t.content_hash != h0
+            ident.abn = original_abn
+            db.session.commit()
+            assert t.content_hash == h0
 
     def test_content_hash_ignores_email_only_fields(self, app):
         with app.app_context():

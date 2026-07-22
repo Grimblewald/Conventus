@@ -32,6 +32,7 @@ def financial():
 
     invoice_tpl = get_document_template("invoice")
 
+    from ...models import get_financial_identity
     from ...services.documents import tectonic_health
     doc_health = tectonic_health()
 
@@ -39,6 +40,7 @@ def financial():
         "admin/financial.html",
         config=anzw_cfg,
         invoice=invoice_tpl,
+        ident=get_financial_identity(),
         doc_health=doc_health,
     )
 
@@ -199,9 +201,6 @@ def financial_invoice():
         tpl.from_email = (request.form.get("from_email") or "").strip()
         tpl.footer_text = (request.form.get("footer_text") or "").strip()
         tpl.pdf_body = (request.form.get("pdf_body") or "").strip()
-        tpl.business_number = (request.form.get("business_number") or "").strip()
-        tpl.payment_instructions = (request.form.get("payment_instructions") or "").strip()
-        tpl.gst_registered = request.form.get("gst_registered") == "1"
         db.session.commit()
         audit.record("financial.invoice_template_updated",
                      target_kind="document_template", target_id=str(tpl.id),
@@ -229,6 +228,97 @@ def financial_invoice():
         return redirect(url_for("admin.financial"))
 
     return render_template("admin/financial_invoice.html", invoice=tpl)
+
+
+_ASSET_SLOTS = {"logo": "Letterhead logo", "signature": "Signature"}
+
+
+@admin_bp.route("/financial/identity", methods=["GET", "POST"])
+@requires_permission("financial.manage")
+def financial_identity():
+    """Who issues financial documents: legal entity, ABN, GST registration,
+    address, payment details and signatory. One row, shared by every document
+    kind — invoices, receipts and adjustment notes all render from it."""
+    from ...models import get_financial_identity
+    from ...services.documents import financial_assets_dir, warm_pregen_async
+    from ...services.uploads import UploadError, save_fixed_png
+
+    ident = get_financial_identity()
+
+    if request.method == "POST":
+        ident.legal_name = (request.form.get("legal_name") or "").strip()
+        ident.abn = (request.form.get("abn") or "").strip()
+        ident.gst_registered = request.form.get("gst_registered") == "1"
+        ident.address = (request.form.get("address") or "").strip()
+        ident.contact_email = (request.form.get("contact_email") or "").strip()
+        ident.payment_instructions = (request.form.get("payment_instructions") or "").strip()
+        ident.signatory_name = (request.form.get("signatory_name") or "").strip()
+        ident.signatory_role = (request.form.get("signatory_role") or "").strip()
+
+        for slot, label in _ASSET_SLOTS.items():
+            fs = request.files.get(slot)
+            if not (fs and fs.filename):
+                continue
+            try:
+                name = save_fixed_png(
+                    fs, dest_dir=financial_assets_dir(), name=slot,
+                    max_bytes=current_app.config["MAX_FINANCIAL_ASSET_BYTES"])
+            except UploadError as e:
+                flash(f"{label}: {e}", "error")
+                return render_template("admin/financial_identity.html", ident=ident)
+            setattr(ident, f"{slot}_filename", name)
+
+        db.session.commit()
+        audit.record("financial.identity_updated",
+                     target_kind="financial_identity", target_id=str(ident.id),
+                     summary=f"Financial identity updated by {current_user.email}")
+
+        # Identity feeds every kind's render, so all three pregens are stale.
+        for kind in ("invoice", "receipt", "adjustment"):
+            warm_pregen_async(current_app._get_current_object(), kind)
+
+        flash("Financial identity saved.", "success")
+        return redirect(url_for("admin.financial_identity"))
+
+    return render_template("admin/financial_identity.html", ident=ident)
+
+
+@admin_bp.route("/financial/identity/asset/<slot>")
+@requires_permission("financial.manage")
+def financial_identity_asset(slot):
+    """Serve a financial asset to authorised admins only. These files live
+    outside the public uploads tree precisely so they are never reachable
+    without this permission check — a signature image is forgeable."""
+    from ...models import get_financial_identity
+    from ...services.documents import financial_assets_dir
+
+    if slot not in _ASSET_SLOTS:
+        return "", 404
+    name = getattr(get_financial_identity(), f"{slot}_filename", "")
+    path = financial_assets_dir() / name if name else None
+    if not (path and path.is_file()):
+        return "", 404
+    return send_file(path, mimetype="image/png")
+
+
+@admin_bp.route("/financial/identity/asset/<slot>/delete", methods=["POST"])
+@requires_permission("financial.manage")
+def financial_identity_asset_delete(slot):
+    from ...models import get_financial_identity
+    from ...services.documents import financial_assets_dir, warm_pregen_async
+
+    if slot not in _ASSET_SLOTS:
+        return redirect(url_for("admin.financial_identity"))
+    ident = get_financial_identity()
+    name = getattr(ident, f"{slot}_filename", "")
+    if name:
+        (financial_assets_dir() / name).unlink(missing_ok=True)
+        setattr(ident, f"{slot}_filename", "")
+        db.session.commit()
+        for kind in ("invoice", "receipt", "adjustment"):
+            warm_pregen_async(current_app._get_current_object(), kind)
+    flash(f"{_ASSET_SLOTS[slot]} removed.", "success")
+    return redirect(url_for("admin.financial_identity"))
 
 
 @admin_bp.route("/financial/document/preview", methods=["POST"])
@@ -265,9 +355,6 @@ def financial_document_preview():
     draft = DocumentTemplate(
         kind=kind,
         pdf_body=(request.form.get("pdf_body") or "").strip(),
-        business_number=(request.form.get("business_number") or "").strip(),
-        payment_instructions=(request.form.get("payment_instructions") or "").strip(),
-        gst_registered=request.form.get("gst_registered") == "1",
     )
 
     try:
@@ -369,9 +456,11 @@ def financial_send_invoice():
     from ...services.invoice import default_manual_invoice_body, send_manual_invoice
     from ...services.jinja_filters import format_amount, parse_cents
 
-    tpl = get_document_template("invoice")
+    from ...models import get_financial_identity
+
+    ident = get_financial_identity()
     suggested_ref = f"INV-{datetime.utcnow().strftime('%Y%m%d')}-{secrets.token_hex(2).upper()}"
-    default_body = default_manual_invoice_body(tpl)
+    default_body = default_manual_invoice_body()
 
     if request.method == "POST":
         to = (request.form.get("to") or "").strip()
@@ -412,7 +501,7 @@ def financial_send_invoice():
                 flash(e, "error")
             return render_template("admin/financial_send_invoice.html",
                                    form=request.form, suggested_ref=suggested_ref,
-                                   tpl=tpl, default_body=default_body)
+                                   ident=ident, default_body=default_body)
 
         # §7 manual rule: a compile failure surfaces inline so the admin can fix
         # the template — nothing is recorded or sent (no degraded manual sends).
@@ -431,7 +520,7 @@ def financial_send_invoice():
                   + "\nFix the document template, then try again.", "error")
             return render_template("admin/financial_send_invoice.html",
                                    form=request.form, suggested_ref=suggested_ref,
-                                   tpl=tpl, default_body=default_body)
+                                   ident=ident, default_body=default_body)
         audit.record("financial.invoice_sent",
                      target_kind="invoice", target_id=reference,
                      summary=(f"Invoice {reference} for ${format_amount(amount)} "
@@ -454,11 +543,11 @@ def financial_send_invoice():
         flash("Failed to send the invoice — check the mail settings.", "error")
         return render_template("admin/financial_send_invoice.html",
                                form=request.form, suggested_ref=suggested_ref,
-                               tpl=tpl, default_body=default_body)
+                               ident=ident, default_body=default_body)
 
     return render_template("admin/financial_send_invoice.html",
                            form={}, suggested_ref=suggested_ref,
-                           tpl=tpl, default_body=default_body)
+                           ident=ident, default_body=default_body)
 
 
 @admin_bp.route("/financial/member-payments", methods=["POST"])

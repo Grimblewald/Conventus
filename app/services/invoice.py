@@ -19,7 +19,7 @@ from flask import url_for
 
 from ..models import (
     PaymentEvent, Registration, record_payment_event,
-    get_site_settings, get_document_template,
+    get_site_settings, get_document_template, get_financial_identity,
 )
 from .documents import RenderError, render_document
 from .jinja_filters import format_amount
@@ -28,23 +28,36 @@ from .mail import send_mail
 log = logging.getLogger(__name__)
 
 
-def _business_vars(tpl, amount_cents: int, gst: bool | None = None) -> dict:
-    """Business/tax variables shared by every document.
+def _business_vars(amount_cents: int, gst: bool | None = None) -> dict:
+    """Issuer and tax variables shared by every document, from the single
+    FinancialIdentity row.
 
     GST-inclusive pricing: the GST component of an inclusive total is
-    total ÷ 11 (10% GST). When GST is off, the breakdown collapses to
-    zero-GST so templates render sensibly either way.
+    total ÷ 11 (10% GST). `gst` overrides the identity's registration for one
+    send (the Send Invoice form's per-recipient toggle). `gst_applies` is the
+    control flag the renderer keys on — it travels in the variables so a
+    stored document regenerates with the tax treatment it was issued under,
+    not today's setting.
     """
-    gst_on = tpl.gst_registered if gst is None else gst
+    ident = get_financial_identity()
+    site = get_site_settings()
+    gst_on = ident.gst_registered if gst is None else gst
     gst_cents = round(amount_cents / 11) if gst_on else 0
     return {
-        "business_number": tpl.business_number or "",
-        "payment_instructions": tpl.payment_instructions or "",
+        "business_legal_name": ident.legal_name or site.site_name,
+        "business_number": ident.abn or "",
+        "business_address": ident.address or "",
+        "business_contact_email": ident.contact_email or "",
+        "payment_instructions": ident.payment_instructions or "",
+        "signatory_name": ident.signatory_name or "",
+        "signatory_role": ident.signatory_role or "",
+        "gst_applies": "1" if gst_on else "",
         "invoice_type": "Tax Invoice" if gst_on else "Invoice",
         "gst_amount": format_amount(gst_cents),
         "amount_ex_gst": format_amount(amount_cents - gst_cents),
         "due_date": "",
         "recipient_abn": "",
+        "recipient_address": "",
     }
 
 
@@ -122,7 +135,6 @@ def send_test_invoice(to_email: str) -> bool:
     failure raises RenderError for the route to surface inline (§7 manual rule).
     """
     site = get_site_settings()
-    tpl = get_document_template("invoice")
     vars_ = {
         "user_name": "Test Attendee",
         "user_email": to_email,
@@ -136,7 +148,7 @@ def send_test_invoice(to_email: str) -> bool:
         "payment_date": datetime.utcnow().strftime("%-d %B %Y"),
         "site_name": site.site_name,
         "registration_id": "0",
-        **_business_vars(tpl, 100),
+        **_business_vars(100),
     }
     log.info("Sending test invoice to %s", to_email)
     attachment = _render_attachment("invoice", vars_, "TEST-000000")
@@ -159,7 +171,6 @@ def send_manual_invoice(to: str, *, recipient_name: str, description: str,
     agnostic). A compile failure raises RenderError for the route to surface
     inline (§7 manual rule) — nothing is sent.
     """
-    tpl = get_document_template("invoice")
     site = get_site_settings()
     vars_ = {
         "user_name": recipient_name or to,
@@ -174,7 +185,7 @@ def send_manual_invoice(to: str, *, recipient_name: str, description: str,
         "payment_date": datetime.utcnow().strftime("%-d %B %Y"),
         "site_name": site.site_name,
         "registration_id": "N/A",
-        **_business_vars(tpl, amount_cents, gst=include_gst),
+        **_business_vars(amount_cents, gst=include_gst),
     }
     vars_["due_date"] = due_date
     vars_["recipient_abn"] = recipient_abn
@@ -194,15 +205,16 @@ def send_manual_invoice(to: str, *, recipient_name: str, description: str,
     return ok
 
 
-def default_manual_invoice_body(tpl) -> str:
+def default_manual_invoice_body() -> str:
     """Prefill for the Send Invoice form — worded as a request for payment
-    (unlike the receipt-style automatic template), with the tax lines
-    matching the template's GST setting."""
+    (unlike the receipt-style automatic template), with the tax lines matching
+    the financial identity's GST registration."""
+    ident = get_financial_identity()
     gst_line = ("  Includes GST: {currency_symbol}{gst_amount}\n"
-                if tpl.gst_registered else "")
+                if ident.gst_registered else "")
     return (
         "{invoice_type} {transaction_id}\n"
-        "{site_name}" + ("\nABN: {business_number}" if tpl.business_number else "") + "\n"
+        "{business_legal_name}" + ("\nABN: {business_number}" if ident.abn else "") + "\n"
         "Issued: {payment_date}\n\n"
         "Bill to: {user_name}\n"
         "ABN: {recipient_abn}\n\n"
@@ -214,7 +226,7 @@ def default_manual_invoice_body(tpl) -> str:
         "Pay online:\n{payment_link}\n\n"
         "Payment details:\n{payment_instructions}\n\n"
         "Please quote reference {transaction_id} with your payment.\n\n"
-        "{site_name}"
+        "{business_legal_name}"
     )
 
 
@@ -224,7 +236,6 @@ def default_manual_invoice_body(tpl) -> str:
 
 def _registration_vars(reg: Registration, kind: str) -> dict:
     """Real document variables for a settled registration."""
-    tpl = get_document_template(kind)
     site = get_site_settings()
     user = reg.user
     conf = reg.conference
@@ -241,7 +252,7 @@ def _registration_vars(reg: Registration, kind: str) -> dict:
         "payment_date": datetime.utcnow().strftime("%-d %B %Y"),
         "site_name": site.site_name,
         "registration_id": str(reg.id),
-        **_business_vars(tpl, reg.amount),
+        **_business_vars(reg.amount),
     }
 
 
@@ -249,7 +260,6 @@ def _manual_receipt_vars(reference: str, recipient: str,
                          amount_cents: int) -> dict:
     """Real document variables for a manual invoice's receipt (paid via the
     durable link). The invoice's own reference fills {transaction_id}."""
-    tpl = get_document_template("receipt")
     site = get_site_settings()
     return {
         "user_name": recipient,
@@ -264,7 +274,7 @@ def _manual_receipt_vars(reference: str, recipient: str,
         "payment_date": datetime.utcnow().strftime("%-d %B %Y"),
         "site_name": site.site_name,
         "registration_id": "N/A",
-        **_business_vars(tpl, amount_cents),
+        **_business_vars(amount_cents),
     }
 
 
@@ -326,12 +336,10 @@ def _record_issued(kind: str, vars_: dict, *, reference: str, recipient: str,
     from ..models import db, IssuedDocument
     try:
         tpl = get_document_template(kind)
-        template_json = json.dumps({
-            "pdf_body": tpl.pdf_body or "",
-            "gst_registered": bool(tpl.gst_registered),
-            "business_number": tpl.business_number or "",
-            "payment_instructions": tpl.payment_instructions or "",
-        })
+        # Only pdf_body is template-side now: every issuer/tax value already
+        # travels in vars_ (resolved from the financial identity at send
+        # time), so the variable snapshot alone pins the tax treatment.
+        template_json = json.dumps({"pdf_body": tpl.pdf_body or ""})
         db.session.add(IssuedDocument(
             kind=kind,
             reference=reference or "",

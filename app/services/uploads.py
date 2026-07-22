@@ -170,6 +170,58 @@ def save_figure(
     )
 
 
+def save_fixed_png(
+    fs: FileStorage,
+    *,
+    dest_dir: str | Path,
+    name: str,
+    max_bytes: int,
+    max_width: int = 1600,
+) -> str:
+    """Validate an uploaded image and save it as `<name>.png` at a fixed path,
+    replacing any previous file (single-slot asset — no orphan accumulation).
+
+    PNG on purpose: these assets feed the LaTeX document renderer, and
+    graphicx reads png/jpg but not webp. Returns the filename written.
+    """
+    if not (fs and fs.filename):
+        raise UploadError("No file was uploaded.")
+    _checked_ext(fs, IMAGE_EXTS)
+
+    raw = fs.stream.read()
+    if len(raw) > max_bytes:
+        raise UploadError(
+            f"File is too large ({len(raw) // 1024} KB). "
+            f"Maximum is {max_bytes // 1024} KB."
+        )
+
+    from io import BytesIO
+    try:
+        img = Image.open(BytesIO(raw))
+        img.verify()
+        img = Image.open(BytesIO(raw))
+        img = ImageOps.exif_transpose(img)
+    except (UnidentifiedImageError, OSError) as e:
+        raise UploadError("Could not read that image — is it corrupted?") from e
+
+    if img.width * img.height > MAX_IMAGE_PIXELS:
+        raise UploadError("Image is too large (pixel count exceeds policy).")
+
+    if img.width > max_width:
+        ratio = max_width / img.width
+        img = img.resize((max_width, int(img.height * ratio)), Image.LANCZOS)
+
+    dest = Path(dest_dir)
+    dest.mkdir(parents=True, exist_ok=True)
+    filename = f"{name}.png"
+    # Re-encode (never trust input bytes); RGBA keeps logo/signature
+    # transparency intact for the PDF.
+    if img.mode not in ("RGB", "RGBA"):
+        img = img.convert("RGBA")
+    img.save(dest / filename, format="PNG", optimize=True)
+    return filename
+
+
 def remove_upload(upload_folder: str, name: str | None) -> None:
     """Best-effort delete of a relative upload path. Silently ignores errors."""
     if not name:

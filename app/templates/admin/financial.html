@@ -94,6 +94,24 @@
 
 <div class="section-head" style="margin-top:32px;">
   <div>
+    <div class="eyebrow">Issuer</div>
+    <h2>Financial identity</h2>
+  </div>
+</div>
+
+<div class="card" style="padding:24px;">
+  <p>Your legal entity, ABN, GST registration, address, payment instructions
+     and signatory — shared by every invoice, receipt and adjustment note.</p>
+  <a href="{{ url_for('admin.financial_identity') }}" class="btn">Edit financial identity</a>
+  <p class="muted" style="margin-top:8px; font-size:0.9rem;">
+    {{ ident.legal_name or site.site_name }}
+    {%- if ident.abn %} · ABN {{ ident.abn }}{% endif %}
+    · {{ 'Registered for GST' if ident.gst_registered else 'Not registered for GST' }}
+  </p>
+</div>
+
+<div class="section-head" style="margin-top:32px;">
+  <div>
     <div class="eyebrow">Templates</div>
     <h2>Invoice</h2>
   </div>

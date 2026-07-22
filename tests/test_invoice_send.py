@@ -221,10 +221,9 @@ def test_manual_invoice_embeds_pay_link(seed_templates, app, mailbox, monkeypatc
     monkeypatch.setattr("app.services.invoice.render_document", _fake_render)
 
     with app.app_context():
-        from app.models import get_document_template
         from app.services.invoice import (default_manual_invoice_body,
                                            send_manual_invoice)
-        body = default_manual_invoice_body(get_document_template("invoice"))
+        body = default_manual_invoice_body()
         # The default manual-invoice body template carries the {payment_link} var.
         assert "{payment_link}" in body
         send_manual_invoice("sponsor@example.org", recipient_name="Sponsor Co",

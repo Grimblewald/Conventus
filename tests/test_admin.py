@@ -251,3 +251,103 @@ class TestUpdatePage:
     def test_member_denied_update(self, member_client):
         resp = member_client.get("/admin/update")
         assert resp.status_code == 403
+
+
+class TestFinancialIdentity:
+    """One issuer identity feeds every document kind: legal entity, ABN, GST,
+    address, payment details, signatory, and the letterhead images."""
+
+    def test_page_renders_and_saves(self, seeded, admin_client, app):
+        resp = admin_client.get("/admin/financial/identity")
+        assert resp.status_code == 200
+        assert b"Financial Identity" in resp.data
+
+        resp = admin_client.post("/admin/financial/identity", data={
+            "legal_name": "Example Society Ltd",
+            "abn": "17 602 379 475",
+            "gst_registered": "1",
+            "address": "PO Box 1\nAdelaide SA 5000",
+            "contact_email": "treasurer@example.org",
+            "payment_instructions": "BSB 000-000 Acct 12345678",
+            "signatory_name": "Tim Barnes",
+            "signatory_role": "Director/Treasurer",
+        }, follow_redirects=True)
+        assert resp.status_code == 200
+
+        with app.app_context():
+            from app.models import get_financial_identity
+            ident = get_financial_identity()
+            assert ident.legal_name == "Example Society Ltd"
+            assert ident.abn == "17 602 379 475"
+            assert ident.gst_registered is True
+            assert ident.signatory_role == "Director/Treasurer"
+
+    def test_document_variables_come_from_identity(self, seeded, app):
+        with app.app_context():
+            from app.extensions import db
+            from app.models import get_financial_identity
+            from app.services.invoice import _business_vars
+
+            ident = get_financial_identity()
+            ident.legal_name = "Example Society Ltd"
+            ident.abn = "17 602 379 475"
+            ident.gst_registered = True
+            ident.signatory_name = "Tim Barnes"
+            db.session.commit()
+
+            v = _business_vars(11000)
+            assert v["business_legal_name"] == "Example Society Ltd"
+            assert v["business_number"] == "17 602 379 475"
+            assert v["signatory_name"] == "Tim Barnes"
+            assert v["gst_applies"] == "1"
+            assert v["invoice_type"] == "Tax Invoice"
+            # Amounts are cents: $110.00 inclusive → $10.00 GST, $100.00 ex.
+            assert v["gst_amount"] == "10.00"
+            assert v["amount_ex_gst"] == "100.00"
+
+            # A per-send override wins over the identity's registration, and
+            # a non-GST document never shows a computed zero-GST breakdown.
+            v = _business_vars(11000, gst=False)
+            assert v["gst_applies"] == ""
+            assert v["invoice_type"] == "Invoice"
+
+    def test_assets_are_stored_outside_the_public_uploads_tree(
+            self, seeded, admin_client, app):
+        """A signature is forgeable material: it must not live anywhere the
+        public upload routes can reach."""
+        import io
+        from PIL import Image
+
+        buf = io.BytesIO()
+        Image.new("RGB", (40, 20), (10, 10, 10)).save(buf, format="PNG")
+        buf.seek(0)
+
+        resp = admin_client.post("/admin/financial/identity", data={
+            "legal_name": "Example Society Ltd",
+            "signature": (buf, "sig.png"),
+        }, content_type="multipart/form-data", follow_redirects=True)
+        assert resp.status_code == 200
+
+        with app.app_context():
+            from app.models import get_financial_identity
+            from app.services.documents import financial_assets_dir
+            ident = get_financial_identity()
+            assert ident.signature_filename == "signature.png"
+            stored = financial_assets_dir() / "signature.png"
+            assert stored.is_file()
+            assert str(app.config["UPLOAD_FOLDER"]) not in str(stored)
+
+        # Reachable for an admin, through the permission-gated route only.
+        assert admin_client.get(
+            "/admin/financial/identity/asset/signature").status_code == 200
+
+    def test_assets_require_financial_permission(self, seeded, member_client):
+        """A logged-in user without financial.manage is refused — this is the
+        authorisation boundary that actually protects the signature."""
+        resp = member_client.get("/admin/financial/identity/asset/signature")
+        assert resp.status_code in (401, 403)
+        resp = member_client.get("/admin/financial/identity")
+        assert resp.status_code in (401, 403)
+
+    def test_unknown_asset_slot_is_404(self, seeded, admin_client):
+        assert admin_client.get("/admin/financial/identity/asset/passport").status_code == 404

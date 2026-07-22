@@ -44,7 +44,7 @@ def mailbox(monkeypatch):
     return box
 
 
-def _content_compile(tectonic, job_dir, tex_path, epoch):
+def _content_compile(tectonic, job_dir, tex_path, epoch, memory_mb=0):
     """A content-sensitive fake compile: identical .tex → identical bytes,
     different .tex → different bytes. Lets the determinism test prove the PDF is
     rebuilt from the snapshot, not from the (mutated) live template."""
@@ -82,13 +82,15 @@ def test_auto_receipt_records_issued_document(seed_templates, app, mailbox,
                                               content_pdf):
     reg_id, email = _make_paid_reg(app)
     with app.app_context():
-        from app.models import get_document_template, IssuedDocument, Registration
+        from app.models import (get_document_template, get_financial_identity,
+                                IssuedDocument, Registration)
         from app.services.invoice import send_invoice_email
 
         tpl = get_document_template("receipt")
         tpl.pdf_body = "Receipt body {conference_title}"
-        tpl.gst_registered = True
-        tpl.business_number = "11 222 333 444"
+        ident = get_financial_identity()
+        ident.gst_registered = True
+        ident.abn = "11 222 333 444"
         db.session.commit()
 
         reg = db.session.get(Registration, reg_id)
@@ -102,14 +104,13 @@ def test_auto_receipt_records_issued_document(seed_templates, app, mailbox,
         assert v["user_email"] == email
         assert v["conference_title"] == "Physics 2026"
         assert v["transaction_id"] == "TXN-R"
-        # template snapshot carries exactly the render-affecting fields used.
+        # Issuer/tax values ride in the variable snapshot (resolved from the
+        # financial identity at send time), so the template snapshot is just
+        # the body.
+        assert v["business_number"] == "11 222 333 444"
+        assert v["gst_applies"] == "1"
         t = json.loads(row.template_json)
-        assert t == {
-            "pdf_body": "Receipt body {conference_title}",
-            "gst_registered": True,
-            "business_number": "11 222 333 444",
-            "payment_instructions": tpl.payment_instructions or "",
-        }
+        assert t == {"pdf_body": "Receipt body {conference_title}"}
         assert row.content_hash == tpl.content_hash
         assert row.amount == 11000
 

@@ -219,27 +219,73 @@ class DocumentTemplate(db.Model):
     # --- PDF document body (inserted into a curated LaTeX skeleton later) --
     pdf_body = db.Column(db.Text, default="")
 
-    # --- Business & tax ----------------------------------------------------
-    business_number = db.Column(db.String(40), default="")     # ABN
-    payment_instructions = db.Column(db.Text, default="")      # e.g. EFT details
-    gst_registered = db.Column(db.Boolean, default=False, nullable=False)
-
     updated_at = db.Column(db.DateTime, default=datetime.utcnow,
                            onupdate=datetime.utcnow, nullable=False)
 
     @property
     def content_hash(self) -> str:
-        # Hash of the render-affecting fields, for cache keying (plan §5).
-        # Computed on demand — not stored.
+        # Hash of everything that affects the rendered PDF, for cache keying
+        # (plan §5). The shared FinancialIdentity feeds every kind's render,
+        # so its fields are part of the key — editing the identity re-keys
+        # (and re-warms) all kinds. Computed on demand — not stored.
         import hashlib
+        ident = get_financial_identity()
         raw = "|".join([
             self.kind or "",
             self.pdf_body or "",
-            self.business_number or "",
-            self.payment_instructions or "",
-            "1" if self.gst_registered else "0",
+            ident.render_fingerprint,
         ])
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# Financial identity — the single source of truth for who issues financial
+# documents: legal entity, ABN, GST status, address, payment details,
+# signatory. Every document kind draws from this one row; nothing
+# business-identity-shaped lives on the per-kind templates.
+# ---------------------------------------------------------------------------
+
+class FinancialIdentity(db.Model):
+    __tablename__ = "financial_identity"
+
+    id = db.Column(db.Integer, primary_key=True)
+    legal_name = db.Column(db.String(200), default="")   # falls back to site name
+    abn = db.Column(db.String(40), default="")
+    gst_registered = db.Column(db.Boolean, default=False, nullable=False)
+    address = db.Column(db.Text, default="")             # multi-line, incl. C/- line
+    contact_email = db.Column(db.String(200), default="")
+    payment_instructions = db.Column(db.Text, default="")  # EFT block on invoices
+    signatory_name = db.Column(db.String(120), default="")
+    signatory_role = db.Column(db.String(120), default="")
+    # Fixed-name assets under var/financial-assets (never web-served — a
+    # signature image must not be publicly reachable).
+    logo_filename = db.Column(db.String(80), default="")
+    signature_filename = db.Column(db.String(80), default="")
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow,
+                           onupdate=datetime.utcnow, nullable=False)
+
+    @property
+    def render_fingerprint(self) -> str:
+        """The identity fields that change a rendered document, joined for
+        cache keying (see DocumentTemplate.content_hash)."""
+        return "|".join([
+            self.legal_name or "", self.abn or "",
+            "1" if self.gst_registered else "0",
+            self.address or "", self.contact_email or "",
+            self.payment_instructions or "",
+            self.signatory_name or "", self.signatory_role or "",
+            self.logo_filename or "", self.signature_filename or "",
+        ])
+
+
+def get_financial_identity() -> FinancialIdentity:
+    """The single FinancialIdentity row, lazily created."""
+    ident = FinancialIdentity.query.first()
+    if not ident:
+        ident = FinancialIdentity()
+        db.session.add(ident)
+        db.session.commit()
+    return ident
 
 
 # Per-kind seed wording. Every kind draws from the same variable vocabulary

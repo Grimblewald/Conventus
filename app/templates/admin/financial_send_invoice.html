@@ -79,10 +79,10 @@
   <div class="form-group" style="margin-bottom:16px;">
     <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
       <input type="checkbox" name="include_gst" value="1"
-             {% if (form and form.get('include_gst') == '1') or (not form and tpl.gst_registered) %}checked{% endif %}>
+             {% if (form and form.get('include_gst') == '1') or (not form and ident.gst_registered) %}checked{% endif %}>
       <strong>Amount includes GST</strong>
     </label>
-    <p class="muted" style="margin:4px 0 0 28px;">Breaks out {gst_amount}/{amount_ex_gst} (total ÷ 11) and titles it "Tax Invoice". Defaults to your <a href="{{ url_for('admin.financial_invoice') }}">GST setting</a>. Only tick if the society is GST-registered.</p>
+    <p class="muted" style="margin:4px 0 0 28px;">Breaks out {gst_amount}/{amount_ex_gst} (total ÷ 11) and titles it "Tax Invoice". Defaults to your <a href="{{ url_for('admin.financial_identity') }}">GST registration</a>. Only tick if the society is GST-registered.</p>
   </div>
 
   <div class="form-group" style="margin-bottom:16px;">

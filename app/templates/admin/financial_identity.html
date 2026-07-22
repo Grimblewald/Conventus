@@ -1,0 +1,130 @@
+{% extends "admin/_base.html" %}
+{% block title %}Financial Identity · {{ site.site_name }} Admin{% endblock %}
+{% block admin %}
+<div class="section-head">
+  <div>
+    <div class="eyebrow">Financial</div>
+    <h2>Financial Identity</h2>
+  </div>
+</div>
+
+<p class="muted" style="max-width:70ch;">
+  Who issues your financial documents. Every invoice, receipt and adjustment
+  note draws its letterhead, tax details, payment instructions and sign-off
+  from here — set it once rather than per document.
+</p>
+
+<form method="POST" enctype="multipart/form-data" class="card" style="padding:24px;">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+  <h3 style="margin-top:0;">Legal entity</h3>
+
+  <div class="form-group" style="margin-bottom:16px;">
+    <label for="legal_name"><strong>Legal name</strong></label>
+    <input type="text" id="legal_name" name="legal_name" class="input"
+           value="{{ ident.legal_name or '' }}"
+           placeholder="e.g. Australian Controlled Release Society Ltd">
+    <p class="muted">The entity that issues the document — often longer than the site name. Fills {{ '{business_legal_name}' }}; blank falls back to the site name.</p>
+  </div>
+
+  <div class="row-2">
+    <div class="form-group" style="margin-bottom:16px;">
+      <label for="abn"><strong>ABN</strong></label>
+      <input type="text" id="abn" name="abn" class="input"
+             value="{{ ident.abn or '' }}" placeholder="e.g. 17 602 379 475">
+      <p class="muted">Fills {{ '{business_number}' }}. An invoice for a taxable sale without an ABN can trigger 47% withholding by the payer.</p>
+    </div>
+    <div class="form-group" style="margin-bottom:16px;">
+      <label for="contact_email"><strong>Contact email</strong> <span class="muted">(optional)</span></label>
+      <input type="text" id="contact_email" name="contact_email" class="input"
+             value="{{ ident.contact_email or '' }}" placeholder="treasurer@example.org">
+      <p class="muted">Shown on documents for payment queries. Blank hides the line.</p>
+    </div>
+  </div>
+
+  <div class="form-group" style="margin-bottom:16px;">
+    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+      <input type="checkbox" name="gst_registered" value="1" {% if ident.gst_registered %}checked{% endif %}>
+      <strong>Registered for GST</strong>
+    </label>
+    <p class="muted" style="margin:4px 0 0 28px;">
+      When on, amounts are treated as GST-inclusive, invoices are titled “Tax Invoice”,
+      and the GST breakdown (total ÷ 11) is shown. When off, documents are titled
+      “Invoice” and state plainly that no GST has been charged — never a $0.00 GST line.
+    </p>
+  </div>
+
+  <div class="form-group" style="margin-bottom:16px;">
+    <label for="address"><strong>Issuer address</strong></label>
+    <textarea id="address" name="address" class="input" rows="5" style="font-family:monospace;">{{ ident.address or '' }}</textarea>
+    <p class="muted">One line per row, printed under the ABN on the document. A “C/- Dr Jane Smith” care-of line can be the first row.</p>
+  </div>
+
+  <hr style="margin:20px 0; border-color:var(--c-card-border);">
+  <h3 style="margin-top:0;">Payment details</h3>
+
+  <div class="form-group" style="margin-bottom:16px;">
+    <label for="payment_instructions"><strong>Payment instructions</strong></label>
+    <textarea id="payment_instructions" name="payment_instructions" class="input" rows="4" style="font-family:monospace;">{{ ident.payment_instructions or '' }}</textarea>
+    <p class="muted">Fills {{ '{payment_instructions}' }} — the EFT / BSB / account details printed on invoices. Receipts don’t show this.</p>
+  </div>
+
+  <hr style="margin:20px 0; border-color:var(--c-card-border);">
+  <h3 style="margin-top:0;">Sign-off</h3>
+
+  <div class="row-2">
+    <div class="form-group" style="margin-bottom:16px;">
+      <label for="signatory_name"><strong>Signatory name</strong></label>
+      <input type="text" id="signatory_name" name="signatory_name" class="input"
+             value="{{ ident.signatory_name or '' }}" placeholder="e.g. Tim Barnes">
+    </div>
+    <div class="form-group" style="margin-bottom:16px;">
+      <label for="signatory_role"><strong>Signatory role</strong></label>
+      <input type="text" id="signatory_role" name="signatory_role" class="input"
+             value="{{ ident.signatory_role or '' }}" placeholder="e.g. Director/Treasurer">
+    </div>
+  </div>
+
+  <hr style="margin:20px 0; border-color:var(--c-card-border);">
+  <h3 style="margin-top:0;">Letterhead images</h3>
+  <p class="muted">
+    PNG, JPEG or WEBP, re-encoded to PNG on upload. These are stored outside the
+    public uploads folder and are only visible to admins with financial
+    permission — a signature image should never be publicly reachable.
+  </p>
+
+  <div class="row-2">
+    {% for slot, label, hint in [
+        ('logo', 'Letterhead logo', 'Printed top-right of every document. Blank prints no logo.'),
+        ('signature', 'Signature', 'Printed above the signatory name. Blank prints the name only.')] %}
+    <div class="form-group" style="margin-bottom:16px;">
+      <label for="{{ slot }}"><strong>{{ label }}</strong></label>
+      {% if ident[slot ~ '_filename'] %}
+        <div style="margin-bottom:8px; padding:10px; background:var(--c-page-bg); border-radius:6px;">
+          <img src="{{ url_for('admin.financial_identity_asset', slot=slot) }}"
+               alt="{{ label }}" style="max-height:70px; max-width:100%;">
+        </div>
+      {% endif %}
+      <input class="input" id="{{ slot }}" name="{{ slot }}" type="file"
+             accept=".png,.jpg,.jpeg,.webp">
+      <p class="muted">{{ hint }}</p>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div style="display:flex; gap:8px; margin-top:20px;">
+    <button type="submit" class="btn btn-primary">Save identity</button>
+    <a href="{{ url_for('admin.financial') }}" class="btn btn-ghost">Cancel</a>
+  </div>
+</form>
+
+{% for slot, label in [('logo', 'letterhead logo'), ('signature', 'signature')] %}
+  {% if ident[slot ~ '_filename'] %}
+  <form method="POST" action="{{ url_for('admin.financial_identity_asset_delete', slot=slot) }}"
+        style="margin-top:8px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn-quiet btn-sm" type="submit">Remove {{ label }}</button>
+  </form>
+  {% endif %}
+{% endfor %}
+{% endblock %}

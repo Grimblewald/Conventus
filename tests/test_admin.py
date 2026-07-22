@@ -351,3 +351,61 @@ class TestFinancialIdentity:
 
     def test_unknown_asset_slot_is_404(self, seeded, admin_client):
         assert admin_client.get("/admin/financial/identity/asset/passport").status_code == 404
+
+
+class TestSendInvoicePreview:
+    """An admin must be able to see the actual invoice before it goes out —
+    previewing only the blank template is not the same document."""
+
+    def test_preview_returns_the_invoice_pdf(self, seeded, admin_client):
+        resp = admin_client.post("/admin/financial/send-invoice/preview", data={
+            "to": "sponsor@example.org",
+            "recipient_name": "Acme Pty Ltd",
+            "description": "Gold sponsorship",
+            "item": "Sponsor package",
+            "amount": "5500.00",
+            "reference": "INV-PREVIEW-1",
+            "due_date": "30 September 2026",
+            "include_gst": "1",
+        })
+        assert resp.status_code == 200
+        assert resp.mimetype == "application/pdf"
+        assert resp.data[:4] == b"%PDF"
+
+    def test_preview_records_and_sends_nothing(self, seeded, admin_client, app,
+                                               monkeypatch):
+        sent = []
+        monkeypatch.setattr("app.services.mail.send_mail",
+                            lambda *a, **k: sent.append(k) or True)
+        monkeypatch.setattr("app.services.invoice.send_mail",
+                            lambda *a, **k: sent.append(k) or True)
+        with app.app_context():
+            from app.models import IssuedDocument, PaymentEvent
+            before = (IssuedDocument.query.count(), PaymentEvent.query.count())
+
+        admin_client.post("/admin/financial/send-invoice/preview", data={
+            "to": "sponsor@example.org", "description": "Gold sponsorship",
+            "amount": "100.00", "reference": "INV-PREVIEW-2",
+        })
+
+        with app.app_context():
+            from app.models import IssuedDocument, PaymentEvent
+            assert (IssuedDocument.query.count(), PaymentEvent.query.count()) == before
+        assert sent == []
+
+    def test_preview_uses_the_same_variables_as_the_send(self, seeded, app):
+        """The preview and the send must resolve variables through one shared
+        function, or the two drift apart the moment either changes."""
+        with app.app_context():
+            from app.services.invoice import manual_invoice_vars
+            v = manual_invoice_vars(
+                "sponsor@example.org", recipient_name="Acme Pty Ltd",
+                description="Gold sponsorship", item="Sponsor package",
+                amount_cents=550000, reference="INV-X", due_date="30 Sep 2026",
+                recipient_address="1 Example St", include_gst=True)
+            assert v["user_name"] == "Acme Pty Ltd"
+            assert v["conference_title"] == "Gold sponsorship"
+            assert v["transaction_id"] == "INV-X"
+            assert v["recipient_address"] == "1 Example St"
+            assert v["gst_applies"] == "1"
+            assert v["payment_link"].endswith("/pay/invoice/INV-X")

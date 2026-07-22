@@ -501,6 +501,7 @@ def financial_send_invoice():
         body_override = (request.form.get("body") or "").strip()
         due_date = (request.form.get("due_date") or "").strip()
         recipient_abn = (request.form.get("recipient_abn") or "").strip()
+        recipient_address = (request.form.get("recipient_address") or "").strip()
         include_gst = request.form.get("include_gst") == "1"
 
         errors = []
@@ -538,7 +539,7 @@ def financial_send_invoice():
                 reference=reference, period=period,
                 subject_override=subject_override, body_override=body_override,
                 due_date=due_date, recipient_abn=recipient_abn,
-                include_gst=include_gst,
+                recipient_address=recipient_address, include_gst=include_gst,
             )
         except RenderError as e:
             flash(f"The invoice PDF could not be generated: {e}"
@@ -574,6 +575,61 @@ def financial_send_invoice():
     return render_template("admin/financial_send_invoice.html",
                            form={}, suggested_ref=suggested_ref,
                            ident=ident, default_body=default_body)
+
+
+@admin_bp.route("/financial/send-invoice/preview", methods=["POST"])
+@requires_permission("financial.manage")
+def financial_send_invoice_preview():
+    """Download a PDF preview of the invoice this form would send.
+
+    Uses the same variable resolver as the send path, so the preview is the
+    document the recipient will get — not an approximation. Records nothing and
+    sends nothing; fields left blank show as their bold field names.
+    """
+    from io import BytesIO
+
+    from ...services.documents import PregenBusy, RenderError, preview_document
+    from ...services.invoice import manual_invoice_vars
+    from ...services.jinja_filters import parse_cents
+
+    reference = ((request.form.get("reference") or "").strip()
+                 or f"INV-{datetime.utcnow().strftime('%Y%m%d')}-PREVIEW")
+    try:
+        amount = parse_cents(request.form.get("amount") or "")
+    except ValueError:
+        amount = 0
+
+    vars_ = manual_invoice_vars(
+        (request.form.get("to") or "").strip(),
+        recipient_name=(request.form.get("recipient_name") or "").strip(),
+        description=(request.form.get("description") or "").strip(),
+        item=(request.form.get("item") or "").strip(),
+        amount_cents=amount,
+        reference=reference,
+        period=(request.form.get("period") or "").strip(),
+        due_date=(request.form.get("due_date") or "").strip(),
+        recipient_abn=(request.form.get("recipient_abn") or "").strip(),
+        recipient_address=(request.form.get("recipient_address") or "").strip(),
+        include_gst=request.form.get("include_gst") == "1",
+    )
+    # Anything the admin has not filled in yet stays a bold placeholder rather
+    # than rendering as an empty gap or a computed zero.
+    overrides = {k: v for k, v in vars_.items() if v not in ("", None)}
+
+    try:
+        pdf = preview_document("invoice", overrides)
+    except PregenBusy:
+        flash("Preview is still compiling — retry in a few seconds.", "warning")
+        return redirect(url_for("admin.financial_send_invoice"))
+    except RenderError as e:
+        flash(f"Preview failed to compile: {e}" + (f"\n{e.log}" if e.log else ""),
+              "error")
+        return redirect(url_for("admin.financial_send_invoice"))
+
+    return send_file(BytesIO(pdf), mimetype="application/pdf",
+                     as_attachment=True,
+                     download_name=f"preview-invoice-{reference}.pdf")
+
 
 
 @admin_bp.route("/financial/member-payments", methods=["POST"])

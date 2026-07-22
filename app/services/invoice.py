@@ -156,20 +156,20 @@ def send_test_invoice(to_email: str) -> bool:
                           attachment=attachment)
 
 
-def send_manual_invoice(to: str, *, recipient_name: str, description: str,
+def manual_invoice_vars(to: str, *, recipient_name: str, description: str,
                         item: str, amount_cents: int, reference: str,
-                        period: str = "", cc: list[str] | None = None,
-                        subject_override: str = "", body_override: str = "",
-                        due_date: str = "", recipient_abn: str = "",
-                        include_gst: bool | None = None) -> bool:
-    """Send a templated invoice for an agreed amount to arbitrary recipients.
+                        period: str = "", due_date: str = "",
+                        recipient_abn: str = "", recipient_address: str = "",
+                        include_gst: bool | None = None) -> dict:
+    """Resolve the variables for a manually raised invoice.
 
-    Used for out-of-band billing (e.g. sponsors). Maps onto the template's
-    registration-centric variables: *description* fills {conference_title},
-    *item* fills {tier_name}, *reference* fills {transaction_id}. Embeds the
-    durable pay link (§8) as {payment_link}, resolved here (the renderer stays
-    agnostic). A compile failure raises RenderError for the route to surface
-    inline (§7 manual rule) — nothing is sent.
+    Shared by the send path and the form's preview so what an admin previews is
+    exactly what the recipient receives — a preview built from its own copy of
+    this mapping would drift from reality the first time either changed.
+
+    Maps onto the registration-centric vocabulary: *description* fills
+    {conference_title}, *item* fills {tier_name}, *reference* fills
+    {transaction_id}.
     """
     site = get_site_settings()
     vars_ = {
@@ -189,11 +189,35 @@ def send_manual_invoice(to: str, *, recipient_name: str, description: str,
     }
     vars_["due_date"] = due_date
     vars_["recipient_abn"] = recipient_abn
-    # Durable pay link — the SEND path resolves it; preview shows the bold
-    # placeholder. Points at our /pay/invoice/<ref> route, not the ephemeral
-    # Worldline URL, which expires (§8).
+    vars_["recipient_address"] = recipient_address
+    # Durable pay link — points at our /pay/invoice/<ref> route, not the
+    # ephemeral Worldline URL, which expires (§8).
     vars_["payment_link"] = url_for("public.pay_invoice", reference=reference,
                                     _external=True)
+    return vars_
+
+
+def send_manual_invoice(to: str, *, recipient_name: str, description: str,
+                        item: str, amount_cents: int, reference: str,
+                        period: str = "", cc: list[str] | None = None,
+                        subject_override: str = "", body_override: str = "",
+                        due_date: str = "", recipient_abn: str = "",
+                        recipient_address: str = "",
+                        include_gst: bool | None = None) -> bool:
+    """Send a templated invoice for an agreed amount to arbitrary recipients.
+
+    Used for out-of-band billing (e.g. sponsors). Maps onto the template's
+    registration-centric variables: *description* fills {conference_title},
+    *item* fills {tier_name}, *reference* fills {transaction_id}. Embeds the
+    durable pay link (§8) as {payment_link}, resolved here (the renderer stays
+    agnostic). A compile failure raises RenderError for the route to surface
+    inline (§7 manual rule) — nothing is sent.
+    """
+    vars_ = manual_invoice_vars(
+        to, recipient_name=recipient_name, description=description, item=item,
+        amount_cents=amount_cents, reference=reference, period=period,
+        due_date=due_date, recipient_abn=recipient_abn,
+        recipient_address=recipient_address, include_gst=include_gst)
     log.info("Sending manual invoice %s to %s (cc %s)", reference, to, cc or [])
     attachment = _render_attachment("invoice", vars_, reference)
     ok = _send_rendered("invoice", vars_, to=to, cc=cc,

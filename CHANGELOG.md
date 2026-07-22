@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.3.1] - 2026-07-22
+
+### Fixed
+- **Document rendering could take the site down.** The renderer assumed a
+  single-process deploy; gunicorn runs several workers, each of which warmed
+  the PDF cache at boot. The concurrent compiles exhausted memory on a small
+  host and the OOM killer took the web server with them. Boot warming is now
+  opt-in (`DOC_WARM_ON_BOOT`, default off), every compile takes a box-wide
+  lock so only one runs per machine, and the compile is capped to a share of
+  physical RAM sized to the host — this project targets a Pi, not a server.
+- Static assets are served with a content hash, so a deploy can no longer
+  strand returning visitors on stale cached JavaScript or CSS.
+- The tectonic installer falls back to the static musl build when the
+  official binary cannot run (Ubuntu 22.04+ no longer ships libssl 1.1).
+
+### Changed
+- **Invoices no longer read like receipts.** The invoice template carried the
+  old single-template wording and told recipients their payment had been
+  received. Each kind now ships wording that matches what it does; the
+  migration only replaces text a society has not edited.
+- **One Financial identity** — legal entity, ABN, GST registration, address,
+  payment instructions, signatory and letterhead now live in one place shared
+  by every document kind, instead of being restated per template. Signature
+  and logo images are stored outside the public uploads tree.
+- **Documents look like real financial documents** — letterhead, bill-to
+  block, ruled line-item table, and a totals stack that ends on amount due,
+  amount owing, or amount adjusted according to kind. A society that is not
+  registered for GST now says so explicitly instead of leaving it unstated.
+
+### Added
+- Editors for the receipt and adjustment-note templates, which previously had
+  no admin UI at all.
+- **Download preview** on the Send Invoice form, rendering the actual invoice
+  to be sent rather than a blank template.
+
 ## [0.3.0] — 2026-07-21  **MIGRATION REQUIRED**
 
 ### Added

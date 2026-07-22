@@ -129,24 +129,40 @@ Filter by action substring or actor email.
 * **Testing** — send the invoice template (rendered with sample data) to
   any address, and run a small test payment (≤ $10) not tied to any
   registration; settlement is confirmed by webhook → admin email + audit.
+* **Financial identity** — who issues your documents, in one place:
+  legal entity name, ABN, GST registration, address, payment
+  instructions, signatory name and role, and an optional letterhead logo
+  and signature image. Every document kind draws from this, so your ABN
+  and bank details are stated once and cannot disagree between an invoice
+  and its receipt. The logo and signature are stored outside the public
+  uploads folder and are only viewable by admins with `financial.manage` —
+  a signature image should never be publicly reachable.
+
+  The GST setting drives real behaviour in both directions: registered
+  gives you "Tax Invoice" titles and a GST/ex-GST breakdown; not
+  registered prints an explicit "No GST has been charged" statement and
+  never a zero-valued GST line, which would wrongly imply a taxable sale.
 * **Invoice/Receipt/Adjustment Note documents** — every payment document is
   a real PDF, compiled from one shared, curated LaTeX skeleton (tectonic,
   no admin-authored raw LaTeX — see [SECURITY.md](SECURITY.md#document-rendering)),
-  attached to a plaintext email. There is one template per kind
-  (`invoice` / `receipt` / `adjustment`), each with:
+  attached to a plaintext email. Each kind has its own editor under
+  `/admin/financial/documents/<kind>` and says what it should: an
+  **invoice** requests payment (amount due, due date, pay-online link and
+  bank details), a **receipt** confirms payment received (total received,
+  amount owing nil, date paid), and an **adjustment note** records a
+  refund or correction. Each editor has:
   - **Email cover** — subject, plaintext body, from name/address, footer.
-  - **PDF body** — free-text, inserted below the line-item table in the
-    PDF; `{variable}` placeholders are filled per document, everything
-    else prints as written.
-  - **Tax & business details** — ABN, GST-registered flag (drives the
-    "Tax Invoice" title and the GST/ex-GST breakdown rows), payment
-    instructions.
+    The formal document is the attached PDF, so the email stays short.
+  - **PDF body** — optional free text printed below the totals. The
+    letterhead, line items, tax lines and sign-off are built for you.
 
   The full variable vocabulary — `{user_name} {user_email}
   {conference_title} {conference_dates} {tier_name} {amount} {gst_amount}
   {amount_ex_gst} {currency_code} {currency_symbol} {transaction_id}
   {payment_date} {due_date} {site_name} {registration_id} {invoice_type}
-  {business_number} {recipient_abn} {payment_instructions}
+  {business_legal_name} {business_number} {business_address}
+  {business_contact_email} {signatory_name} {signatory_role}
+  {recipient_abn} {recipient_address} {payment_instructions}
   {payment_link}` — is listed on both the dashboard and each template
   editor. **Download preview** renders the current form (including unsaved
   edits) as a PDF with every unset variable shown as its **bold field
@@ -162,8 +178,12 @@ Filter by action substring or actor email.
   fallback: without tectonic, no invoice/receipt/adjustment note can be
   generated at all.
 * **Send Invoice** — manually bill arbitrary recipients (e.g. sponsors)
-  with To/CC, amount, and reference; uses the same template (review its
-  wording — the default reads as a receipt) and attaches the rendered PDF.
+  with To/CC, amount, reference, optional recipient address and ABN, and a
+  per-invoice GST toggle. **Download preview** renders the exact PDF the
+  recipient will receive — same values, same pay link — without emailing
+  or recording anything, so you can check it before it goes out. Sending
+  attaches the PDF and embeds a durable pay-online link; paying it sends
+  the receipt automatically.
 * **Transactions** — searchable per-transaction ledger of every checkout
   created, gateway webhook event (with the status change it caused), and
   manual invoice sent.

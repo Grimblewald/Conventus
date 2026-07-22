@@ -375,13 +375,47 @@ def _memory_limiter(limit_mb: int):
     return _apply
 
 
-def _compile_memory_mb() -> int:
-    """The child memory cap, read in the caller's context — the compile worker
-    thread runs without an app context, so this cannot be read down there."""
+def total_memory_mb() -> int:
+    """Physical RAM in MB, or 0 when it cannot be determined."""
     try:
-        return int(current_app.config.get("DOC_COMPILE_MEMORY_MB") or 0)
-    except RuntimeError:
+        with open("/proc/meminfo", encoding="ascii") as fh:
+            for line in fh:
+                if line.startswith("MemTotal:"):
+                    return int(line.split()[1]) // 1024
+    except (OSError, ValueError, IndexError):
+        pass
+    try:
+        return (os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")) // (1024 * 1024)
+    except (ValueError, OSError, AttributeError):
         return 0
+
+
+def auto_memory_mb() -> int:
+    """Memory cap derived from the host, because this project targets small
+    machines — a Pi or an old phone, not a server with headroom.
+
+    A fixed cap is wrong in both directions: generous enough for a VPS is fatal
+    on a 512MB Pi, and tight enough for a Pi needlessly fails big documents
+    elsewhere. So take a minority share of physical RAM, floored at what
+    tectonic actually needs to run and ceilinged so one compile can never
+    dominate a larger box either.
+    """
+    total = total_memory_mb()
+    if not total:
+        return 384
+    return max(192, min(640, int(total * 0.4)))
+
+
+def _compile_memory_mb() -> int:
+    """The child memory cap, resolved in the caller's context — the compile
+    worker thread runs without an app context, so config is unreachable there.
+    A configured 0 means "derive from the host" (see `auto_memory_mb`); an
+    explicit value overrides."""
+    try:
+        configured = int(current_app.config.get("DOC_COMPILE_MEMORY_MB") or 0)
+    except RuntimeError:
+        configured = 0
+    return configured or auto_memory_mb()
 
 
 def _box_compile_lock():

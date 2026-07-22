@@ -575,8 +575,93 @@ def test_compile_runs_under_a_memory_cap(ctx):
     pick a victim (which on this box was a gunicorn worker)."""
     from app.services.documents import _memory_limiter, _compile_memory_mb
 
-    assert _compile_memory_mb() > 0            # configured by default
+    assert _compile_memory_mb() > 0            # always capped by default
     assert _memory_limiter(0) is None          # 0 disables
     assert callable(_memory_limiter(512))
     # The cap must not break an ordinary document.
     assert render_document("invoice", _vars())[:4] == b"%PDF"
+
+
+def test_memory_cap_is_enforced_on_the_child(ctx, monkeypatch):
+    """The limiter is really applied to the subprocess — proved by setting a
+    cap so small that the compile cannot possibly succeed."""
+    monkeypatch.setitem(ctx.config, "DOC_COMPILE_MEMORY_MB", 16)
+    with pytest.raises(RenderError):
+        render_document("invoice", _vars())
+    # A failed compile still cleans up after itself.
+    assert not [p for p in _doc_render_root().iterdir()
+                if not p.name.startswith('.')]
+
+
+def test_memory_cap_scales_to_the_host(monkeypatch):
+    """The project targets a Pi or an old phone, so the default cap is a
+    minority share of real RAM — never a fixed server-sized number."""
+    from app.services import documents as docs
+
+    monkeypatch.setattr(docs, "total_memory_mb", lambda: 512)
+    pi = docs.auto_memory_mb()
+    assert 192 <= pi <= 256, pi
+    assert pi < 512
+
+    monkeypatch.setattr(docs, "total_memory_mb", lambda: 956)
+    vps = docs.auto_memory_mb()
+    assert vps > pi and vps < 956
+
+    # A big host still can't let one compile dominate.
+    monkeypatch.setattr(docs, "total_memory_mb", lambda: 32000)
+    assert docs.auto_memory_mb() <= 640
+
+    # Unknown RAM falls back to something conservative, never unlimited.
+    monkeypatch.setattr(docs, "total_memory_mb", lambda: 0)
+    assert 0 < docs.auto_memory_mb() <= 384
+
+
+def test_explicit_memory_config_overrides_the_host_default(ctx, monkeypatch):
+    from app.services.documents import _compile_memory_mb
+    monkeypatch.setitem(ctx.config, "DOC_COMPILE_MEMORY_MB", 333)
+    assert _compile_memory_mb() == 333
+
+
+def test_total_memory_is_detected(ctx):
+    """The auto cap is only meaningful if RAM detection works here."""
+    from app.services.documents import total_memory_mb
+    assert total_memory_mb() > 0
+
+
+def test_concurrent_renders_never_overlap_across_threads(ctx):
+    """The box-wide lock must hold under real concurrency: overlapping
+    compiles are exactly what exhausted memory in production."""
+    import concurrent.futures
+
+    active = []
+    peak = []
+    guard = threading.Lock()
+    real = docs._compile
+
+    def _watched(tectonic, job_dir, tex_path, epoch, memory_mb=0):
+        with guard:
+            active.append(1)
+            peak.append(len(active))
+        try:
+            time.sleep(0.05)
+            return real(tectonic, job_dir, tex_path, epoch, memory_mb)
+        finally:
+            with guard:
+                active.pop()
+
+    def _render_one():
+        # Each pool thread needs its own app context — render_document reads
+        # the template and config from it.
+        with ctx.app_context():
+            return render_document("invoice", _vars())
+
+    docs._compile = _watched
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+            futures = [pool.submit(_render_one) for _ in range(4)]
+            results = [f.result() for f in futures]
+    finally:
+        docs._compile = real
+
+    assert all(r[:4] == b"%PDF" for r in results)
+    assert max(peak) == 1, f"compiles overlapped: peak {max(peak)}"

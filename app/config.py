@@ -124,8 +124,9 @@ class BaseConfig:
     # it a runaway compile is resolved by the kernel OOM killer, which picks
     # its own victim — usually a gunicorn worker, taking the site down. With
     # it, tectonic dies instead and the failure surfaces as a render error.
-    # 0 disables the cap.
-    DOC_COMPILE_MEMORY_MB = _int("DOC_COMPILE_MEMORY_MB", 640)
+    # 0 (the default) derives the cap from physical RAM, since this project
+    # targets small hosts; set an explicit value to override.
+    DOC_COMPILE_MEMORY_MB = _int("DOC_COMPILE_MEMORY_MB", 0)
     # Compile the preview cache at boot. OFF by default: every gunicorn worker
     # runs the app factory, so boot-time compiling multiplies by worker count
     # on a small box. The cache warms on first use instead; set this only on a

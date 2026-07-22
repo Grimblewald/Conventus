@@ -25,6 +25,7 @@ need an external broker; that is out of scope by design.
 """
 from __future__ import annotations
 
+import fcntl
 import os
 import queue
 import re
@@ -151,7 +152,11 @@ def assemble_tex(kind: str, tpl, vars_: dict, *, has_logo: bool = False,
     """Build the compile-ready .tex source. Separated from `render_document`
     so the generated source is testable without invoking tectonic."""
     v = dict(vars_)
-    gst_on = bool(getattr(tpl, "gst_registered", False))
+    # GST comes from the variables, not the template: the send layer resolves
+    # it from the financial identity (or a per-send override) and it is
+    # snapshotted, so a regenerated document keeps the treatment it was issued
+    # under rather than today's registration status.
+    gst_on = bool(v.get("gst_applies"))
 
     # Title reflects the kind; the invoice kind defers to the GST-aware
     # {invoice_type} value ("Tax Invoice" vs "Invoice").
@@ -173,15 +178,28 @@ def assemble_tex(kind: str, tpl, vars_: dict, *, has_logo: bool = False,
         "flag_logo": _flag("haslogo", has_logo),
         "flag_signature": _flag("hassig", has_signature),
         "flag_recipient_abn": _flag("rabn", bool(v.get("recipient_abn"))),
+        "flag_recipient_address": _flag("raddr", bool(v.get("recipient_address"))),
         "flag_due_date": _flag("duedate", bool(v.get("due_date"))),
         "flag_business_number": _flag("bnum", bool(v.get("business_number"))),
+        "flag_business_address": _flag("baddr", bool(v.get("business_address"))),
+        "flag_contact_email": _flag("bmail", bool(v.get("business_contact_email"))),
+        "flag_signatory": _flag("signatory", bool(v.get("signatory_name"))),
         "flag_payment_instructions": _flag("payinstr", bool(v.get("payment_instructions"))),
         "flag_payment_link": _flag("paylink", bool(v.get("payment_link"))),
         "flag_pdf_body": _flag("pdfbody", bool(raw_body)),
+        "flag_receipt": _flag("isreceipt", kind == "receipt"),
+        "flag_adjustment": _flag("isadjustment", kind == "adjustment"),
+        "flag_invoice": _flag("isinvoice", kind == "invoice"),
         "logo_file": RawLatex(logo_name),
         "signature_file": RawLatex(signature_name),
         "doc_title": latex_escape(doc_title),
         "site_name": esc("site_name"),
+        "business_legal_name": esc("business_legal_name"),
+        "business_address": esc("business_address"),
+        "business_contact_email": esc("business_contact_email"),
+        "signatory_name": esc("signatory_name"),
+        "signatory_role": esc("signatory_role"),
+        "recipient_address": esc("recipient_address"),
         "business_number": esc("business_number"),
         "user_name": esc("user_name"),
         "user_email": esc("user_email"),
@@ -209,6 +227,38 @@ def assemble_tex(kind: str, tpl, vars_: dict, *, has_logo: bool = False,
     return re.sub(r"@@(\w+)@@",
                   lambda m: str(subst.get(m.group(1), m.group(0))),
                   skeleton)
+
+
+def financial_assets_dir() -> Path:
+    """Where the letterhead logo and signature live. Under `var/`, NOT the
+    public uploads tree — a signature image is forgeable material and must
+    never be web-served; admins preview it through an authenticated route."""
+    try:
+        configured = current_app.config.get("FINANCIAL_ASSETS_DIR")
+    except RuntimeError:
+        configured = None
+    if not configured:
+        project_root = Path(__file__).resolve().parent.parent.parent
+        configured = project_root / "var" / "financial-assets"
+    return Path(configured)
+
+
+def identity_assets() -> dict[str, Path]:
+    """The financial identity's assets that exist on disk, keyed as the
+    renderer expects (`logo`, `signature`)."""
+    from ..models import get_financial_identity
+
+    try:
+        ident = get_financial_identity()
+    except Exception:                     # no DB/app context (e.g. tooling)
+        return {}
+    root = financial_assets_dir()
+    out: dict[str, Path] = {}
+    for key, name in (("logo", ident.logo_filename),
+                      ("signature", ident.signature_filename)):
+        if name and (root / name).is_file():
+            out[key] = root / name
+    return out
 
 
 def _doc_render_root() -> Path:
@@ -466,7 +516,10 @@ def render_document(kind: str, vars_: dict[str, str],
     """
     from ..models import get_document_template
 
-    assets = assets or {}
+    # Default to the financial identity's letterhead/signature so every
+    # caller — send, preview, regenerate — gets the same branding without
+    # repeating the lookup. An explicit `assets` argument still wins.
+    assets = assets if assets is not None else identity_assets()
     tpl = template if template is not None else get_document_template(kind)
     tectonic = _resolve_tectonic()
 
@@ -518,12 +571,14 @@ def regenerate_document(issued) -> bytes:
 
     vars_ = json.loads(issued.vars_json or "{}")
     tpl_fields = json.loads(issued.template_json or "{}")
+    # Documents issued before the tax treatment moved into the variables
+    # recorded it template-side; honour that so older records still rebuild
+    # with the GST lines they were issued with.
+    if "gst_applies" not in vars_ and tpl_fields.get("gst_registered"):
+        vars_["gst_applies"] = "1"
     template = types.SimpleNamespace(
         kind=issued.kind,
         pdf_body=tpl_fields.get("pdf_body", "") or "",
-        gst_registered=bool(tpl_fields.get("gst_registered", False)),
-        business_number=tpl_fields.get("business_number", "") or "",
-        payment_instructions=tpl_fields.get("payment_instructions", "") or "",
         content_hash=issued.content_hash or "",
     )
     return render_document(issued.kind, vars_, template=template)
@@ -538,7 +593,9 @@ def regenerate_document(issued) -> bytes:
 # lives here so an unfilled preview shows the field NAMES — including the
 # numeric fields, which must never render as a computed $0.00.
 _PREVIEW_VARS = (
-    "site_name", "business_number", "user_name", "user_email", "recipient_abn",
+    "site_name", "business_legal_name", "business_number", "business_address",
+    "business_contact_email", "signatory_name", "signatory_role",
+    "user_name", "user_email", "recipient_abn", "recipient_address",
     "conference_title", "conference_dates", "tier_name", "transaction_id",
     "registration_id", "payment_date", "due_date", "currency_symbol",
     "currency_code", "amount", "gst_amount", "amount_ex_gst",
@@ -553,8 +610,15 @@ def placeholder_vars(kind: str) -> dict[str, RawLatex]:
     field names — and the numeric fields (amount / gst_amount / amount_ex_gst)
     read as their bold names, never a computed $0.00. Callers overlay real
     values on top."""
-    return {name: RawLatex(r"\textbf{" + latex_escape(name) + "}")
-            for name in _PREVIEW_VARS}
+    from ..models import get_financial_identity
+
+    vars_ = {name: RawLatex(r"\textbf{" + latex_escape(name) + "}")
+             for name in _PREVIEW_VARS}
+    # GST is a configured fact, not a field to fill in: a preview shows the
+    # tax treatment the identity is actually set to, so an admin can see
+    # whether their documents will carry GST lines or the no-GST statement.
+    vars_["gst_applies"] = "1" if get_financial_identity().gst_registered else ""
+    return vars_
 
 
 def preview_document(kind: str, overrides: dict | None = None,
@@ -595,39 +659,87 @@ def _pregen_path(kind: str, content_hash: str) -> Path:
     return _pregen_dir() / f"{kind}-{content_hash}.pdf"
 
 
+def _xproc_warm_lock(kind: str) -> int | None:
+    """Cross-process lock so only one gunicorn worker compiles `kind` at a time.
+
+    Returns an open fd on success (caller MUST call `_xproc_warm_unlock`).
+    Returns None if another process already holds the lock.
+    """
+    d = _pregen_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    lock_path = d / f".warm-{kind}.lock"
+    try:
+        fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR)
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return fd
+    except (OSError, BlockingIOError):
+        try:
+            os.close(fd)
+        except Exception:
+            pass
+        return None
+
+
+def _xproc_warm_unlock(fd: int | None) -> None:
+    if fd is None:
+        return
+    try:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+    except Exception:
+        pass
+    try:
+        os.close(fd)
+    except Exception:
+        pass
+
+
 def warm_pregen(kind: str) -> Path:
     """Compile the all-placeholders preview for the SAVED template and cache it
     atomically at `var/doc-render/pregen/<kind>-<content_hash>.pdf`, removing any
-    stale pregen files for that kind. Held under the per-kind lock; if a warm for
-    this kind is already running, raises PregenBusy rather than compiling twice.
+    stale pregen files for that kind. Held under a cross-process lock AND a
+    per-kind intra-process lock; if a warm for this kind is already running
+    (anywhere in the process, or in another gunicorn worker), raises PregenBusy
+    rather than compiling twice.
     """
     from ..models import get_document_template
 
-    lock = _pregen_lock(kind)
-    if not lock.acquire(blocking=False):
-        raise PregenBusy(kind)
-    try:
-        content_hash = get_document_template(kind).content_hash
-        pdf = preview_document(kind)          # saved template, all placeholders
-        d = _pregen_dir()
-        d.mkdir(parents=True, exist_ok=True)
-        dest = _pregen_path(kind, content_hash)
-        # tmp + rename so a reader never sees a half-written file.
-        fd, tmp = tempfile.mkstemp(prefix=f".{kind}-", suffix=".tmp", dir=str(d))
-        try:
-            with os.fdopen(fd, "wb") as fh:
-                fh.write(pdf)
-            os.replace(tmp, dest)
-        finally:
-            if os.path.exists(tmp):
-                os.unlink(tmp)
-        # Drop stale hashes for this kind now the current one is in place.
-        for old in d.glob(f"{kind}-*.pdf"):
-            if old != dest:
-                old.unlink(missing_ok=True)
+    content_hash = get_document_template(kind).content_hash
+    dest = _pregen_path(kind, content_hash)
+    if dest.exists():
         return dest
+
+    xlock = _xproc_warm_lock(kind)
+    if xlock is None:
+        raise PregenBusy(kind)
+
+    try:
+        lock = _pregen_lock(kind)
+        if not lock.acquire(blocking=False):
+            raise PregenBusy(kind)
+        try:
+            if dest.exists():
+                return dest
+            pdf = preview_document(kind)  # saved template, all placeholders
+            d = _pregen_dir()
+            d.mkdir(parents=True, exist_ok=True)
+            tmp_fd, tmp = tempfile.mkstemp(
+                prefix=f".{kind}-", suffix=".tmp", dir=str(d),
+            )
+            try:
+                with os.fdopen(tmp_fd, "wb") as fh:
+                    fh.write(pdf)
+                os.replace(tmp, dest)
+            finally:
+                if os.path.exists(tmp):
+                    os.unlink(tmp)
+            for old in d.glob(f"{kind}-*.pdf"):
+                if old != dest:
+                    old.unlink(missing_ok=True)
+            return dest
+        finally:
+            lock.release()
     finally:
-        lock.release()
+        _xproc_warm_unlock(xlock)
 
 
 def get_pregen(kind: str) -> bytes:
@@ -673,6 +785,9 @@ def warm_pregen_async(app, kind: str) -> None:
     on-demand render for CPU; this daemon thread only owns the per-kind pregen
     lock while it waits for its queued compile."""
     if app.config.get("TESTING"):
+        return
+    from ..models import get_document_template
+    if _pregen_path(kind, get_document_template(kind).content_hash).exists():
         return
 
     def _run():

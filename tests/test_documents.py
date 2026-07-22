@@ -665,3 +665,80 @@ def test_concurrent_renders_never_overlap_across_threads(ctx):
 
     assert all(r[:4] == b"%PDF" for r in results)
     assert max(peak) == 1, f"compiles overlapped: peak {max(peak)}"
+
+
+# --- Document layout: each kind must say the right thing --------------------
+#
+# The skeleton carries every kind's block and selects between them with LaTeX
+# conditionals, so the flags — not the presence of a label in the source — are
+# what decide the output. Asserting the flags is exact and needs no compile;
+# the real compiles above prove the flagged source builds.
+
+def _tex(kind, ctx, **over):
+    from app.models import get_document_template
+    return assemble_tex(kind, get_document_template(kind), _vars(**over))
+
+
+def test_kind_flags_select_the_right_document(ctx):
+    inv = _tex("invoice", ctx)
+    assert r"\isinvoicetrue" in inv
+    assert r"\isreceiptfalse" in inv and r"\isadjustmentfalse" in inv
+
+    rec = _tex("receipt", ctx)
+    assert r"\isreceipttrue" in rec
+    assert r"\isinvoicefalse" in rec and r"\isadjustmentfalse" in rec
+
+    adj = _tex("adjustment", ctx)
+    assert r"\isadjustmenttrue" in adj
+    assert r"\isinvoicefalse" in adj and r"\isreceiptfalse" in adj
+
+
+def test_invoice_shows_how_to_pay(ctx):
+    """Pay-online and bank details are switched on only when there is
+    something to show, and only an invoice asks for money."""
+    with_pay = _tex("invoice", ctx, payment_link="https://example.org/pay/X",
+                    payment_instructions="BSB 000-000")
+    assert r"\paylinktrue" in with_pay and r"\payinstrtrue" in with_pay
+
+    without = _tex("invoice", ctx, payment_link="", payment_instructions="")
+    assert r"\paylinkfalse" in without and r"\payinstrfalse" in without
+
+
+def test_gst_registered_shows_the_breakdown(ctx):
+    tex = _tex("invoice", ctx, gst_applies="1", invoice_type="Tax Invoice")
+    assert r"\gsttrue" in tex
+    assert "Tax Invoice" in tex
+
+
+def test_not_gst_registered_states_it_plainly(ctx):
+    """The reference document this was modelled on omits any GST statement,
+    which leaves the payer guessing; a zero-valued GST line would be worse
+    still, implying a taxable sale that was not taxed. So the skeleton carries
+    an explicit statement, switched on by the same flag."""
+    tex = _tex("invoice", ctx, gst_applies="", invoice_type="Invoice",
+               business_legal_name="Example Society Ltd")
+    assert r"\gstfalse" in tex
+    assert "No GST has been charged" in tex
+    assert "Example Society Ltd" in tex
+
+
+def test_issuer_and_signatory_appear(ctx):
+    tex = _tex("receipt", ctx, business_number="17 602 379 475",
+               business_address="PO Box 1\nAdelaide SA 5000",
+               signatory_name="Tim Barnes", signatory_role="Director/Treasurer",
+               business_legal_name="Example Society Ltd")
+    assert "17 602 379 475" in tex
+    assert "Adelaide SA 5000" in tex
+    assert "Tim Barnes" in tex
+    assert "Director/Treasurer" in tex
+    assert r"\signatorytrue" in tex
+
+
+def test_optional_blocks_vanish_when_unset(ctx):
+    """Empty values must switch their block off, not print an empty heading."""
+    tex = _tex("receipt", ctx, business_number="", business_address="",
+               signatory_name="", signatory_role="", recipient_abn="",
+               recipient_address="")
+    for flag in (r"\bnumfalse", r"\baddrfalse", r"\signatoryfalse",
+                 r"\rabnfalse", r"\raddrfalse"):
+        assert flag in tex, flag

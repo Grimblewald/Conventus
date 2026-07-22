@@ -1,33 +1,36 @@
 % Conventus document skeleton — ONE trusted, in-repo LaTeX skeleton shared by
 % all three document kinds (invoice / receipt / adjustment note). Option A:
 % admins never author raw LaTeX; the renderer substitutes escaped structured
-% content into the @@tokens@@ below. Never place admin-authored content here.
+% content into the tokens below. Never place admin-authored content here.
 %
 % SUBSTITUTION CONTRACT — the renderer (app/services/documents.py::assemble_tex)
 % replaces every token of the form @@name@@ before compiling. The @@...@@
 % delimiter cannot occur in normal LaTeX, so ordinary braces here stay
 % unambiguous. (The token NAMES are listed bare below — never as literal
-% @@name@@ tokens — so a multi-line substituted value can't leak out of this
-% comment block.)
+% tokens — so a multi-line substituted value can't leak out of this comment.)
 %
 %   Boolean flags — raw \...true / \...false control sequences:
-%     flag_gst, flag_logo, flag_signature, flag_recipient_abn, flag_due_date,
-%     flag_business_number, flag_payment_instructions, flag_payment_link,
-%     flag_pdf_body
+%     flag_gst, flag_logo, flag_signature, flag_recipient_abn,
+%     flag_recipient_address, flag_due_date, flag_business_number,
+%     flag_business_address, flag_contact_email, flag_signatory,
+%     flag_payment_instructions, flag_payment_link, flag_pdf_body,
+%     flag_invoice, flag_receipt, flag_adjustment
 %   Asset filenames — raw basenames of files copied into the job dir:
 %     logo_file, signature_file
 %   Text values — LaTeX-escaped (unless RawLatex):
-%     doc_title, site_name, business_number, user_name, user_email,
-%     recipient_abn, conference_title, conference_dates, tier_name,
-%     transaction_id, registration_id, payment_date, due_date,
-%     currency_symbol, currency_code, amount, gst_amount, amount_ex_gst,
-%     payment_instructions, payment_link, pdf_body
+%     doc_title, site_name, business_legal_name, business_number,
+%     business_address, business_contact_email, signatory_name,
+%     signatory_role, user_name, user_email, recipient_abn, recipient_address,
+%     conference_title, conference_dates, tier_name, transaction_id,
+%     registration_id, payment_date, due_date, currency_symbol, currency_code,
+%     amount, gst_amount, amount_ex_gst, payment_instructions, payment_link,
+%     pdf_body
 %
-% Packages used are limited to those verified warm in the tectonic cache:
-% geometry, fontenc, helvet, graphicx, tabularx, xcolor, array.
+% Packages are limited to those verified warm in the tectonic cache:
+% geometry, fontenc, helvet, graphicx, array, tabularx, xcolor.
 \documentclass[11pt,a4paper]{article}
 \usepackage[T1]{fontenc}
-\usepackage[margin=22mm]{geometry}
+\usepackage[margin=20mm]{geometry}
 \usepackage{helvet}
 \renewcommand{\familydefault}{\sfdefault}
 \usepackage{graphicx}
@@ -35,104 +38,166 @@
 \usepackage{tabularx}
 \usepackage{xcolor}
 
-\definecolor{rulegrey}{gray}{0.72}
+\definecolor{rule}{gray}{0.55}
 \definecolor{ink}{gray}{0.10}
-\definecolor{muted}{gray}{0.42}
+\definecolor{muted}{gray}{0.40}
 
 \newif\ifgst        @@flag_gst@@
 \newif\ifhaslogo    @@flag_logo@@
 \newif\ifhassig     @@flag_signature@@
 \newif\ifrabn       @@flag_recipient_abn@@
+\newif\ifraddr      @@flag_recipient_address@@
 \newif\ifduedate    @@flag_due_date@@
 \newif\ifbnum       @@flag_business_number@@
+\newif\ifbaddr      @@flag_business_address@@
+\newif\ifbmail      @@flag_contact_email@@
+\newif\ifsignatory  @@flag_signatory@@
 \newif\ifpayinstr   @@flag_payment_instructions@@
 \newif\ifpaylink    @@flag_payment_link@@
 \newif\ifpdfbody    @@flag_pdf_body@@
+\newif\ifisinvoice  @@flag_invoice@@
+\newif\ifisreceipt  @@flag_receipt@@
+\newif\ifisadjustment @@flag_adjustment@@
 
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{6pt}
 \pagestyle{empty}
 \color{ink}
 
-% A thin near-black/grey horizontal rule — the only decoration used.
-\newcommand{\docrule}{\textcolor{rulegrey}{\rule{\linewidth}{0.4pt}}}
-\newcommand{\fieldlabel}[1]{{\color{muted}\small\MakeUppercase{#1}}}
+% The document number/date labels differ per kind, so the header reads
+% naturally whichever document this is.
+\ifisreceipt
+  \newcommand{\numberlabel}{Receipt Number}
+  \newcommand{\datelabel}{Receipt Date}
+\else\ifisadjustment
+  \newcommand{\numberlabel}{Adjustment Number}
+  \newcommand{\datelabel}{Adjustment Date}
+\else
+  \newcommand{\numberlabel}{Invoice Number}
+  \newcommand{\datelabel}{Invoice Date}
+\fi\fi
+
+\newcommand{\totalrow}[2]{%
+  \multicolumn{2}{r}{#1}&\;#2\\[2pt]}
 
 \begin{document}
 
-% --- Header: title (left) and optional logo (right) --------------------
+% --- Header: title + number/date (left), logo + issuer details (right) ----
 \noindent
-\begin{minipage}[t]{0.62\linewidth}
-  {\LARGE\bfseries @@doc_title@@}\\[3pt]
-  {\color{muted}@@site_name@@}\ifbnum\\{\color{muted}\small ABN @@business_number@@}\fi
+\begin{minipage}[t]{0.52\linewidth}
+  \vspace{0pt}
+  {\LARGE\bfseries\MakeUppercase{@@doc_title@@}}\\[6pt]
+  {\bfseries\numberlabel:} @@transaction_id@@\\
+  {\bfseries\datelabel:} @@payment_date@@%
+  \ifisinvoice\ifduedate\\{\bfseries Due Date:} @@due_date@@\fi\fi
 \end{minipage}\hfill
-\ifhaslogo
-\begin{minipage}[t]{0.34\linewidth}
-  \raggedleft\includegraphics[height=22mm,keepaspectratio]{@@logo_file@@}
-\end{minipage}
-\fi
-
-\vspace{4pt}
-\docrule
-
-% --- Parties (bill-to) and reference / dates ---------------------------
-\noindent
-\begin{minipage}[t]{0.56\linewidth}
-  \fieldlabel{Bill to}\\[3pt]
-  @@user_name@@\\
-  @@user_email@@\ifrabn\\ABN @@recipient_abn@@\fi
-\end{minipage}\hfill
-\begin{minipage}[t]{0.40\linewidth}
+\begin{minipage}[t]{0.44\linewidth}
+  \vspace{0pt}
   \raggedleft
-  \fieldlabel{Reference}\ @@transaction_id@@\\
-  \fieldlabel{Issued}\ @@payment_date@@\ifduedate\\\fieldlabel{Due}\ @@due_date@@\fi
+  \ifhaslogo\includegraphics[height=20mm,keepaspectratio]{@@logo_file@@}\\[8pt]\fi
+  \ifbnum ABN: @@business_number@@\\\fi
+  \ifbaddr @@business_address@@\\\fi
+  \ifbmail @@business_contact_email@@\fi
 \end{minipage}
 
-\vspace{6pt}
+\vspace{14mm}
 
-% --- Line-item table ----------------------------------------------------
-\noindent\renewcommand{\arraystretch}{1.4}
-\begin{tabularx}{\linewidth}{@{}X l r@{}}
-  \multicolumn{1}{@{}l}{\fieldlabel{Description}} & \fieldlabel{Item} & \fieldlabel{Amount}\\
-  \multicolumn{3}{@{}l@{}}{\docrule}\\[-2pt]
-  @@conference_title@@ & @@tier_name@@ & @@currency_symbol@@@@amount@@~@@currency_code@@\\
-  \ifgst
-  \multicolumn{2}{@{}l}{{\color{muted}Subtotal (excl.\ GST)}} & {\color{muted}@@currency_symbol@@@@amount_ex_gst@@}\\
-  \multicolumn{2}{@{}l}{{\color{muted}GST (10\%)}} & {\color{muted}@@currency_symbol@@@@gst_amount@@}\\
-  \fi
-  \multicolumn{3}{@{}l@{}}{\docrule}\\[-2pt]
-  \multicolumn{2}{@{}l}{\textbf{Total}} & \textbf{@@currency_symbol@@@@amount@@~@@currency_code@@}\\
+% --- Bill-to -------------------------------------------------------------
+\noindent
+\begin{minipage}[t]{0.6\linewidth}
+  @@user_name@@\\
+  \ifraddr @@recipient_address@@\\\fi
+  \ifrabn ABN: @@recipient_abn@@\\\fi
+  {\color{muted}@@user_email@@}
+\end{minipage}
+
+\vspace{10mm}
+
+% --- Line items ----------------------------------------------------------
+\noindent
+\renewcommand{\arraystretch}{1.6}
+\setlength{\arrayrulewidth}{0.4pt}
+\begin{tabularx}{\linewidth}{|X|c|r|}
+  \hline
+  \textbf{Description} & \textbf{Qty} & \textbf{Amount (@@currency_code@@)}\\
+  \hline
+  @@conference_title@@\ifisinvoice\else\fi{} @@tier_name@@ & 1 & @@amount@@\\
+  \hline
 \end{tabularx}
 
-\vspace{4pt}
+\vspace{6mm}
 
-% --- Online payment link (optional) ------------------------------------
-\ifpaylink
-\fieldlabel{Pay online}\\
-\texttt{@@payment_link@@}
+% --- Totals --------------------------------------------------------------
+% Per kind: an invoice ends on what is owed, a receipt on what is left owing
+% (nil), an adjustment on what was refunded.
+\noindent
+\renewcommand{\arraystretch}{1.5}
+\hfill
+\begin{tabular}{r@{\hspace{6mm}}r}
+  \ifgst
+    Subtotal (excl.\ GST) (@@currency_code@@): & @@currency_symbol@@@@amount_ex_gst@@\\
+    GST (10\%) (@@currency_code@@): & @@currency_symbol@@@@gst_amount@@\\
+  \else
+    Subtotal (@@currency_code@@): & @@currency_symbol@@@@amount@@\\
+  \fi
+  \ifisreceipt
+    Total Received (@@currency_code@@): & @@currency_symbol@@@@amount@@\\
+    \textbf{Amount Owing (@@currency_code@@):} & \textbf{@@currency_symbol@@0.00}\\
+  \fi
+  \ifisinvoice
+    \textbf{Amount Due (@@currency_code@@):} & \textbf{@@currency_symbol@@@@amount@@}\\
+  \fi
+  \ifisadjustment
+    \textbf{Amount Adjusted (@@currency_code@@):} & \textbf{@@currency_symbol@@@@amount@@}\\
+  \fi
+\end{tabular}
+
+\vspace{4mm}
+
+% --- Tax statement -------------------------------------------------------
+% When not registered for GST, say so plainly. A silent omission leaves the
+% payer guessing, and a zero-valued GST line would be worse — it implies a
+% taxable sale on which no tax was charged.
+\noindent
+\ifgst\else
+  {\color{muted}No GST has been charged. @@business_legal_name@@ is not
+   registered for GST.}
 \fi
 
-% --- Payment instructions (optional) -----------------------------------
-\ifpayinstr
-\fieldlabel{Payment details}\\
-@@payment_instructions@@
+\ifisreceipt
+\vspace{2mm}
+\noindent{\bfseries Payment Received:} @@payment_date@@
 \fi
 
-% --- Free-text body from the template's pdf_body (optional) ------------
+% --- How to pay (invoices only) ------------------------------------------
+\ifisinvoice
+  \ifpaylink
+  \par\vspace{4mm}
+  \noindent{\bfseries Pay online}\\
+  \texttt{@@payment_link@@}\par
+  \fi
+  \ifpayinstr
+  \par\vspace{4mm}
+  \noindent{\bfseries Payment details}\\
+  @@payment_instructions@@\par
+  \fi
+\fi
+
+% --- Free-text body from the template ------------------------------------
 \ifpdfbody
-\vspace{2pt}
-@@pdf_body@@
+\par\vspace{4mm}
+\noindent @@pdf_body@@\par
 \fi
 
-% --- Signature image (optional) ----------------------------------------
-\ifhassig
-\vspace{8pt}
-\noindent\includegraphics[height=18mm,keepaspectratio]{@@signature_file@@}
+% --- Sign-off ------------------------------------------------------------
+\ifsignatory
+\par\vspace{8mm}
+\noindent
+With thanks,\\
+\ifhassig\includegraphics[height=14mm,keepaspectratio]{@@signature_file@@}\\[2pt]\fi
+{\bfseries @@signatory_name@@}\\
+@@signatory_role@@\\
+@@business_legal_name@@
 \fi
-
-% --- Footer -------------------------------------------------------------
-\vfill
-\docrule\\[2pt]
-\noindent{\color{muted}\small @@site_name@@\ifbnum\ \textperiodcentered\ ABN @@business_number@@\fi\ \textperiodcentered\ Reference @@transaction_id@@}
 
 \end{document}

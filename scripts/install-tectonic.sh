@@ -39,38 +39,71 @@ INSTALL_DIR="$HOME/.local/bin"
 BIN="$INSTALL_DIR/tectonic"
 FORCE="${1:-}"
 
-# Declared upfront (possibly unused) so the single EXIT trap below never
-# references an unset variable under `set -u`.
-TMP_DIR=""
+# Static-build fallback version. The official install script's gnu build is
+# dynamically linked (notably against libssl 1.1, which Ubuntu 22.04+ no
+# longer ships), so when it won't run we fall back to the fully static musl
+# release, which has no shared-library dependencies at all.
+MUSL_VERSION="0.16.9"
+
+TMP_DIR="$(mktemp -d)"
 WARM_DIR=""
 trap 'rm -rf "$TMP_DIR" "$WARM_DIR"' EXIT
 
-# ── 1. Install (idempotent) ─────────────────────────────────────────────
-if [ -x "$BIN" ] && [ "$FORCE" != "--force" ]; then
-    info "tectonic already installed at $BIN — skipping download (pass --force to reinstall)."
-else
+install_official() {
     info "Installing tectonic to $INSTALL_DIR ..."
     mkdir -p "$INSTALL_DIR"
-
-    TMP_DIR="$(mktemp -d)"
-
     if ! (cd "$TMP_DIR" && curl --proto '=https' --tlsv1.2 -fsSL https://drop-sh.fullyjustified.net | sh); then
         die "tectonic install script failed. Package-manager alternative: 'apt install tectonic' (Ubuntu 22.04+), 'brew install tectonic', or 'cargo install tectonic'."
     fi
-
-    if [ ! -f "$TMP_DIR/tectonic" ]; then
-        die "Install script ran but no tectonic binary appeared in $TMP_DIR."
-    fi
-
+    [ -f "$TMP_DIR/tectonic" ] || die "Install script ran but no tectonic binary appeared in $TMP_DIR."
     mv "$TMP_DIR/tectonic" "$BIN"
     chmod 755 "$BIN"
     ok "tectonic installed at $BIN."
+}
+
+install_musl_static() {
+    local url="https://github.com/tectonic-typesetting/tectonic/releases/download/tectonic%40${MUSL_VERSION}/tectonic-${MUSL_VERSION}-x86_64-unknown-linux-musl.tar.gz"
+    info "Fetching the static musl build ${MUSL_VERSION} ..."
+    if ! curl --proto '=https' --tlsv1.2 -fsSL -o "$TMP_DIR/tectonic-musl.tar.gz" "$url"; then
+        die "Download of the static musl build failed ($url)."
+    fi
+    tar -xzf "$TMP_DIR/tectonic-musl.tar.gz" -C "$TMP_DIR" tectonic
+    mkdir -p "$INSTALL_DIR"
+    mv "$TMP_DIR/tectonic" "$BIN"
+    chmod 755 "$BIN"
+    ok "Static musl tectonic installed at $BIN."
+}
+
+# `--version` succeeding is the health gate; its stderr is preserved so a
+# loader failure (missing shared library) is shown, not swallowed.
+verify_bin() {
+    VERSION="$("$BIN" --version 2>"$TMP_DIR/verify.err" | head -n1 || true)"
+    [ -n "$VERSION" ]
+}
+
+# ── 1. Install (idempotent — an existing binary is verified, not trusted) ──
+if [ -x "$BIN" ] && [ "$FORCE" != "--force" ]; then
+    info "tectonic already installed at $BIN — skipping download (pass --force to reinstall)."
+else
+    install_official
 fi
 
-# ── 2. Echo the version actually in place ───────────────────────────────
-VERSION="$("$BIN" --version 2>/dev/null | head -n1 || true)"
-if [ -z "$VERSION" ]; then
-    die "tectonic is at $BIN but '$BIN --version' failed — binary looks broken."
+# ── 2. Verify it runs; fall back to the static musl build if not ─────────
+if ! verify_bin; then
+    err "'$BIN --version' failed:"
+    sed 's/^/    /' "$TMP_DIR/verify.err" >&2 || true
+    if [ "$(uname -m)" = "x86_64" ]; then
+        info "The gnu build likely needs shared libraries this host lacks (e.g."
+        info "libssl 1.1 on Ubuntu 22.04+). Retrying with the static musl build."
+        install_musl_static
+        if ! verify_bin; then
+            err "'$BIN --version' still failing:"
+            sed 's/^/    /' "$TMP_DIR/verify.err" >&2 || true
+            die "Could not obtain a working tectonic. Alternatives: 'apt install tectonic', 'brew install tectonic', or 'cargo install tectonic'."
+        fi
+    else
+        die "No static fallback for $(uname -m). Alternatives: 'apt install tectonic', 'brew install tectonic', or 'cargo install tectonic'."
+    fi
 fi
 info "Version: $VERSION"
 

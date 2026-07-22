@@ -1,6 +1,7 @@
 """Public route tests: home, conferences, committee, contact form with OTP."""
 from __future__ import annotations
 
+import re
 from datetime import datetime
 
 from app.models import OTPCode, User
@@ -213,3 +214,24 @@ class TestContactFormOTPFlow:
 
         resp = client.get("/contact/verify")
         assert resp.status_code == 302
+
+
+class TestStaticCacheBusting:
+    """Deploys must invalidate cached js/css: asset URLs carry a content hash
+    and only those versioned URLs are cached long-term."""
+
+    def test_pages_reference_versioned_assets(self, seeded, client):
+        resp = client.get("/")
+        assert re.search(rb"/static/js/core\.js\?v=[0-9a-f]{8}", resp.data)
+        assert re.search(rb"/static/css/site\.css\?v=[0-9a-f]{8}", resp.data)
+
+    def test_versioned_static_is_immutable(self, client):
+        resp = client.get("/static/js/core.js?v=deadbeef")
+        assert resp.status_code == 200
+        cc = resp.headers.get("Cache-Control", "")
+        assert "immutable" in cc and "max-age=31536000" in cc
+
+    def test_unversioned_static_is_not_immutable(self, client):
+        resp = client.get("/static/js/core.js")
+        assert resp.status_code == 200
+        assert "immutable" not in resp.headers.get("Cache-Control", "")

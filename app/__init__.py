@@ -263,6 +263,40 @@ def _register_template_globals(app: Flask) -> None:
     from .models.content import NavItem, FooterColumn
     from .services.fonts import FONT_STACKS
 
+    # Content-hash cache busting for static assets. Browsers and the
+    # Cloudflare edge cache js/css aggressively, so a deploy that changes
+    # them alongside the HTML that expects the new behaviour can strand
+    # returning visitors on stale assets. Versioned URLs make every deploy
+    # a natural cache miss. Hashes are memoized per process — a deploy
+    # restarts the app, refreshing them.
+    _static_hashes: dict[str, str] = {}
+
+    def static_url(filename: str) -> str:
+        v = _static_hashes.get(filename)
+        if v is None:
+            path = Path(app.static_folder) / filename
+            try:
+                v = hashlib.sha256(path.read_bytes()).hexdigest()[:8]
+            except OSError:
+                v = ""
+            _static_hashes[filename] = v
+        if v:
+            return url_for("static", filename=filename, v=v)
+        return url_for("static", filename=filename)
+
+    app.jinja_env.globals["static_url"] = static_url
+
+    @app.after_request
+    def _immutable_versioned_static(response):
+        # Only versioned URLs are safe to cache long-term: the URL changes
+        # whenever the content does. Unversioned /static and /uploads keep
+        # their default revalidation behaviour.
+        if request.path.startswith("/static/") and request.args.get("v"):
+            response.cache_control.public = True
+            response.cache_control.max_age = 31536000
+            response.cache_control.immutable = True
+        return response
+
     @app.context_processor
     def inject_globals():
         settings = get_site_settings()

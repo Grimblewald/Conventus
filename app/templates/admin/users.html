@@ -95,6 +95,6 @@
 .role-select.flash-ok { background: var(--c-success-bg, #e6ffe6); transition: background .3s; }
 .role-select.flash-err { background: var(--c-error-bg, #ffe6e6); transition: background .3s; }
 </style>
-<script src="{{ url_for('static', filename='js/admin/users.js') }}"></script>
-<script src="{{ url_for('static', filename='js/member-search.js') }}"></script>
+<script src="{{ static_url('js/admin/users.js') }}"></script>
+<script src="{{ static_url('js/member-search.js') }}"></script>
 {% endblock %}

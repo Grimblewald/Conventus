@@ -89,7 +89,7 @@ def test_invoice_renders_and_cleans(ctx, tmp_path):
     assert pdf[:4] == b"%PDF"
     # Job dir removed in finally; the render root is left empty (no pregen yet).
     root = _doc_render_root()
-    assert not any(root.iterdir())
+    assert not [p for p in root.iterdir() if not p.name.startswith('.')]
 
 
 # --- (b) determinism ---------------------------------------------------------
@@ -176,7 +176,8 @@ def test_broken_body_raises_with_log(ctx, monkeypatch):
         render_document("invoice", _vars())
     assert ei.value.log.strip()
     # And the job dir was still cleaned up on the failure path.
-    assert not any(_doc_render_root().iterdir())
+    assert not [p for p in _doc_render_root().iterdir()
+               if not p.name.startswith('.')]
 
 
 # --- (g) all three kinds render ---------------------------------------------
@@ -343,7 +344,7 @@ def test_concurrency_cap_serialises(app, monkeypatch):
     intervals = []
     lock = threading.Lock()
 
-    def slow_compile(tectonic, job_dir, tex_path, epoch):
+    def slow_compile(tectonic, job_dir, tex_path, epoch, memory_mb=0):
         start = time.monotonic()
         time.sleep(0.15)
         end = time.monotonic()
@@ -371,7 +372,7 @@ def test_backlog_reports_position(app, monkeypatch):
     app.config["DOC_COMPILE_WORKERS"] = 1
     gate = threading.Event()
 
-    def gated_compile(tectonic, job_dir, tex_path, epoch):
+    def gated_compile(tectonic, job_dir, tex_path, epoch, memory_mb=0):
         gate.wait(5)
         return b"%PDF-fake"
 
@@ -396,7 +397,7 @@ def test_queue_survives_a_raising_job(app, monkeypatch):
     app.config["DOC_COMPILE_WORKERS"] = 1
     state = {"boom": True}
 
-    def flaky_compile(tectonic, job_dir, tex_path, epoch):
+    def flaky_compile(tectonic, job_dir, tex_path, epoch, memory_mb=0):
         if state["boom"]:
             state["boom"] = False
             raise ValueError("kaboom")
@@ -420,7 +421,8 @@ def test_render_document_cleans_job_dir_via_queue(app, monkeypatch):
     with app.app_context():
         out = render_document("invoice", _vars(), template=_DRAFT)
     assert out == b"%PDF-queued"
-    assert not any(_doc_render_root().iterdir())
+    assert not [p for p in _doc_render_root().iterdir()
+               if not p.name.startswith('.')]
 
 
 def test_queued_preview_route_flashes_position_and_does_not_block(
@@ -492,3 +494,89 @@ def test_tectonic_health_notes_warm_pregen(ctx):
     ok, reason = docs.tectonic_health()
     assert ok is True
     assert "pregen warm" in reason
+
+
+# --- Resource safety: a small VPS runs several gunicorn workers --------------
+#
+# Regression cover for the outage of 2026-07-22: every gunicorn worker ran the
+# app factory, each warmed three document kinds, and the resulting concurrent
+# tectonic processes tripped the OOM killer — which took gunicorn down, and
+# systemd restarted it straight back into the same loop.
+
+def test_boot_warm_is_off_by_default(app):
+    """Boot-time warming must stay opt-in: the app factory runs in EVERY
+    gunicorn worker, so a boot compile multiplies by worker count."""
+    from app.config import BaseConfig
+    assert BaseConfig.DOC_WARM_ON_BOOT is False
+
+
+def test_boot_warm_respects_the_flag(monkeypatch):
+    """_warm_document_pregen must not spawn compiles unless explicitly enabled."""
+    import sys as _sys
+    from app import _warm_document_pregen
+
+    started: list[str] = []
+    monkeypatch.setattr("app.services.documents.warm_pregen_async",
+                        lambda app_, kind: started.append(kind))
+    # The real guard also skips under pytest; bypass it so the flag is what we
+    # are actually asserting on.
+    monkeypatch.setitem(_sys.modules, "pytest", None)
+    monkeypatch.delitem(_sys.modules, "pytest")
+
+    class _App:
+        def __init__(self, **cfg):
+            self.config = cfg
+
+    _warm_document_pregen(_App(DOC_WARM_ON_BOOT=False, TESTING=False))
+    assert started == []
+
+
+def test_compile_takes_a_box_wide_lock(ctx, monkeypatch):
+    """One tectonic per machine, not per worker: the in-process queue caps
+    concurrency inside a single gunicorn worker only."""
+    from app.services import documents as docs
+
+    taken: list[str] = []
+    real_lock = docs._box_compile_lock
+
+    def _spy():
+        taken.append("locked")
+        return real_lock()
+
+    monkeypatch.setattr(docs, "_box_compile_lock", _spy)
+    pdf = render_document("invoice", _vars())
+    assert pdf[:4] == b"%PDF"
+    assert taken == ["locked"]
+
+
+def test_box_lock_is_exclusive_across_processes():
+    """The lock is a real flock, so a second holder blocks — that is what makes
+    it work across gunicorn workers rather than only across threads."""
+    import fcntl
+    import os
+    from app.services import documents as docs
+
+    fd = docs._box_compile_lock()
+    try:
+        probe = os.open(str(docs._doc_render_root() / ".compile.lock"),
+                        os.O_CREAT | os.O_RDWR)
+        try:
+            with pytest.raises(BlockingIOError):
+                fcntl.flock(probe, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        finally:
+            os.close(probe)
+    finally:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+
+def test_compile_runs_under_a_memory_cap(ctx):
+    """A capped child dies on its own instead of letting the kernel OOM killer
+    pick a victim (which on this box was a gunicorn worker)."""
+    from app.services.documents import _memory_limiter, _compile_memory_mb
+
+    assert _compile_memory_mb() > 0            # configured by default
+    assert _memory_limiter(0) is None          # 0 disables
+    assert callable(_memory_limiter(512))
+    # The cap must not break an ordinary document.
+    assert render_document("invoice", _vars())[:4] == b"%PDF"

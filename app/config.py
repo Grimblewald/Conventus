@@ -120,6 +120,26 @@ class BaseConfig:
     # waits for its PDF (queue wait + compile) before giving up with an error.
     DOC_COMPILE_WORKERS = _int("DOC_COMPILE_WORKERS", 1)
     DOC_COMPILE_TIMEOUT = _int("DOC_COMPILE_TIMEOUT", 120)
+    # Hard address-space ceiling for a single tectonic process, in MB. Without
+    # it a runaway compile is resolved by the kernel OOM killer, which picks
+    # its own victim — usually a gunicorn worker, taking the site down. With
+    # it, tectonic dies instead and the failure surfaces as a render error.
+    # 0 disables the cap.
+    DOC_COMPILE_MEMORY_MB = _int("DOC_COMPILE_MEMORY_MB", 640)
+    # Compile the preview cache at boot. OFF by default: every gunicorn worker
+    # runs the app factory, so boot-time compiling multiplies by worker count
+    # on a small box. The cache warms on first use instead; set this only on a
+    # host with memory to spare.
+    DOC_WARM_ON_BOOT = _bool("DOC_WARM_ON_BOOT", False)
+    # Letterhead logo and signature image for financial documents. Under var/,
+    # NOT the public uploads tree: a signature image is forgeable material and
+    # must never be web-served. Admins preview it through an authenticated
+    # route; the renderer copies it into the compile job dir.
+    FINANCIAL_ASSETS_DIR = str(
+        Path(os.environ.get("FINANCIAL_ASSETS_DIR")
+             or (Path(__file__).resolve().parent.parent / "var" / "financial-assets"))
+    )
+    MAX_FINANCIAL_ASSET_BYTES = 2 * 1024 * 1024   # 2 MB logo/signature
 
     # --- Update checker (optional) ------------------------------------------
     UPDATE_REMOTE_URL = (os.environ.get("UPDATE_REMOTE_URL") or "").strip()

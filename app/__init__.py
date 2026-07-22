@@ -412,18 +412,26 @@ def _register_key_expiry_check(app: Flask) -> None:
 
 
 def _warm_document_pregen(app: Flask) -> None:
-    """Kick daemon threads that warm the all-placeholders preview cache for every
-    document kind after boot, so the first "Download preview" serves instantly
-    instead of waiting on a cold compile. Skipped under the migration CLI (no
-    business compiling there) and in tests; resilient by design — a tectonic
-    hiccup logs and never crashes boot. The warm compile rides the shared
-    compile queue (via warm_pregen_async → warm_pregen → render_document), so it
-    is serialised against on-demand renders rather than competing for CPU.
+    """Optionally warm the preview cache for every document kind after boot.
+
+    OFF by default (`DOC_WARM_ON_BOOT`), and that default is load-bearing:
+    gunicorn runs the app factory in EVERY worker, so a boot-time compile is
+    multiplied by the worker count. On a small VPS that was enough concurrent
+    tectonic memory to trip the OOM killer, which took gunicorn with it and —
+    with Restart=always — produced a boot loop. The cache warms on first use
+    instead, which costs one slow preview and nothing else. Enable this only
+    where there is memory to spare.
+
+    Skipped under the migration CLI (no business compiling there) and in tests;
+    resilient by design — a tectonic hiccup logs and never crashes boot.
 
     The TESTING flag is only set by the test harness *after* create_app(), so we
     also skip whenever pytest is loaded — otherwise the boot warm would fire real
     tectonic compiles into every test session."""
-    if _running_migration_cli() or app.config.get("TESTING") or "pytest" in sys.modules:
+    if (not app.config.get("DOC_WARM_ON_BOOT")
+            or _running_migration_cli()
+            or app.config.get("TESTING")
+            or "pytest" in sys.modules):
         return
     from .services.documents import warm_pregen_async
     for kind in ("invoice", "receipt", "adjustment"):

@@ -18,10 +18,14 @@ runs on a worker, touches no DB, needs no app context). There stays exactly one
 compile code path: the pure step is `_compile`, and every caller — preview, warm
 pregen, boot warm — reaches it through `render_document` → the queue.
 
-Single-process assumption: the queue, worker pool and backlog counter are plain
-in-process objects. This is deliberate — the deploy is a single Flask/gunicorn
-worker behind a Cloudflare tunnel (THE process). A multi-process deploy would
-need an external broker; that is out of scope by design.
+Multi-process reality: the queue, worker pool and backlog counter are plain
+in-process objects, so they cap concurrency within ONE worker only — and
+gunicorn runs several. Because tectonic is the memory hog on a small box, the
+compile itself additionally takes a box-wide `flock` (`_box_compile_lock`), so
+at most one tectonic runs per machine no matter the worker count, and the child
+is capped by `DOC_COMPILE_MEMORY_MB` so a runaway compile dies instead of the
+OOM killer choosing a gunicorn worker. Boot-time warming is off by default for
+the same reason (`DOC_WARM_ON_BOOT`).
 """
 from __future__ import annotations
 
@@ -352,24 +356,79 @@ _workers_started = False
 _workers_guard = threading.Lock()
 
 
+def _memory_limiter(limit_mb: int):
+    """preexec_fn capping the child's address space, or None when disabled.
+
+    The cap is the difference between "this compile fails" and "the kernel
+    picks something to kill" — and the kernel's choice on a small box tends to
+    be a gunicorn worker, not tectonic. Applied to the child only.
+    """
+    if limit_mb <= 0:
+        return None
+    import resource
+
+    limit = limit_mb * 1024 * 1024
+
+    def _apply() -> None:
+        resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
+
+    return _apply
+
+
+def _compile_memory_mb() -> int:
+    """The child memory cap, read in the caller's context — the compile worker
+    thread runs without an app context, so this cannot be read down there."""
+    try:
+        return int(current_app.config.get("DOC_COMPILE_MEMORY_MB") or 0)
+    except RuntimeError:
+        return 0
+
+
+def _box_compile_lock():
+    """Exclusive, box-wide lock file serialising tectonic across processes.
+
+    The compile queue caps concurrency inside ONE process, but gunicorn runs
+    several — so the queue alone still permits worker_count simultaneous
+    compiles. On a small VPS that is an OOM. This lock makes "one tectonic at a
+    time" true for the whole machine. Blocking: a caller would rather wait than
+    fail, and the queue's own timeout still bounds the wait.
+    """
+    lock_path = _doc_render_root() / ".compile.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+    except Exception:
+        os.close(fd)
+        raise
+    return fd
+
+
 def _compile(tectonic: str, job_dir: Path, tex_path: Path,
-             source_date_epoch: int) -> bytes:
+             source_date_epoch: int, memory_mb: int = 0) -> bytes:
     """The ONE compile step: run tectonic on a prepared job dir and return the
     PDF bytes (or raise RenderError). Pure — no DB, no app context, no escaping;
     everything it needs is passed in, so it is safe to run on a worker thread.
     This is the single point every caller's compile funnels through."""
     # Network stays ON (a cold cache must still fetch packages).
     env = dict(os.environ, SOURCE_DATE_EPOCH=str(source_date_epoch))
+    lock_fd = _box_compile_lock()
     try:
         proc = subprocess.run(
             [tectonic, "--outdir", str(job_dir), str(tex_path)],
             capture_output=True, timeout=_COMPILE_TIMEOUT,
             env=env, cwd=str(job_dir),
+            preexec_fn=_memory_limiter(memory_mb),
         )
     except subprocess.TimeoutExpired as e:
         raise RenderError(
             f"tectonic timed out after {_COMPILE_TIMEOUT}s",
             log=_trim_log((e.stdout or b"") + (e.stderr or b"")))
+    finally:
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        finally:
+            os.close(lock_fd)
 
     if proc.returncode != 0:
         raise RenderError(
@@ -389,15 +448,16 @@ class _CompileJob:
     the bytes or the RenderError. `abandoned` lets a timed-out caller tell a
     not-yet-started job to skip the (now pointless) compile."""
 
-    __slots__ = ("tectonic", "job_dir", "tex_path", "epoch",
+    __slots__ = ("tectonic", "job_dir", "tex_path", "epoch", "memory_mb",
                  "done", "pdf", "error", "abandoned")
 
     def __init__(self, tectonic: str, job_dir: Path, tex_path: Path,
-                 epoch: int) -> None:
+                 epoch: int, memory_mb: int = 0) -> None:
         self.tectonic = tectonic
         self.job_dir = job_dir
         self.tex_path = tex_path
         self.epoch = epoch
+        self.memory_mb = memory_mb
         self.done = threading.Event()
         self.pdf: bytes | None = None
         self.error: RenderError | None = None
@@ -406,7 +466,7 @@ class _CompileJob:
     def execute(self) -> None:
         try:
             self.pdf = _compile(self.tectonic, self.job_dir, self.tex_path,
-                                self.epoch)
+                                self.epoch, self.memory_mb)
         except RenderError as e:
             self.error = e
         except Exception as e:                # never let a worker die on a job
@@ -545,7 +605,8 @@ def render_document(kind: str, vars_: dict[str, str],
 
         # Compile via the shared queue (capped concurrency) and wait for bytes.
         return _submit_and_wait(
-            _CompileJob(tectonic, job, tex_path, source_date_epoch))
+            _CompileJob(tectonic, job, tex_path, source_date_epoch,
+                        _compile_memory_mb()))
     finally:
         shutil.rmtree(job, ignore_errors=True)
 

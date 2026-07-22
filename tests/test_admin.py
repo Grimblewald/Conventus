@@ -196,7 +196,7 @@ class TestUserManagement:
 class TestFinancialInvoiceTemplate:
     def test_save_same_domain_from_email_no_warning(self, seeded, admin_client):
         """MAIL_FROM defaults to the your-domain.example.org sandbox address."""
-        resp = admin_client.post("/admin/financial/invoice", data={
+        resp = admin_client.post("/admin/financial/documents/invoice", data={
             "subject": "Invoice", "email_body": "Body",
             "from_email": "billing@your-domain.example.org",
         }, follow_redirects=True)
@@ -207,7 +207,7 @@ class TestFinancialInvoiceTemplate:
     def test_save_different_domain_from_email_warns(self, seeded, admin_client, app):
         """from_email on a domain the SMTP sender doesn't own risks SPF/DKIM
         failure — warn but still save."""
-        resp = admin_client.post("/admin/financial/invoice", data={
+        resp = admin_client.post("/admin/financial/documents/invoice", data={
             "subject": "Invoice", "email_body": "Body",
             "from_email": "billing@some-other-domain.example.org",
         }, follow_redirects=True)

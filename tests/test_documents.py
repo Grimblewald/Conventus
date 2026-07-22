@@ -304,7 +304,7 @@ def test_document_preview_route_returns_pdf(ctx, admin_client, monkeypatch):
 def test_editor_page_has_preview_button(ctx, admin_client):
     """The editor's second submit button posts the SAME form to the preview
     route (unsaved edits travel), and the pdf_body field exists."""
-    resp = admin_client.get("/admin/financial/invoice")
+    resp = admin_client.get("/admin/financial/documents/invoice")
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
     assert "Download preview" in html

@@ -40,6 +40,7 @@ def financial():
         "admin/financial.html",
         config=anzw_cfg,
         invoice=invoice_tpl,
+        document_kinds=DOCUMENT_KINDS,
         ident=get_financial_identity(),
         doc_health=doc_health,
     )
@@ -189,10 +190,34 @@ def financial_toggle_sandbox_confirm(provider):
     return render_template("admin/financial_sandbox_confirm.html", config=cfg)
 
 
-@admin_bp.route("/financial/invoice", methods=["GET", "POST"])
+DOCUMENT_KINDS = {
+    "invoice": ("Invoice", "Requests payment — sent to sponsors, or with a "
+                           "registration that is not yet paid."),
+    "receipt": ("Receipt", "Confirms a payment that has been received."),
+    "adjustment": ("Adjustment note", "Records a refund or correction against "
+                                      "an earlier payment."),
+}
+
+
+@admin_bp.route("/financial/invoice")
 @requires_permission("financial.manage")
 def financial_invoice():
-    tpl = get_document_template("invoice")
+    """Kept so existing links and bookmarks still land somewhere sensible."""
+    return redirect(url_for("admin.financial_document", kind="invoice"))
+
+
+@admin_bp.route("/financial/documents/<kind>", methods=["GET", "POST"])
+@requires_permission("financial.manage")
+def financial_document(kind):
+    """Edit one document kind: the email cover and the PDF body. The issuer's
+    tax and business details are shared across kinds and live on the Financial
+    identity page."""
+    if kind not in DOCUMENT_KINDS:
+        flash("Unknown document type.", "error")
+        return redirect(url_for("admin.financial"))
+
+    tpl = get_document_template(kind)
+    label, blurb = DOCUMENT_KINDS[kind]
 
     if request.method == "POST":
         tpl.subject = (request.form.get("subject") or "").strip()
@@ -202,15 +227,15 @@ def financial_invoice():
         tpl.footer_text = (request.form.get("footer_text") or "").strip()
         tpl.pdf_body = (request.form.get("pdf_body") or "").strip()
         db.session.commit()
-        audit.record("financial.invoice_template_updated",
+        audit.record("financial.document_template_updated",
                      target_kind="document_template", target_id=str(tpl.id),
-                     summary="Invoice template updated")
+                     summary=f"{label} template updated by {current_user.email}")
 
         # The saved content changed the pregen's cache key — re-warm off-request
         # (in a thread) so the next preview serves the fresh cache without
         # stalling this save.
         from ...services.documents import warm_pregen_async
-        warm_pregen_async(current_app._get_current_object(), "invoice")
+        warm_pregen_async(current_app._get_current_object(), kind)
 
         # from_email on a different domain to the SMTP sender fails SPF/DKIM
         # alignment on most providers — warn, don't block the save.
@@ -221,13 +246,14 @@ def financial_invoice():
             from_domain = tpl.from_email.split("@")[-1].lower() if "@" in tpl.from_email else ""
             if sender_domain and from_domain and from_domain != sender_domain:
                 flash(f"From email domain ({from_domain}) differs from the configured "
-                     f"mail sender domain ({sender_domain}) — this invoice mail may "
-                     f"fail SPF/DKIM checks and land in spam.", "warning")
+                      f"mail sender domain ({sender_domain}) — this mail may "
+                      f"fail SPF/DKIM checks and land in spam.", "warning")
 
-        flash("Invoice template saved.", "success")
-        return redirect(url_for("admin.financial"))
+        flash(f"{label} template saved.", "success")
+        return redirect(url_for("admin.financial_document", kind=kind))
 
-    return render_template("admin/financial_invoice.html", invoice=tpl)
+    return render_template("admin/financial_document.html", tpl=tpl, kind=kind,
+                           label=label, blurb=blurb, kinds=DOCUMENT_KINDS)
 
 
 _ASSET_SLOTS = {"logo": "Letterhead logo", "signature": "Signature"}
@@ -347,7 +373,7 @@ def financial_document_preview():
     if backlog > 0:
         flash(f"Your document is queued — position {backlog + 1} in line. "
               "Retry the download in a few seconds.", "info")
-        return redirect(url_for("admin.financial_invoice"))
+        return redirect(url_for("admin.financial_document", kind=kind))
 
     # An unsaved draft carrying the submitted editor fields, so edits that
     # aren't committed yet still drive the preview. Not added to the session —
@@ -361,11 +387,11 @@ def financial_document_preview():
         pdf = preview_pdf(kind, template=draft)
     except PregenBusy:
         flash("Preview is still compiling — retry in a few seconds.", "warning")
-        return redirect(url_for("admin.financial_invoice"))
+        return redirect(url_for("admin.financial_document", kind=kind))
     except RenderError as e:
         flash(f"Preview failed to compile: {e}"
               + (f"\n{e.log}" if e.log else ""), "error")
-        return redirect(url_for("admin.financial_invoice"))
+        return redirect(url_for("admin.financial_document", kind=kind))
 
     return send_file(BytesIO(pdf), mimetype="application/pdf",
                      as_attachment=True, download_name=f"preview-{kind}.pdf")

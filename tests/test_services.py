@@ -104,8 +104,20 @@ class TestDocumentTemplate:
             assert len({inv.id, rec.id, adj.id}) == 3
             # Kind-specific default wording (checked against the seed source so
             # the assertion survives another test mutating a saved row).
+            #
+            # The semantics matter more than the phrasing: an invoice ASKS for
+            # money, a receipt CONFIRMS money already taken. Shipping receipt
+            # wording under the invoice kind is a real defect that reached
+            # users once — hence the explicit negative assertion.
             from app.models.content import _DOCUMENT_DEFAULTS
-            assert "received" in _DOCUMENT_DEFAULTS["invoice"]["email_body"].lower()
+            invoice_body = _DOCUMENT_DEFAULTS["invoice"]["email_body"].lower()
+            assert "amount due" in invoice_body
+            assert "has been received" not in invoice_body
+            assert "payment receipt" not in _DOCUMENT_DEFAULTS["invoice"]["subject"].lower()
+
+            receipt_body = _DOCUMENT_DEFAULTS["receipt"]["email_body"].lower()
+            assert "received" in receipt_body
+            assert "amount due" not in receipt_body
             assert "receipt" in rec.email_body.lower()
             assert "adjustment" in adj.email_body.lower()
 

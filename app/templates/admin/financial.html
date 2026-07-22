@@ -113,16 +113,19 @@
 <div class="section-head" style="margin-top:32px;">
   <div>
     <div class="eyebrow">Templates</div>
-    <h2>Invoice</h2>
+    <h2>Documents</h2>
   </div>
 </div>
 
 <div class="card" style="padding:24px;">
-  <p>Customize the email invoice sent to members when payment is confirmed.</p>
-  <a href="{{ url_for('admin.financial_invoice') }}" class="btn">Edit Invoice Template</a>
-  {% if invoice %}
-    <p class="muted" style="margin-top:8px; font-size:0.9rem;">Subject: {{ invoice.subject }}</p>
-  {% endif %}
+  <p>Each document is a plain-text email with a PDF attached. Edit the wording
+     and preview the PDF before anything is sent.</p>
+  <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px;">
+    {% for k, (k_label, k_blurb) in document_kinds.items() %}
+      <a href="{{ url_for('admin.financial_document', kind=k) }}"
+         class="btn" title="{{ k_blurb }}">{{ k_label }}</a>
+    {% endfor %}
+  </div>
 </div>
 
 <div class="section-head" style="margin-top:32px;">

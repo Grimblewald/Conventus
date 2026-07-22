@@ -290,46 +290,55 @@ def get_financial_identity() -> FinancialIdentity:
 
 # Per-kind seed wording. Every kind draws from the same variable vocabulary
 # ({invoice_type}, {gst_amount}, {amount_ex_gst}, …) so any kind renders
-# sensibly whether or not GST is registered.
+# through the one document renderer. The cover email is deliberately short:
+# the formal document is the attached PDF.
 _DOCUMENT_DEFAULTS = {
+    # An invoice REQUESTS payment. It must never read like a receipt.
     "invoice": {
-        "subject": "Payment Receipt — {conference_title}",
+        "subject": "Invoice {transaction_id} — {conference_title}",
         "email_body": (
             "Dear {user_name},\n\n"
-            "Your payment for {conference_title} has been received.\n\n"
-            "Registration: {tier_name}\n"
-            "Amount: {currency_symbol}{amount} {currency_code}\n"
-            "Transaction ID: {transaction_id}\n\n"
-            "Thank you,\n{site_name}"
+            "Please find attached invoice {transaction_id} for "
+            "{conference_title}.\n\n"
+            "Item: {tier_name}\n"
+            "Amount due: {currency_symbol}{amount} {currency_code}\n"
+            "Due date: {due_date}\n\n"
+            "Pay online:\n{payment_link}\n\n"
+            "Or by bank transfer:\n{payment_instructions}\n\n"
+            "Please quote {transaction_id} with your payment.\n\n"
+            "{business_legal_name}"
         ),
         "footer_text": "Thank you from {site_name}",
     },
+    # A receipt CONFIRMS payment already made.
     "receipt": {
-        "subject": "Receipt — {conference_title}",
+        "subject": "Receipt {transaction_id} — {conference_title}",
         "email_body": (
             "Dear {user_name},\n\n"
-            "Payment received — this is your receipt for {conference_title}.\n\n"
-            "{invoice_type} {transaction_id}\n"
+            "Thank you — your payment has been received. Your receipt is "
+            "attached.\n\n"
             "Item: {tier_name}\n"
             "Amount paid: {currency_symbol}{amount} {currency_code}\n"
-            "Includes GST: {currency_symbol}{gst_amount}\n"
-            "Date: {payment_date}\n\n"
-            "Thank you,\n{site_name}"
+            "Date: {payment_date}\n"
+            "Reference: {transaction_id}\n\n"
+            "{business_legal_name}"
         ),
         "footer_text": "Thank you from {site_name}",
     },
+    # An adjustment note records a refund or correction against a payment.
     "adjustment": {
-        "subject": "Adjustment Note — {conference_title}",
+        "subject": "Adjustment note {transaction_id} — {conference_title}",
         "email_body": (
             "Dear {user_name},\n\n"
-            "This is an adjustment note for {conference_title}.\n\n"
-            "Reference: {transaction_id}\n"
+            "An adjustment has been made to your payment for "
+            "{conference_title}. The adjustment note is attached.\n\n"
             "Item: {tier_name}\n"
-            "Adjustment amount: {currency_symbol}{amount} {currency_code}\n"
-            "Includes GST: {currency_symbol}{gst_amount}\n"
-            "Date: {payment_date}\n\n"
-            "Any refund due will be returned to your original payment method.\n\n"
-            "{site_name}"
+            "Amount: {currency_symbol}{amount} {currency_code}\n"
+            "Date: {payment_date}\n"
+            "Reference: {transaction_id}\n\n"
+            "Any refund is returned to the original payment method and can "
+            "take a few business days to appear.\n\n"
+            "{business_legal_name}"
         ),
         "footer_text": "Thank you from {site_name}",
     },

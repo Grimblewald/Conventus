@@ -67,21 +67,35 @@ def test_backup_round_trips(isolated_app, tmp_path):
 
 def test_restore_snapshots_the_current_db_first(isolated_app, tmp_path):
     """The heart of the guarantee: the live DB is copied aside before the
-    archive overwrites it, so a restore is reversible."""
+    archive overwrites it, so a restore is reversible. The snapshot is taken
+    with the SQLite backup API, so it captures committed database content —
+    verified here via a distinctive user_version, not raw trailing bytes."""
+    import sqlite3
+
     from app.services.backup_archive import build_backup_zip, restore_backup_zip
 
     with isolated_app.app_context():
         archive = build_backup_zip(tmp_path / "out")
 
-        marker = b"LIVE-STATE-MARKER-do-not-lose"
-        with open(_sqlite_file(isolated_app), "ab") as fh:
-            fh.write(marker)
+        # Mark the CURRENT database with a committed change (a real DB write),
+        # so we can prove the pre-restore snapshot captured *this* state.
+        marker = 8675309
+        live = _sqlite_file(isolated_app)
+        conn = sqlite3.connect(str(live))
+        conn.execute(f"PRAGMA user_version = {marker}")
+        conn.commit()
+        conn.close()
 
         restore_backup_zip(archive)
 
     snaps = list((tmp_path / "var" / "backups").glob("*-pre-restore*/app.db"))
     assert snaps, "no pre-restore snapshot was written"
-    assert any(marker in p.read_bytes() for p in snaps)
+    versions = []
+    for p in snaps:
+        c = sqlite3.connect(str(p))
+        versions.append(c.execute("PRAGMA user_version").fetchone()[0])
+        c.close()
+    assert marker in versions
 
 
 def test_invalid_archive_is_rejected(isolated_app, tmp_path):

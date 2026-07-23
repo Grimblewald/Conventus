@@ -158,3 +158,32 @@ def test_old_snapshots_are_pruned_but_pre_revert_kept(repo, shimmed_path):
     update_snaps = [s for s in _backup_dirs(repo)
                     if not s.name.endswith("pre-revert")]
     assert len(update_snaps) == 2, [s.name for s in update_snaps]
+
+
+def test_revert_never_restores_from_a_pre_revert_snapshot(repo, shimmed_path):
+    """Pre-revert copies (including the same-second collision form
+    <stamp>-pre-revert-N) are rolled-back live state, never a rollback target —
+    a --revert must restore the newest UPDATE snapshot, skipping both."""
+    backups = repo / "var" / "backups"
+    backups.mkdir(parents=True)
+
+    # An older genuine update snapshot — the correct restore target.
+    upd = backups / "20260101-100000"
+    upd.mkdir()
+    (upd / "app.db").write_text("UPDATE-SNAPSHOT")
+    (upd / "git-head").write_text("")
+
+    # Two pre-revert copies in the same second: the base and the -1 collision
+    # form. Newer by name than the update snapshot, so a naive "newest dir"
+    # pick would wrongly choose one of these.
+    for name, body in (("20260201-120000-pre-revert", "ROLLED-BACK-A"),
+                       ("20260201-120000-pre-revert-1", "ROLLED-BACK-B")):
+        d = backups / name
+        d.mkdir()
+        (d / "app.db").write_text(body)
+
+    (repo / "instance" / "app.db").write_text("CURRENT-LIVE")
+    r = _run(repo, shimmed_path, "--revert", "--yes")
+    assert r.returncode == 0, r.stderr
+    # Restored the update snapshot, not either pre-revert copy.
+    assert (repo / "instance" / "app.db").read_text() == "UPDATE-SNAPSHOT"

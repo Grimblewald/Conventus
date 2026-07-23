@@ -301,6 +301,19 @@ def test_document_preview_route_returns_pdf(ctx, admin_client, monkeypatch):
     assert PaymentEvent.query.count() == before
 
 
+def test_document_preview_rejects_unknown_kind(ctx, admin_client, monkeypatch):
+    """An unknown kind must be rejected cleanly, not crash in the seed getter
+    (regression: kind reached _DOCUMENT_DEFAULTS[kind] and raised KeyError)."""
+    called = []
+    monkeypatch.setattr(docs, "render_document",
+                        lambda *a, **k: called.append(1) or b"%PDF")
+    resp = admin_client.post("/admin/financial/document/preview",
+                             data={"kind": "bogus", "pdf_body": ""},
+                             follow_redirects=False)
+    assert resp.status_code in (302, 303)
+    assert called == []          # never reached the renderer
+
+
 def test_editor_page_has_preview_button(ctx, admin_client):
     """The editor's second submit button posts the SAME form to the preview
     route (unsaved edits travel), and the pdf_body field exists."""
@@ -344,7 +357,7 @@ def test_concurrency_cap_serialises(app, monkeypatch):
     intervals = []
     lock = threading.Lock()
 
-    def slow_compile(tectonic, job_dir, tex_path, epoch, memory_mb=0):
+    def slow_compile(tectonic, job_dir, tex_path, epoch, memory_mb=0, should_abort=None):
         start = time.monotonic()
         time.sleep(0.15)
         end = time.monotonic()
@@ -372,7 +385,7 @@ def test_backlog_reports_position(app, monkeypatch):
     app.config["DOC_COMPILE_WORKERS"] = 1
     gate = threading.Event()
 
-    def gated_compile(tectonic, job_dir, tex_path, epoch, memory_mb=0):
+    def gated_compile(tectonic, job_dir, tex_path, epoch, memory_mb=0, should_abort=None):
         gate.wait(5)
         return b"%PDF-fake"
 
@@ -397,7 +410,7 @@ def test_queue_survives_a_raising_job(app, monkeypatch):
     app.config["DOC_COMPILE_WORKERS"] = 1
     state = {"boom": True}
 
-    def flaky_compile(tectonic, job_dir, tex_path, epoch, memory_mb=0):
+    def flaky_compile(tectonic, job_dir, tex_path, epoch, memory_mb=0, should_abort=None):
         if state["boom"]:
             state["boom"] = False
             raise ValueError("kaboom")
@@ -638,13 +651,13 @@ def test_concurrent_renders_never_overlap_across_threads(ctx):
     guard = threading.Lock()
     real = docs._compile
 
-    def _watched(tectonic, job_dir, tex_path, epoch, memory_mb=0):
+    def _watched(tectonic, job_dir, tex_path, epoch, memory_mb=0, should_abort=None):
         with guard:
             active.append(1)
             peak.append(len(active))
         try:
             time.sleep(0.05)
-            return real(tectonic, job_dir, tex_path, epoch, memory_mb)
+            return real(tectonic, job_dir, tex_path, epoch, memory_mb, should_abort)
         finally:
             with guard:
                 active.pop()
@@ -742,3 +755,45 @@ def test_optional_blocks_vanish_when_unset(ctx):
     for flag in (r"\bnumfalse", r"\baddrfalse", r"\signatoryfalse",
                  r"\rabnfalse", r"\raddrfalse"):
         assert flag in tex, flag
+
+
+def test_abandoned_job_skips_compile_after_acquiring_lock(ctx):
+    """A job whose caller has already timed out must not spend the single
+    machine-wide compile slot: once the box lock is held, an abandoned job is
+    skipped instead of running tectonic (regression for the box-lock backlog)."""
+    from app.services.documents import _CompileJob, _compile
+
+    ran = []
+    real = docs._compile
+
+    def _counting(*a, **k):
+        ran.append(1)
+        return real(*a, **k)
+
+    docs._compile = _counting
+    try:
+        # A job flagged abandoned before it executes must not compile.
+        job = _CompileJob("tectonic", _doc_render_root(), _doc_render_root() / "x.tex",
+                          1704067200, 0)
+        job.abandoned = True
+        job.execute()
+    finally:
+        docs._compile = real
+
+    # _compile was entered, but should_abort short-circuited before tectonic ran.
+    assert isinstance(job.error, RenderError)
+    assert "abandoned" in str(job.error)
+
+
+def test_should_abort_predicate_prevents_tectonic_run(ctx, monkeypatch):
+    """_compile checks should_abort right after taking the lock, before it
+    would launch the subprocess."""
+    launched = []
+    monkeypatch.setattr(docs.subprocess, "run",
+                        lambda *a, **k: launched.append(1))
+    with pytest.raises(RenderError) as ei:
+        docs._compile("tectonic", _doc_render_root(),
+                      _doc_render_root() / "x.tex", 1704067200,
+                      should_abort=lambda: True)
+    assert "abandoned" in str(ei.value)
+    assert launched == []

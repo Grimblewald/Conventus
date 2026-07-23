@@ -439,15 +439,23 @@ def _box_compile_lock():
 
 
 def _compile(tectonic: str, job_dir: Path, tex_path: Path,
-             source_date_epoch: int, memory_mb: int = 0) -> bytes:
+             source_date_epoch: int, memory_mb: int = 0,
+             should_abort=None) -> bytes:
     """The ONE compile step: run tectonic on a prepared job dir and return the
     PDF bytes (or raise RenderError). Pure — no DB, no app context, no escaping;
     everything it needs is passed in, so it is safe to run on a worker thread.
-    This is the single point every caller's compile funnels through."""
+    This is the single point every caller's compile funnels through.
+
+    `should_abort` is an optional predicate checked once the box-wide lock is
+    held: a caller that timed out while this job waited behind the lock has
+    stopped reading the result, so there is no point spending the single
+    machine-wide compile slot on it."""
     # Network stays ON (a cold cache must still fetch packages).
     env = dict(os.environ, SOURCE_DATE_EPOCH=str(source_date_epoch))
     lock_fd = _box_compile_lock()
     try:
+        if should_abort is not None and should_abort():
+            raise RenderError("compile abandoned before start (caller timed out)")
         proc = subprocess.run(
             [tectonic, "--outdir", str(job_dir), str(tex_path)],
             capture_output=True, timeout=_COMPILE_TIMEOUT,
@@ -500,7 +508,8 @@ class _CompileJob:
     def execute(self) -> None:
         try:
             self.pdf = _compile(self.tectonic, self.job_dir, self.tex_path,
-                                self.epoch, self.memory_mb)
+                                self.epoch, self.memory_mb,
+                                should_abort=lambda: self.abandoned)
         except RenderError as e:
             self.error = e
         except Exception as e:                # never let a worker die on a job

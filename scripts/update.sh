@@ -61,7 +61,9 @@ take_snapshot() {
 latest_snapshot() {
     local d
     for d in $(ls -1dr "$BACKUP_DIR"/*/ 2>/dev/null); do
-        case "$d" in *-pre-revert/) continue;; esac
+        # Skip every pre-revert copy, including the same-second collision form
+        # <stamp>-pre-revert-N/ — a plain *-pre-revert/ glob would miss those.
+        case "$d" in *-pre-revert/|*-pre-revert-[0-9]*/) continue;; esac
         [ -f "$d/app.db" ] && { echo "${d%/}"; return; }
     done
 }
@@ -70,7 +72,8 @@ prune_snapshots() {
     # Keep the newest $KEEP update snapshots; pre-revert copies are kept
     # separately (they are the only record of a rolled-back live state).
     local d keep_list
-    keep_list=$(ls -1dr "$BACKUP_DIR"/*/ 2>/dev/null | grep -v -- '-pre-revert/$' || true)
+    keep_list=$(ls -1dr "$BACKUP_DIR"/*/ 2>/dev/null \
+        | grep -Ev -- '-pre-revert(-[0-9]+)?/$' || true)
     echo "$keep_list" | tail -n +"$((KEEP+1))" | while read -r d; do
         [ -n "$d" ] && rm -rf "$d"
     done

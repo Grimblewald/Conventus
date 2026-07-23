@@ -44,7 +44,7 @@ def mailbox(monkeypatch):
     return box
 
 
-def _content_compile(tectonic, job_dir, tex_path, epoch, memory_mb=0):
+def _content_compile(tectonic, job_dir, tex_path, epoch, memory_mb=0, should_abort=None):
     """A content-sensitive fake compile: identical .tex → identical bytes,
     different .tex → different bytes. Lets the determinism test prove the PDF is
     rebuilt from the snapshot, not from the (mutated) live template."""

@@ -363,6 +363,9 @@ def financial_document_preview():
     )
 
     kind = (request.form.get("kind") or "invoice").strip()
+    if kind not in DOCUMENT_KINDS:
+        flash("Unknown document type.", "error")
+        return redirect(url_for("admin.financial"))
 
     # Queue-position report (plan §6). A synchronous request can't both wait on
     # a deep queue AND flash a position, so when compiles are already backed up
@@ -612,9 +615,13 @@ def financial_send_invoice_preview():
         recipient_address=(request.form.get("recipient_address") or "").strip(),
         include_gst=request.form.get("include_gst") == "1",
     )
-    # Anything the admin has not filled in yet stays a bold placeholder rather
-    # than rendering as an empty gap or a computed zero.
+    # Blank user fields stay a bold placeholder rather than an empty gap. But
+    # the tax treatment is fully decided here (include_gst), so gst_applies must
+    # carry through even when empty — "" means "GST off", not "unfilled". Drop
+    # it and the identity-derived placeholder ("1" for a GST-registered society)
+    # would win, so the preview would show a GST breakdown the send omits.
     overrides = {k: v for k, v in vars_.items() if v not in ("", None)}
+    overrides["gst_applies"] = vars_["gst_applies"]
 
     try:
         pdf = preview_document("invoice", overrides)

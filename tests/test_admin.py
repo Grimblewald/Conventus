@@ -393,6 +393,46 @@ class TestSendInvoicePreview:
             assert (IssuedDocument.query.count(), PaymentEvent.query.count()) == before
         assert sent == []
 
+    def test_preview_gst_flag_matches_the_form_not_the_identity(self, seeded, app,
+                                                              monkeypatch):
+        """Unticking GST on one invoice must be honoured by the preview, even
+        when the society itself is GST-registered — otherwise the preview shows
+        a GST breakdown the send would omit (regression)."""
+        captured = {}
+
+        def _fake_preview(kind, overrides=None, template=None):
+            captured["overrides"] = overrides or {}
+            return b"%PDF-preview"
+        monkeypatch.setattr("app.services.documents.preview_document", _fake_preview)
+
+        from app.blueprints.admin import financial as fin
+        monkeypatch.setattr(fin, "preview_document", _fake_preview, raising=False)
+
+        with app.app_context():
+            from app.extensions import db
+            from app.models import get_financial_identity
+            get_financial_identity().gst_registered = True   # society IS registered
+            db.session.commit()
+
+        client = app.test_client()
+        with client.session_transaction() as sess:
+            from app.models import User
+            with app.app_context():
+                uid = User.query.filter_by(role_name="admin").first().id
+            sess["_user_id"] = str(uid)
+            sess["_fresh"] = True
+
+        # This invoice is billed WITHOUT GST (box left unticked).
+        resp = client.post("/admin/financial/send-invoice/preview", data={
+            "to": "sponsor@example.org", "description": "Sponsorship",
+            "amount": "500.00", "reference": "INV-NOGST",
+            # include_gst intentionally absent → GST off for this invoice
+        })
+        assert resp.status_code == 200
+        # The decided-off flag must survive into the render, not be dropped so
+        # the identity default ("1") wins.
+        assert captured["overrides"].get("gst_applies") == ""
+
     def test_preview_uses_the_same_variables_as_the_send(self, seeded, app):
         """The preview and the send must resolve variables through one shared
         function, or the two drift apart the moment either changes."""

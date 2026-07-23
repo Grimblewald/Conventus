@@ -297,7 +297,10 @@ def _safety_snapshot() -> Path | None:
         dest_dir = dest_dir.with_name(f"{stamp}-pre-restore-{n}")
         n += 1
     dest_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, dest_dir / "app.db")
+    # Use the SQLite backup API (same as build_backup_zip), not a raw file
+    # copy: the app may still be writing, and copy2 would miss an active WAL,
+    # producing a torn snapshot — defeating the point of a safety copy.
+    _sqlite_copy(src, dest_dir / "app.db")
     return dest_dir
 
 

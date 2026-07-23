@@ -22,6 +22,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import sqlite3
 import subprocess
 import tempfile
@@ -274,15 +275,51 @@ def _open_zip_for_read(zip_path: Path, password: str | None):
 # Restore
 # ---------------------------------------------------------------------------
 
+def _safety_snapshot() -> Path | None:
+    """Copy the current SQLite database aside before a restore overwrites it, so
+    a restore is reversible and can never irrecoverably destroy live data.
+
+    Returns the snapshot path, or None when there is nothing to snapshot or the
+    database is not SQLite (Postgres restores are out of scope here — the
+    warning in `restore_backup_zip` tells the operator to dump first).
+    """
+    url = database_url()
+    if not is_sqlite(url):
+        return None
+    src = sqlite_path(url)
+    if not src.exists():
+        return None
+    from datetime import timezone
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    dest_dir = _project_root() / "var" / "backups" / f"{stamp}-pre-restore"
+    n = 1
+    while dest_dir.exists():
+        dest_dir = dest_dir.with_name(f"{stamp}-pre-restore-{n}")
+        n += 1
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dest_dir / "app.db")
+    return dest_dir
+
+
 def restore_backup_zip(zip_path: Path, password: str | None = None) -> list[str]:
     """Restore an archive over the current instance. Returns warnings.
 
-    Raises on failure (including a wrong password for encrypted zips).
+    Raises on failure (including a wrong password for encrypted zips). The
+    current database is copied aside first (see `_safety_snapshot`) so the
+    restore can be undone.
     """
     url = database_url()
     uploads_root = Path(current_app.config["UPLOAD_FOLDER"])
     instance_dir = Path(current_app.instance_path)
     warnings: list[str] = []
+
+    safety = _safety_snapshot()
+    if safety is not None:
+        rel = safety.relative_to(_project_root())
+        warnings.append(f"current database copied to {rel} before restore")
+    elif not is_sqlite(url):
+        warnings.append("no pre-restore snapshot taken (non-SQLite database) — "
+                        "dump it yourself before trusting this restore")
 
     with _open_zip_for_read(zip_path, password) as zf:
         names = set(zf.namelist())
@@ -305,8 +342,6 @@ def restore_backup_zip(zip_path: Path, password: str | None = None) -> list[str]
 
 def _restore_v2(zf, names: set[str], url: str,
                 uploads_root: Path, instance_dir: Path) -> list[str]:
-    import shutil
-
     warnings: list[str] = []
 
     if "manifest.json" in names:

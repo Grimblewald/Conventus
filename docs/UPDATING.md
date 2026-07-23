@@ -22,7 +22,9 @@ cd ~/Conventus            # or wherever you cloned
 uv run python -m app update
 ```
 
-This backs up the database to `var/backups/`, pulls, migrates, and
+This writes a timestamped snapshot (database + git HEAD) to `var/backups/`
+— snapshots are never overwritten and the newest ten are kept — then pulls,
+migrates, and
 restarts the `cloudflared-launch` user service. If the update goes
 sideways:
 
@@ -54,7 +56,10 @@ uv run flask --app wsgi:app db stamp head
 
 ## Rolling back
 
-* `uv run python -m app revert` undoes the most recent `update` exactly.
+* `uv run python -m app revert` rolls back to the most recent snapshot. It
+  copies the current database aside first (a `*-pre-revert` snapshot under
+  `var/backups/`), so a revert can itself be undone — no state is ever lost
+  irrecoverably. It asks for confirmation; pass `--yes` to skip the prompt.
 * For anything older, restore a backup zip: **Admin → System → Backup**
   (OTP-gated, takes a safety backup first) or
   `uv run python scripts/backup.py --restore <zip>`. Backup archives

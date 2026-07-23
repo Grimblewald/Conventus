@@ -122,7 +122,10 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 2rem 0; }
 }
 .brand { display: flex; align-items: center; gap: 14px; text-decoration: none; color: inherit; }
 .brand:hover { text-decoration: none; }
-.brand-mark { height: var(--logo-height, 42px); width: auto; flex-shrink: 0; object-fit: contain; }
+/* max-width keeps a tall admin-set logo (up to 300px) from overflowing its
+   flex container and overlapping neighbouring content — object-fit preserves
+   the aspect ratio as it scales down. */
+.brand-mark { height: var(--logo-height, 42px); width: auto; max-width: 100%; flex-shrink: 0; object-fit: contain; }
 .brand-text { line-height: 1.05; }
 .brand-text .wordmark {
   font-family: var(--f-heading);
@@ -1084,7 +1087,20 @@ a.edit-section-summary:hover {
   h1, .hero h1 { font-size: 2.2rem; }
   .ann { grid-template-columns: 1fr; gap: 6px; }
   .site-footer .cols { grid-template-columns: 1fr 1fr; }
+  /* The brand cell (which holds the logo) spans the full width so a large
+     logo has the whole row and can never overlap the link columns beside it. */
+  .site-footer .cols > :first-child { grid-column: 1 / -1; }
   .row-2, .row-3, .row-4 { grid-template-columns: 1fr; }
   .conf-body-grid { grid-template-columns: 1fr; }
   .sponsor-sidebar { position: static; }
+}
+
+@media (max-width: 560px) {
+  /* Single column on phones, and cap the logo height regardless of the admin
+     setting — a 300px logo has no business filling a phone screen — while the
+     brand text is allowed to wrap under a wide logo rather than being crushed. */
+  .site-footer .cols { grid-template-columns: 1fr; gap: 24px; }
+  .brand-mark { max-height: 84px; }
+  .site-footer .brand { flex-wrap: wrap; }
+  .site-footer .fine { flex-direction: column; gap: 6px; }
 }

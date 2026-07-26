@@ -55,28 +55,47 @@ take_snapshot() {
     echo "$dir"
 }
 
-# Newest snapshot dir that actually holds a database, excluding the
-# pre-revert safety copies (we roll back TO an update snapshot, not to the
-# copy a previous revert set aside). Empty if none.
+# Safety copies set aside BEFORE a destructive action, by this script
+# (-pre-revert) and by the admin panel's archive restore (-pre-restore, see
+# app/services/backup_archive.py::_safety_snapshot). Both record a live state
+# that was about to be overwritten, which makes them the opposite of a rollback
+# target: reverting *to* one would roll forward into the state someone chose to
+# leave. They are also the only copy of that state, so pruning must spare them.
+# Matches the same-second collision forms (<stamp>-pre-revert-2/) too.
+_is_safety_copy() {
+    case "${1%/}" in
+        *-pre-revert|*-pre-revert-[0-9]*|*-pre-restore|*-pre-restore-[0-9]*) return 0;;
+    esac
+    return 1
+}
+
+# Newest update snapshot that actually holds a database, skipping safety
+# copies. Prints nothing and still SUCCEEDS when there is none — a bare
+# `[ -f ... ] && ...` as the last statement would return 1, and under
+# `set -e` that kills the script mid-revert with no message at all.
 latest_snapshot() {
     local d
     for d in $(ls -1dr "$BACKUP_DIR"/*/ 2>/dev/null); do
-        # Skip every pre-revert copy, including the same-second collision form
-        # <stamp>-pre-revert-N/ — a plain *-pre-revert/ glob would miss those.
-        case "$d" in *-pre-revert/|*-pre-revert-[0-9]*/) continue;; esac
-        [ -f "$d/app.db" ] && { echo "${d%/}"; return; }
+        if _is_safety_copy "$d"; then continue; fi
+        if [ -f "$d/app.db" ]; then
+            echo "${d%/}"
+            return 0
+        fi
     done
+    return 0
 }
 
 prune_snapshots() {
-    # Keep the newest $KEEP update snapshots; pre-revert copies are kept
-    # separately (they are the only record of a rolled-back live state).
-    local d keep_list
-    keep_list=$(ls -1dr "$BACKUP_DIR"/*/ 2>/dev/null \
-        | grep -Ev -- '-pre-revert(-[0-9]+)?/$' || true)
-    echo "$keep_list" | tail -n +"$((KEEP+1))" | while read -r d; do
+    # Keep the newest $KEEP update snapshots; safety copies are never pruned.
+    local d
+    ls -1dr "$BACKUP_DIR"/*/ 2>/dev/null | while read -r d; do
+        if _is_safety_copy "$d"; then continue; fi
+        echo "$d"
+    done | tail -n +"$((KEEP+1))" | while read -r d; do
         [ -n "$d" ] && rm -rf "$d"
     done
+    # Nothing to prune is a normal outcome, not a failure to abort the run on.
+    return 0
 }
 
 # ──────────────────────────────────────────────────────────────────────

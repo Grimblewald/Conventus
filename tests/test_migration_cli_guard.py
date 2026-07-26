@@ -17,6 +17,8 @@ from app import _running_migration_cli
     ["flask", "db", "migrate", "-m", "msg"],
     ["/usr/local/bin/flask", "db", "upgrade"],
     ["flask", "--app", "wsgi", "db", "upgrade"],
+    # `python -m flask db upgrade` — Python rewrites argv[0] to the module file.
+    ["/venv/lib/python3.12/site-packages/flask/__main__.py", "db", "upgrade"],
 ])
 def test_detects_flask_db_invocations(monkeypatch, argv):
     monkeypatch.setattr("sys.argv", argv)

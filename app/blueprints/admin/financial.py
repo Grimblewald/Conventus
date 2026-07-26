@@ -2,8 +2,11 @@
 and API key expiry management."""
 from __future__ import annotations
 
+import os
 import secrets
+import tempfile
 from datetime import datetime, timedelta
+from pathlib import Path
 
 from flask import (
     current_app, flash, redirect, render_template, request, send_file, url_for,
@@ -281,18 +284,35 @@ def financial_identity():
         ident.signatory_name = (request.form.get("signatory_name") or "").strip()
         ident.signatory_role = (request.form.get("signatory_role") or "").strip()
 
-        for slot, label in _ASSET_SLOTS.items():
-            fs = request.files.get(slot)
-            if not (fs and fs.filename):
-                continue
-            try:
-                name = save_fixed_png(
-                    fs, dest_dir=financial_assets_dir(), name=slot,
-                    max_bytes=current_app.config["MAX_FINANCIAL_ASSET_BYTES"])
-            except UploadError as e:
-                flash(f"{label}: {e}", "error")
-                return render_template("admin/financial_identity.html", ident=ident)
-            setattr(ident, f"{slot}_filename", name)
+        # Both images are validated into a staging dir BEFORE either replaces a
+        # live one. Assets live at fixed paths (logo.png / signature.png), so
+        # writing them as we go would let a rejected signature leave a swapped
+        # letterhead behind on a save the admin was told had failed — with none
+        # of their text edits kept either.
+        assets_dir = financial_assets_dir()
+        assets_dir.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=assets_dir) as staging:
+            staged = {}
+            for slot, label in _ASSET_SLOTS.items():
+                fs = request.files.get(slot)
+                if not (fs and fs.filename):
+                    continue
+                try:
+                    name = save_fixed_png(
+                        fs, dest_dir=Path(staging), name=slot,
+                        max_bytes=current_app.config["MAX_FINANCIAL_ASSET_BYTES"])
+                except UploadError as e:
+                    db.session.rollback()
+                    flash(f"{label}: {e}", "error")
+                    return render_template("admin/financial_identity.html",
+                                           ident=get_financial_identity())
+                staged[slot] = name
+
+            # Everything validated — publish. Same filesystem, so each move is
+            # an atomic replace.
+            for slot, name in staged.items():
+                os.replace(Path(staging) / name, assets_dir / name)
+                setattr(ident, f"{slot}_filename", name)
 
         db.session.commit()
         audit.record("financial.identity_updated",
@@ -620,8 +640,11 @@ def financial_send_invoice_preview():
     # carry through even when empty — "" means "GST off", not "unfilled". Drop
     # it and the identity-derived placeholder ("1" for a GST-registered society)
     # would win, so the preview would show a GST breakdown the send omits.
+    # gst_registered rides along for the same reason: it decides which no-GST
+    # statement the document prints, and "" is a real value there too.
     overrides = {k: v for k, v in vars_.items() if v not in ("", None)}
     overrides["gst_applies"] = vars_["gst_applies"]
+    overrides["gst_registered"] = vars_["gst_registered"]
 
     try:
         pdf = preview_document("invoice", overrides)

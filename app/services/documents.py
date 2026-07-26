@@ -161,6 +161,13 @@ def assemble_tex(kind: str, tpl, vars_: dict, *, has_logo: bool = False,
     # snapshotted, so a regenerated document keeps the treatment it was issued
     # under rather than today's registration status.
     gst_on = bool(v.get("gst_applies"))
+    # Registration status is NOT the same fact as "GST charged on this sale".
+    # A GST-registered issuer can legitimately issue a GST-free invoice (an
+    # overseas sponsor, say); printing "not registered for GST" on it would be
+    # a false statement on a tax document. Absent from legacy snapshots, where
+    # the two facts were conflated — fall back to gst_on so those regenerate
+    # exactly as issued.
+    gst_registered = bool(v.get("gst_registered", gst_on))
 
     # Title reflects the kind; the invoice kind defers to the GST-aware
     # {invoice_type} value ("Tax Invoice" vs "Invoice").
@@ -179,6 +186,7 @@ def assemble_tex(kind: str, tpl, vars_: dict, *, has_logo: bool = False,
 
     subst = {
         "flag_gst": _flag("gst", gst_on),
+        "flag_gst_registered": _flag("gstreg", gst_registered),
         "flag_logo": _flag("haslogo", has_logo),
         "flag_signature": _flag("hassig", has_signature),
         "flag_recipient_abn": _flag("rabn", bool(v.get("recipient_abn"))),
@@ -390,20 +398,34 @@ def total_memory_mb() -> int:
         return 0
 
 
-def auto_memory_mb() -> int:
-    """Memory cap derived from the host, because this project targets small
-    machines — a Pi or an old phone, not a server with headroom.
+# Address space below which tectonic cannot compile even a trivial document.
+# Measured against tectonic 0.16: 448MB and under abort during font/format
+# loading ("xmalloc request for 76327568 bytes failed"), 512MB succeeds. The
+# floor sits above the measured boundary rather than on it, because a real
+# document carries more content than the probe did.
+MIN_COMPILE_MEMORY_MB = 640
+# One compile is never allowed more than this, however large the host is.
+MAX_COMPILE_MEMORY_MB = 2048
 
-    A fixed cap is wrong in both directions: generous enough for a VPS is fatal
-    on a 512MB Pi, and tight enough for a Pi needlessly fails big documents
-    elsewhere. So take a minority share of physical RAM, floored at what
-    tectonic actually needs to run and ceilinged so one compile can never
-    dominate a larger box either.
+
+def auto_memory_mb() -> int:
+    """Memory cap derived from the host — a runaway guard, not a quota.
+
+    The instinct to scale the cap down on a small machine is wrong: tectonic
+    needs a roughly constant amount of address space to start at all, so a
+    proportional cap on a 512MB Pi (0.4 × 512 = 204MB) does not make documents
+    render frugally, it makes every document fail. Since compiles are already
+    serialised box-wide by `_box_compile_lock`, at most one of these limits is
+    live at a time, and the honest job of the cap is to stop a pathological
+    document from expanding without bound — not to fit tectonic into less than
+    it can run in. So the host share may only ever raise the cap above the
+    known-working floor, never lower it.
     """
     total = total_memory_mb()
     if not total:
-        return 384
-    return max(192, min(640, int(total * 0.4)))
+        return MIN_COMPILE_MEMORY_MB
+    share = int(total * 0.4)
+    return max(MIN_COMPILE_MEMORY_MB, min(MAX_COMPILE_MEMORY_MB, share))
 
 
 def _compile_memory_mb() -> int:
@@ -721,7 +743,9 @@ def placeholder_vars(kind: str) -> dict[str, RawLatex]:
     # GST is a configured fact, not a field to fill in: a preview shows the
     # tax treatment the identity is actually set to, so an admin can see
     # whether their documents will carry GST lines or the no-GST statement.
-    vars_["gst_applies"] = "1" if get_financial_identity().gst_registered else ""
+    registered = get_financial_identity().gst_registered
+    vars_["gst_applies"] = "1" if registered else ""
+    vars_["gst_registered"] = "1" if registered else ""
     return vars_
 
 

@@ -160,6 +160,88 @@ def test_old_snapshots_are_pruned_but_pre_revert_kept(repo, shimmed_path):
     assert len(update_snaps) == 2, [s.name for s in update_snaps]
 
 
+def test_pre_restore_snapshots_are_never_pruned(repo, shimmed_path):
+    """The admin panel's archive restore writes its safety copy into the SAME
+    var/backups directory (backup_archive._safety_snapshot). It is the only
+    record of the database that restore overwrote, so update's pruning must
+    never count it toward the keep limit and delete it."""
+    backups = repo / "var" / "backups"
+    backups.mkdir(parents=True)
+    keeper = backups / "20260101-090000-pre-restore"
+    keeper.mkdir()
+    (keeper / "app.db").write_text("PRE-RESTORE-LIVE-DB")
+
+    for i in range(3):
+        (repo / "instance" / "app.db").write_text(f"data-{i}")
+        subprocess.run(
+            ["bash", str(repo / "scripts" / "update.sh")],
+            cwd=repo, capture_output=True, text=True,
+            env={**os.environ, "PATH": shimmed_path, "HOME": str(repo),
+                 "UPDATE_KEEP_SNAPSHOTS": "1"})
+
+    assert keeper.exists(), "pruning deleted the pre-restore safety copy"
+    assert (keeper / "app.db").read_text() == "PRE-RESTORE-LIVE-DB"
+
+
+def test_revert_never_restores_from_a_pre_restore_snapshot(repo, shimmed_path):
+    """Same rule as the pre-revert copies, for the ones the admin panel writes.
+    A pre-restore dir carries no git-head, so selecting it would also leave the
+    code un-rolled-back while reporting a successful revert."""
+    backups = repo / "var" / "backups"
+    backups.mkdir(parents=True)
+
+    upd = backups / "20260101-100000"
+    upd.mkdir()
+    (upd / "app.db").write_text("UPDATE-SNAPSHOT")
+    (upd / "git-head").write_text("")
+
+    for name in ("20260301-120000-pre-restore", "20260301-120000-pre-restore-1"):
+        d = backups / name
+        d.mkdir()
+        (d / "app.db").write_text("OVERWRITTEN-BY-ARCHIVE-RESTORE")
+
+    (repo / "instance" / "app.db").write_text("CURRENT-LIVE")
+    r = _run(repo, shimmed_path, "--revert", "--yes")
+    assert r.returncode == 0, r.stderr
+    assert (repo / "instance" / "app.db").read_text() == "UPDATE-SNAPSHOT"
+
+
+def test_revert_reports_when_snapshots_exist_but_hold_no_database(repo, shimmed_path):
+    """Snapshot dirs with no app.db (every Postgres install: update.sh records
+    code only) must produce the friendly error, not a silent death.
+
+    `latest_snapshot` used to end on a bare `[ -f … ] && …`, so it returned 1
+    when nothing matched — and under `set -euo pipefail` the assignment
+    `SNAP="$(latest_snapshot)"` killed the script right there: exit 1, no
+    output, no rollback, and the legacy db.bak fallback below unreachable.
+    """
+    backups = repo / "var" / "backups"
+    backups.mkdir(parents=True)
+    for name in ("20260101-100000", "20260102-100000"):
+        d = backups / name
+        d.mkdir()
+        (d / "git-head").write_text("deadbeef")   # code-only snapshot
+
+    r = _run(repo, shimmed_path, "--revert", "--yes")
+    assert r.returncode != 0
+    assert "nothing to revert" in (r.stdout + r.stderr).lower(), \
+        f"script died silently: stdout={r.stdout!r} stderr={r.stderr!r}"
+    assert (repo / "instance" / "app.db").read_text() == "data-v1"
+
+
+def test_revert_falls_back_to_a_legacy_single_slot_backup(repo, shimmed_path):
+    """Reachability of the pre-2026-07 db.bak path, which sat immediately after
+    the `SNAP="$(latest_snapshot)"` assignment that used to abort the script."""
+    backups = repo / "var" / "backups"
+    backups.mkdir(parents=True)
+    (backups / "db.bak").write_text("LEGACY-BACKUP")
+
+    (repo / "instance" / "app.db").write_text("CURRENT-LIVE")
+    r = _run(repo, shimmed_path, "--revert", "--yes")
+    assert r.returncode == 0, r.stderr
+    assert (repo / "instance" / "app.db").read_text() == "LEGACY-BACKUP"
+
+
 def test_revert_never_restores_from_a_pre_revert_snapshot(repo, shimmed_path):
     """Pre-revert copies (including the same-second collision form
     <stamp>-pre-revert-N) are rolled-back live state, never a rollback target —

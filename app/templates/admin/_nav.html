@@ -49,7 +49,13 @@
   <h5>Financial</h5>
   <ul>
     <li><a href="{{ url_for('admin.financial') }}" {% if request.endpoint == 'admin.financial' %}class="active"{% endif %}>Payment Providers</a></li>
-    <li><a href="{{ url_for('admin.financial_invoice') }}" {% if request.endpoint == 'admin.financial_invoice' %}class="active"{% endif %}>Invoice Template</a></li>
+    <li><a href="{{ url_for('admin.financial_identity') }}" {% if request.endpoint == 'admin.financial_identity' %}class="active"{% endif %}>Financial Identity</a></li>
+    {# One entry per document kind. The link targets financial_document, not the
+       old financial_invoice endpoint — that is now only a redirect, so keying
+       `active` off it would never match. #}
+    <li><a href="{{ url_for('admin.financial_document', kind='invoice') }}" {% if request.endpoint == 'admin.financial_document' and request.view_args.get('kind') == 'invoice' %}class="active"{% endif %}>Invoice Template</a></li>
+    <li><a href="{{ url_for('admin.financial_document', kind='receipt') }}" {% if request.endpoint == 'admin.financial_document' and request.view_args.get('kind') == 'receipt' %}class="active"{% endif %}>Receipt Template</a></li>
+    <li><a href="{{ url_for('admin.financial_document', kind='adjustment') }}" {% if request.endpoint == 'admin.financial_document' and request.view_args.get('kind') == 'adjustment' %}class="active"{% endif %}>Adjustment Note</a></li>
     <li><a href="{{ url_for('admin.financial_send_invoice') }}" {% if request.endpoint == 'admin.financial_send_invoice' %}class="active"{% endif %}>Send Invoice</a></li>
     <li><a href="{{ url_for('admin.financial_transactions') }}" {% if request.endpoint == 'admin.financial_transactions' %}class="active"{% endif %}>Transactions</a></li>
   </ul>

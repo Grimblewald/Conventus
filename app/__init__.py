@@ -78,14 +78,23 @@ def _running_migration_cli() -> bool:
     `flask db upgrade` would then collide ("table already exists"). So schema
     bootstrap (and role seeding) is skipped whenever the migration CLI drives.
 
-    Detection is by argv: program name is `flask` (or `.../flask`) and `db`
-    appears among the arguments (e.g. `flask db upgrade`, `flask db current`).
+    Detection is by argv: the program is the flask CLI — either the console
+    script (`flask`, `.../flask`) or the module form, where Python sets argv[0]
+    to `.../flask/__main__.py` — and `db` appears among the arguments (e.g.
+    `flask db upgrade`, `flask db current`).
     """
     argv = sys.argv or []
     if not argv:
         return False
     prog = os.path.basename(argv[0])
-    if prog != "flask" and not argv[0].endswith("/flask"):
+    is_flask_cli = (
+        prog == "flask"
+        or argv[0].endswith("/flask")
+        # `python -m flask db upgrade`
+        or (prog == "__main__.py"
+            and os.path.basename(os.path.dirname(argv[0])) == "flask")
+    )
+    if not is_flask_cli:
         return False
     return "db" in argv[1:]
 

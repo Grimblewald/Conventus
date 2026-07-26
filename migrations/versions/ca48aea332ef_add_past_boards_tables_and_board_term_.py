@@ -4,15 +4,25 @@ Revision ID: ca48aea332ef
 Revises: 40f8684e20c4
 Create Date: 2026-06-06 16:26:02.177749
 
+Idempotent: the baseline builds the schema from the current models, so these
+tables and columns may already exist. See app/migration_guards.
 """
 from alembic import op
 import sqlalchemy as sa
+
+from app.migration_guards import add_columns, drop_columns
 
 
 revision = 'ca48aea332ef'
 down_revision = '40f8684e20c4'
 branch_labels = None
 depends_on = None
+
+BOARD_TERM_COLUMNS = (
+    ('board_term_start', sa.Date),
+    ('board_term_interval_months', sa.Integer),
+    ('board_last_archived_at', sa.DateTime),
+)
 
 
 def upgrade():
@@ -55,35 +65,14 @@ def upgrade():
     """)
 
     # SiteSettings board term fields
-    with op.batch_alter_table('site_settings', schema=None) as batch_op:
-        try:
-            batch_op.add_column(sa.Column('board_term_start', sa.Date(), nullable=True))
-        except sa.exc.OperationalError:
-            pass
-        try:
-            batch_op.add_column(sa.Column('board_term_interval_months', sa.Integer(), nullable=True))
-        except sa.exc.OperationalError:
-            pass
-        try:
-            batch_op.add_column(sa.Column('board_last_archived_at', sa.DateTime(), nullable=True))
-        except sa.exc.OperationalError:
-            pass
+    add_columns('site_settings',
+                *(sa.Column(name, type_(), nullable=True)
+                  for name, type_ in BOARD_TERM_COLUMNS))
 
 
 def downgrade():
-    with op.batch_alter_table('site_settings', schema=None) as batch_op:
-        try:
-            batch_op.drop_column('board_last_archived_at')
-        except sa.exc.OperationalError:
-            pass
-        try:
-            batch_op.drop_column('board_term_interval_months')
-        except sa.exc.OperationalError:
-            pass
-        try:
-            batch_op.drop_column('board_term_start')
-        except sa.exc.OperationalError:
-            pass
+    drop_columns('site_settings',
+                 *(name for name, _ in reversed(BOARD_TERM_COLUMNS)))
 
     op.execute("DROP INDEX IF EXISTS ix_past_board_members_past_board_id")
     op.drop_table('past_board_members')

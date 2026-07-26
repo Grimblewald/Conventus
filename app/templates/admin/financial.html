@@ -169,13 +169,21 @@
 
 <div class="card" style="padding:24px; margin-top:20px; background:var(--c-page-bg);">
   <h4>Available template variables</h4>
-  <p class="muted">Use these in the invoice subject, email body, and PDF body:</p>
+  <p class="muted">Use these in any document's subject, email body, and PDF body.
+    The issuer values come from <a href="{{ url_for('admin.financial_identity') }}">Financial
+    Identity</a>, not the template.</p>
+  <p class="muted" style="margin-bottom:4px;"><strong>Recipient and sale</strong></p>
   <code style="font-size:0.85rem;">
-    {user_name} {user_email} {conference_title} {conference_dates} {tier_name}
-    {amount} {gst_amount} {amount_ex_gst} {currency_code} {currency_symbol}
-    {transaction_id} {payment_date} {due_date} {site_name} {registration_id}
-    {invoice_type} {business_number} {recipient_abn} {payment_instructions}
-    {payment_link}
+    {user_name} {user_email} {recipient_abn} {recipient_address}
+    {conference_title} {conference_dates} {tier_name} {amount} {gst_amount}
+    {amount_ex_gst} {currency_code} {currency_symbol} {transaction_id}
+    {payment_date} {due_date} {registration_id} {invoice_type} {payment_link}
+  </code>
+  <p class="muted" style="margin:12px 0 4px;"><strong>Issuer (from Financial Identity)</strong></p>
+  <code style="font-size:0.85rem;">
+    {site_name} {business_legal_name} {business_number} {business_address}
+    {business_contact_email} {payment_instructions} {signatory_name}
+    {signatory_role}
   </code>
 </div>
 {% endblock %}

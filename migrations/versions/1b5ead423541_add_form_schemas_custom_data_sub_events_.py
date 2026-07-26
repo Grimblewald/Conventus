@@ -4,9 +4,15 @@ Revision ID: 1b5ead423541
 Revises: bf3d1e8c2a90
 Create Date: 2026-06-28 17:50:37.611854
 
+Idempotent: the baseline builds the schema from the current models, so these
+objects may already exist. See app/migration_guards.
 """
 from alembic import op
 import sqlalchemy as sa
+
+from app.migration_guards import (
+    add_columns, create_index, create_table, drop_columns, drop_index, drop_table,
+)
 
 
 # revision identifiers, used by Alembic.
@@ -18,22 +24,19 @@ depends_on = None
 
 def upgrade():
     # New columns on existing tables
-    with op.batch_alter_table('conferences', schema=None) as batch_op:
-        batch_op.add_column(sa.Column('registration_form_schema', sa.JSON(), nullable=True))
-        batch_op.add_column(sa.Column('abstract_form_schema', sa.JSON(), nullable=True))
-
-    with op.batch_alter_table('price_tiers', schema=None) as batch_op:
-        batch_op.add_column(sa.Column('early_bird_amount', sa.Integer(), nullable=True))
-
-    with op.batch_alter_table('registrations', schema=None) as batch_op:
-        batch_op.add_column(sa.Column('custom_data', sa.JSON(), nullable=True))
-        batch_op.add_column(sa.Column('sub_events', sa.JSON(), nullable=True))
-
-    with op.batch_alter_table('abstracts', schema=None) as batch_op:
-        batch_op.add_column(sa.Column('custom_data', sa.JSON(), nullable=True))
+    add_columns('conferences',
+                sa.Column('registration_form_schema', sa.JSON(), nullable=True),
+                sa.Column('abstract_form_schema', sa.JSON(), nullable=True))
+    add_columns('price_tiers',
+                sa.Column('early_bird_amount', sa.Integer(), nullable=True))
+    add_columns('registrations',
+                sa.Column('custom_data', sa.JSON(), nullable=True),
+                sa.Column('sub_events', sa.JSON(), nullable=True))
+    add_columns('abstracts',
+                sa.Column('custom_data', sa.JSON(), nullable=True))
 
     # New tables
-    op.create_table('form_templates',
+    create_table('form_templates',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('name', sa.String(length=120), nullable=False),
     sa.Column('form_type', sa.String(length=20), nullable=False),
@@ -45,7 +48,7 @@ def upgrade():
     sa.PrimaryKeyConstraint('id')
     )
 
-    op.create_table('sub_events',
+    create_table('sub_events',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('conference_id', sa.Integer(), nullable=False),
     sa.Column('name', sa.String(length=200), nullable=False),
@@ -57,26 +60,14 @@ def upgrade():
     sa.ForeignKeyConstraint(['conference_id'], ['conferences.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
-    with op.batch_alter_table('sub_events', schema=None) as batch_op:
-        batch_op.create_index(batch_op.f('ix_sub_events_conference_id'), ['conference_id'], unique=False)
+    create_index('ix_sub_events_conference_id', 'sub_events', ['conference_id'])
 
 
 def downgrade():
-    with op.batch_alter_table('sub_events', schema=None) as batch_op:
-        batch_op.drop_index(batch_op.f('ix_sub_events_conference_id'))
-    op.drop_table('sub_events')
-    op.drop_table('form_templates')
-
-    with op.batch_alter_table('abstracts', schema=None) as batch_op:
-        batch_op.drop_column('custom_data')
-
-    with op.batch_alter_table('registrations', schema=None) as batch_op:
-        batch_op.drop_column('sub_events')
-        batch_op.drop_column('custom_data')
-
-    with op.batch_alter_table('price_tiers', schema=None) as batch_op:
-        batch_op.drop_column('early_bird_amount')
-
-    with op.batch_alter_table('conferences', schema=None) as batch_op:
-        batch_op.drop_column('abstract_form_schema')
-        batch_op.drop_column('registration_form_schema')
+    drop_index('ix_sub_events_conference_id', 'sub_events')
+    drop_table('sub_events')
+    drop_table('form_templates')
+    drop_columns('abstracts', 'custom_data')
+    drop_columns('registrations', 'sub_events', 'custom_data')
+    drop_columns('price_tiers', 'early_bird_amount')
+    drop_columns('conferences', 'abstract_form_schema', 'registration_form_schema')

@@ -4,9 +4,13 @@ Revision ID: 2396d1a55dc0
 Revises: 099d052323c0
 Create Date: 2026-06-06 15:32:48.932617
 
+Idempotent: the baseline builds the schema from the current models, so this
+column may already exist. See app/migration_guards.
 """
 from alembic import op
 import sqlalchemy as sa
+
+from app.migration_guards import add_columns, drop_columns
 
 
 revision = '2396d1a55dc0'
@@ -16,16 +20,10 @@ depends_on = None
 
 
 def upgrade():
-    with op.batch_alter_table('abstracts', schema=None) as batch_op:
-        try:
-            batch_op.add_column(sa.Column('profile_picture_filename', sa.String(length=240), nullable=True))
-        except sa.exc.OperationalError:
-            pass
+    add_columns('abstracts',
+                sa.Column('profile_picture_filename', sa.String(length=240),
+                          nullable=True))
 
 
 def downgrade():
-    with op.batch_alter_table('abstracts', schema=None) as batch_op:
-        try:
-            batch_op.drop_column('profile_picture_filename')
-        except sa.exc.OperationalError:
-            pass
+    drop_columns('abstracts', 'profile_picture_filename')

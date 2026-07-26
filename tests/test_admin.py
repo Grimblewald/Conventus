@@ -352,6 +352,61 @@ class TestFinancialIdentity:
     def test_unknown_asset_slot_is_404(self, seeded, admin_client):
         assert admin_client.get("/admin/financial/identity/asset/passport").status_code == 404
 
+    def test_a_rejected_upload_leaves_every_asset_untouched(
+            self, seeded, admin_client, app):
+        """A failed save must change nothing. Assets live at fixed paths
+        (logo.png, signature.png), so writing them one at a time would let a
+        rejected *signature* still swap the letterhead — on a save the admin
+        was told had failed, with none of their text edits kept either."""
+        import io
+        from PIL import Image
+
+        def png(colour):
+            buf = io.BytesIO()
+            Image.new("RGB", (40, 20), colour).save(buf, format="PNG")
+            buf.seek(0)
+            return buf
+
+        # Establish a known-good logo first.
+        admin_client.post("/admin/financial/identity", data={
+            "legal_name": "Example Society Ltd",
+            "logo": (png((255, 0, 0)), "logo.png"),
+        }, content_type="multipart/form-data", follow_redirects=True)
+
+        with app.app_context():
+            from app.services.documents import financial_assets_dir
+            logo_path = financial_assets_dir() / "logo.png"
+            before = logo_path.read_bytes()
+
+        # Now a save with a valid NEW logo but a broken signature.
+        resp = admin_client.post("/admin/financial/identity", data={
+            "legal_name": "Renamed By A Failed Save",
+            "logo": (png((0, 0, 255)), "logo.png"),
+            "signature": (io.BytesIO(b"not an image at all"), "sig.png"),
+        }, content_type="multipart/form-data", follow_redirects=True)
+        assert resp.status_code == 200
+
+        with app.app_context():
+            from app.models import get_financial_identity
+            assert logo_path.read_bytes() == before, \
+                "the rejected save still replaced the letterhead logo"
+            # …and the text edits were not committed either.
+            assert get_financial_identity().legal_name == "Example Society Ltd"
+
+    def test_nav_links_to_every_document_editor_and_the_identity(
+            self, seeded, admin_client):
+        """The route split renamed the invoice-template endpoint to
+        financial_document(kind); the sidebar has to follow it, and the new
+        kinds and the identity page need to be reachable at all."""
+        body = admin_client.get("/admin/financial/identity").data.decode()
+        for href in ("/admin/financial/identity",
+                     "/admin/financial/documents/invoice",
+                     "/admin/financial/documents/receipt",
+                     "/admin/financial/documents/adjustment"):
+            assert href in body, href
+        # The identity page is the current one, so its nav item is marked.
+        assert 'href="/admin/financial/identity" class="active"' in body
+
 
 class TestSendInvoicePreview:
     """An admin must be able to see the actual invoice before it goes out —

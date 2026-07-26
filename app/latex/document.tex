@@ -10,7 +10,7 @@
 % tokens — so a multi-line substituted value can't leak out of this comment.)
 %
 %   Boolean flags — raw \...true / \...false control sequences:
-%     flag_gst, flag_logo, flag_signature, flag_recipient_abn,
+%     flag_gst, flag_gst_registered, flag_logo, flag_signature, flag_recipient_abn,
 %     flag_recipient_address, flag_due_date, flag_business_number,
 %     flag_business_address, flag_contact_email, flag_signatory,
 %     flag_payment_instructions, flag_payment_link, flag_pdf_body,
@@ -43,6 +43,7 @@
 \definecolor{muted}{gray}{0.40}
 
 \newif\ifgst        @@flag_gst@@
+\newif\ifgstreg     @@flag_gst_registered@@
 \newif\ifhaslogo    @@flag_logo@@
 \newif\ifhassig     @@flag_signature@@
 \newif\ifrabn       @@flag_recipient_abn@@
@@ -155,13 +156,22 @@
 \vspace{4mm}
 
 % --- Tax statement -------------------------------------------------------
-% When not registered for GST, say so plainly. A silent omission leaves the
-% payer guessing, and a zero-valued GST line would be worse — it implies a
-% taxable sale on which no tax was charged.
+% When no GST was charged, say so plainly. A silent omission leaves the payer
+% guessing, and a zero-valued GST line would be worse — it implies a taxable
+% sale on which no tax was charged.
+%
+% WHY the two branches: "no GST on this sale" and "this issuer is not
+% registered for GST" are different claims. A registered issuer may charge no
+% GST on a particular supply (an overseas sponsor, say) and must NOT print a
+% non-registration statement on that document — it would be false.
 \noindent
 \ifgst\else
-  {\color{muted}No GST has been charged. @@business_legal_name@@ is not
-   registered for GST.}
+  \ifgstreg
+    {\color{muted}No GST has been charged on this supply.}
+  \else
+    {\color{muted}No GST has been charged. @@business_legal_name@@ is not
+     registered for GST.}
+  \fi
 \fi
 
 \ifisreceipt

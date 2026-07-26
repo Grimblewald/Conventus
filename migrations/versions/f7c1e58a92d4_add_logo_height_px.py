@@ -4,9 +4,13 @@ Revision ID: f7c1e58a92d4
 Revises: e3b9d40a71c5
 Create Date: 2026-07-20 12:00:00.000000
 
+Idempotent: the baseline builds the schema from the current models, so this
+column may already exist. See app/migration_guards.
 """
 from alembic import op
 import sqlalchemy as sa
+
+from app.migration_guards import add_columns, drop_columns
 
 
 # revision identifiers, used by Alembic.
@@ -17,10 +21,9 @@ depends_on = None
 
 
 def upgrade():
-    with op.batch_alter_table('site_settings', schema=None) as batch_op:
-        batch_op.add_column(sa.Column('logo_height_px', sa.Integer(), nullable=True))
+    add_columns('site_settings',
+                sa.Column('logo_height_px', sa.Integer(), nullable=True))
 
 
 def downgrade():
-    with op.batch_alter_table('site_settings', schema=None) as batch_op:
-        batch_op.drop_column('logo_height_px')
+    drop_columns('site_settings', 'logo_height_px')

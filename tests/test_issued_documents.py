@@ -146,6 +146,32 @@ def test_test_invoice_records_no_issued_document(seed_templates, app, mailbox,
         assert IssuedDocument.query.count() == before
 
 
+def test_no_send_path_leaks_an_unresolved_placeholder(seed_templates, app,
+                                                      mailbox, content_pdf):
+    """Every {placeholder} the shipped covers use must be resolved by every
+    path that sends them. `_render` leaves unknown names verbatim, so a
+    variable a path forgets to supply is emailed as literal `{payment_link}` —
+    which is exactly what the test invoice was doing, since the invoice cover
+    asks the payer to "Pay online: {payment_link}".
+    """
+    import re
+
+    with app.app_context():
+        from app.services.invoice import send_manual_invoice, send_test_invoice
+
+        send_test_invoice("proof@example.org")
+        send_manual_invoice(
+            "sponsor@example.org", recipient_name="Sponsor Pty Ltd",
+            description="Gold sponsorship", item="Gold tier",
+            amount_cents=110000, reference=f"INV-{secrets.token_hex(3)}")
+
+    assert mailbox, "nothing was sent"
+    for msg in mailbox:
+        body = msg.get("body") or msg.get("text") or ""
+        leaked = re.findall(r"\{[a-z_]+\}", body)
+        assert not leaked, f"unresolved placeholders in {msg.get('subject')!r}: {leaked}"
+
+
 def test_preview_records_no_issued_document(seed_templates, app, monkeypatch):
     with app.app_context():
         from app.models import IssuedDocument

@@ -606,27 +606,40 @@ def test_memory_cap_is_enforced_on_the_child(ctx, monkeypatch):
                 if not p.name.startswith('.')]
 
 
-def test_memory_cap_scales_to_the_host(monkeypatch):
-    """The project targets a Pi or an old phone, so the default cap is a
-    minority share of real RAM — never a fixed server-sized number."""
+def test_memory_cap_never_drops_below_what_tectonic_needs(monkeypatch):
+    """The host share may RAISE the cap, never lower it below the floor.
+
+    Scaling the cap down on a small machine looks frugal and is in fact fatal:
+    tectonic needs a roughly constant address space to start at all, so a
+    proportional cap on a 512MB Pi (0.4 × 512 = 204MB) does not render smaller
+    documents, it fails every document. Compiles are already serialised
+    box-wide, so the cap's real job is bounding a runaway — not squeezing
+    tectonic below its working set.
+    """
+    from app.services import documents as docs
+
+    for total in (256, 512, 1024, 0):     # 0 = RAM undetectable
+        monkeypatch.setattr(docs, "total_memory_mb", lambda t=total: t)
+        assert docs.auto_memory_mb() == docs.MIN_COMPILE_MEMORY_MB, total
+
+    # A roomier host gets a proportionally larger allowance…
+    monkeypatch.setattr(docs, "total_memory_mb", lambda: 4096)
+    assert docs.auto_memory_mb() > docs.MIN_COMPILE_MEMORY_MB
+
+    # …but one compile can never dominate a big box either.
+    monkeypatch.setattr(docs, "total_memory_mb", lambda: 32000)
+    assert docs.auto_memory_mb() == docs.MAX_COMPILE_MEMORY_MB
+
+
+def test_a_document_really_compiles_under_a_small_host_cap(ctx, monkeypatch):
+    """The one that would have caught the bug: derive the cap as a 512MB Pi
+    would, then render a real document under it. An assertion about the number
+    alone cannot tell you whether tectonic can live inside it."""
     from app.services import documents as docs
 
     monkeypatch.setattr(docs, "total_memory_mb", lambda: 512)
-    pi = docs.auto_memory_mb()
-    assert 192 <= pi <= 256, pi
-    assert pi < 512
-
-    monkeypatch.setattr(docs, "total_memory_mb", lambda: 956)
-    vps = docs.auto_memory_mb()
-    assert vps > pi and vps < 956
-
-    # A big host still can't let one compile dominate.
-    monkeypatch.setattr(docs, "total_memory_mb", lambda: 32000)
-    assert docs.auto_memory_mb() <= 640
-
-    # Unknown RAM falls back to something conservative, never unlimited.
-    monkeypatch.setattr(docs, "total_memory_mb", lambda: 0)
-    assert 0 < docs.auto_memory_mb() <= 384
+    monkeypatch.setitem(ctx.config, "DOC_COMPILE_MEMORY_MB", 0)   # derive
+    assert render_document("invoice", _vars())[:4] == b"%PDF"
 
 
 def test_explicit_memory_config_overrides_the_host_default(ctx, monkeypatch):
@@ -727,12 +740,48 @@ def test_not_gst_registered_states_it_plainly(ctx):
     """The reference document this was modelled on omits any GST statement,
     which leaves the payer guessing; a zero-valued GST line would be worse
     still, implying a taxable sale that was not taxed. So the skeleton carries
-    an explicit statement, switched on by the same flag."""
-    tex = _tex("invoice", ctx, gst_applies="", invoice_type="Invoice",
+    an explicit statement — and when the issuer genuinely is not registered, it
+    names them."""
+    tex = _tex("invoice", ctx, gst_applies="", gst_registered="",
+               invoice_type="Invoice",
                business_legal_name="Example Society Ltd")
-    assert r"\gstfalse" in tex
-    assert "No GST has been charged" in tex
-    assert "Example Society Ltd" in tex
+    assert r"\gstfalse" in tex and r"\gstregfalse" in tex
+    flat = " ".join(tex.split())
+    assert "No GST has been charged. Example Society Ltd is not registered "\
+           "for GST." in flat
+
+
+def test_a_registered_issuer_never_claims_to_be_unregistered(ctx):
+    """"No GST on this sale" and "not registered for GST" are different facts.
+
+    A GST-registered society can legitimately issue a GST-free invoice (an
+    overseas sponsor, say) by unticking the per-send toggle. Printing a
+    non-registration statement on that document would be a false statement on
+    a tax document, so the two travel as separate flags.
+    """
+    tex = _tex("invoice", ctx, gst_applies="", gst_registered="1",
+               invoice_type="Invoice",
+               business_legal_name="Example Society Ltd")
+    assert r"\gstfalse" in tex, "no GST was charged on this sale"
+    assert r"\gstregtrue" in tex, "but the issuer IS registered"
+
+
+def test_all_three_tax_statements_actually_compile(ctx):
+    """The tax statement is a nested LaTeX conditional; a miscounted \\fi is
+    invisible in the source assertions above and fatal at compile time."""
+    for gst, reg in (("1", "1"), ("", "1"), ("", "")):
+        pdf = render_document("invoice", _vars(gst_applies=gst,
+                                               gst_registered=reg))
+        assert pdf[:4] == b"%PDF", (gst, reg)
+
+
+def test_legacy_documents_without_the_registration_flag_still_regenerate(ctx):
+    """Snapshots issued before the two facts were split carry only
+    gst_applies. Falling back to it reproduces exactly what was issued."""
+    tex = _tex("invoice", ctx, gst_applies="")
+    assert r"\gstregfalse" in tex
+    charged = _tex("invoice", ctx, gst_applies="1")
+    assert r"\gstregtrue" in charged
 
 
 def test_issuer_and_signatory_appear(ctx):

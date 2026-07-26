@@ -4,9 +4,13 @@ Revision ID: 9676ce7e8ae8
 Revises: 1355ee08665c
 Create Date: 2026-06-06 15:27:09.473257
 
+Idempotent: the baseline builds the schema from the current models, so this
+column may already exist. See app/migration_guards.
 """
 from alembic import op
 import sqlalchemy as sa
+
+from app.migration_guards import add_columns, drop_columns
 
 
 revision = '9676ce7e8ae8'
@@ -16,17 +20,10 @@ depends_on = None
 
 
 def upgrade():
-    with op.batch_alter_table('committee_members', schema=None) as batch_op:
-        try:
-            batch_op.add_column(sa.Column('is_contactable', sa.Boolean(),
-                                 nullable=False, server_default=sa.text('0')))
-        except sa.exc.OperationalError:
-            pass
+    add_columns('committee_members',
+                sa.Column('is_contactable', sa.Boolean(), nullable=False,
+                          server_default=sa.text('0')))
 
 
 def downgrade():
-    with op.batch_alter_table('committee_members', schema=None) as batch_op:
-        try:
-            batch_op.drop_column('is_contactable')
-        except sa.exc.OperationalError:
-            pass
+    drop_columns('committee_members', 'is_contactable')

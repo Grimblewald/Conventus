@@ -38,6 +38,12 @@ def _business_vars(amount_cents: int, gst: bool | None = None) -> dict:
     control flag the renderer keys on — it travels in the variables so a
     stored document regenerates with the tax treatment it was issued under,
     not today's setting.
+
+    `gst_registered` is a SEPARATE fact and must stay separate: "no GST on this
+    sale" and "this issuer is not registered for GST" are different statements,
+    and a registered issuer printing the latter on a tax document would be
+    asserting something false. Both travel with the document for the same
+    snapshot reason.
     """
     ident = get_financial_identity()
     site = get_site_settings()
@@ -52,6 +58,7 @@ def _business_vars(amount_cents: int, gst: bool | None = None) -> dict:
         "signatory_name": ident.signatory_name or "",
         "signatory_role": ident.signatory_role or "",
         "gst_applies": "1" if gst_on else "",
+        "gst_registered": "1" if ident.gst_registered else "",
         "invoice_type": "Tax Invoice" if gst_on else "Invoice",
         "gst_amount": format_amount(gst_cents),
         "amount_ex_gst": format_amount(amount_cents - gst_cents),
@@ -150,6 +157,12 @@ def send_test_invoice(to_email: str) -> bool:
         "registration_id": "0",
         **_business_vars(100),
     }
+    # The invoice cover asks the payer to "Pay online: {payment_link}". A proof
+    # send must resolve it like a real one does, or the admin receives the raw
+    # placeholder text. The reference is fictional, so the link lands on the
+    # "payment link not available" page — which is itself worth proofing.
+    vars_["payment_link"] = url_for("public.pay_invoice",
+                                    reference="TEST-000000", _external=True)
     log.info("Sending test invoice to %s", to_email)
     attachment = _render_attachment("invoice", vars_, "TEST-000000")
     return _send_rendered("invoice", vars_, to=to_email, subject_prefix="[TEST] ",

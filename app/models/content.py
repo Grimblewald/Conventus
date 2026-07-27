@@ -266,7 +266,7 @@ class FinancialIdentity(db.Model):
 
     @property
     def render_fingerprint(self) -> str:
-        """The identity fields that change a rendered document, joined for
+        """The identity facts that change a rendered document, joined for
         cache keying (see DocumentTemplate.content_hash)."""
         return "|".join([
             self.legal_name or "", self.abn or "",
@@ -274,8 +274,31 @@ class FinancialIdentity(db.Model):
             self.address or "", self.contact_email or "",
             self.payment_instructions or "",
             self.signatory_name or "", self.signatory_role or "",
-            self.logo_filename or "", self.signature_filename or "",
+            self._asset_stamp(self.logo_filename),
+            self._asset_stamp(self.signature_filename),
         ])
+
+    @staticmethod
+    def _asset_stamp(filename: str | None) -> str:
+        """`<name>:<size>:<mtime_ns>` for an asset file, or just the name.
+
+        The filename alone is NOT a usable cache key: assets are stored at
+        fixed paths (logo.png, signature.png), so *replacing* an image leaves
+        the name identical and every cached document would keep rendering the
+        old picture. Stat rather than a content hash — it changes on every
+        write, and a 2MB read on each cache-key computation is not worth the
+        difference.
+        """
+        if not filename:
+            return ""
+        try:
+            from ..services.documents import financial_assets_dir
+            st = (financial_assets_dir() / filename).stat()
+            return f"{filename}:{st.st_size}:{st.st_mtime_ns}"
+        except (OSError, RuntimeError, ImportError):
+            # No file, or no app context (tooling) — the name still keys the
+            # difference between "an asset is set" and "none is".
+            return filename
 
 
 def get_financial_identity() -> FinancialIdentity:

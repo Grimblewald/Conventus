@@ -203,6 +203,102 @@ def test_placeholder_fill_bold_names(ctx):
     assert "$0.00" not in tex
 
 
+def test_preview_shows_the_real_issuer_not_a_placeholder(ctx):
+    """Issuer facts are configured once and identical on every document, so a
+    preview renders them for real — the rule the letterhead images and the GST
+    treatment already follow. Showing a bold `business_legal_name` where the
+    admin just saved their society's name reads as "my settings didn't take"."""
+    from app.extensions import db
+    from app.models import get_document_template, get_financial_identity
+    from app.services.documents import assemble_tex, placeholder_vars
+
+    ident = get_financial_identity()
+    ident.legal_name = "Example Society Incorporated"
+    ident.abn = "12 345 678 901"
+    ident.address = "PO Box 1\nAdelaide SA 5000"
+    ident.signatory_name = "A. Treasurer"
+    ident.signatory_role = "Director/Treasurer"
+    db.session.commit()
+
+    tex = assemble_tex("receipt", get_document_template("receipt"),
+                       placeholder_vars("receipt"))
+    for real in ("Example Society Incorporated", "12 345 678 901",
+                 "Adelaide SA 5000", "A. Treasurer", "Director/Treasurer"):
+        assert real in tex, real
+    for placeholder in (r"\textbf{business\_legal\_name}",
+                        r"\textbf{business\_number}",
+                        r"\textbf{signatory\_name}"):
+        assert placeholder not in tex, placeholder
+
+    # Per-document values are still placeholders — those really are unfilled.
+    assert r"\textbf{amount}" in tex
+    assert r"\textbf{user\_name}" in tex
+
+
+def test_preview_keeps_placeholders_for_unset_issuer_fields(ctx):
+    """An issuer field the admin has not filled in yet must still show its
+    bold name, so the preview says what is missing rather than a silent gap."""
+    from app.extensions import db
+    from app.models import get_document_template, get_financial_identity
+    from app.services.documents import assemble_tex, placeholder_vars
+
+    ident = get_financial_identity()
+    ident.signatory_name = ""
+    ident.signatory_role = ""
+    db.session.commit()
+
+    tex = assemble_tex("invoice", get_document_template("invoice"),
+                       placeholder_vars("invoice"))
+    assert r"\textbf{signatory\_name}" in tex
+
+
+def test_replacing_a_letterhead_image_rekeys_the_cache(ctx, tmp_path, monkeypatch):
+    """Assets live at fixed paths (logo.png), so the filename alone cannot key
+    the cache — replacing the image left the name identical and every cached
+    document kept rendering the old picture.
+
+    Runs against an isolated assets dir: writing into the real one would leave
+    a non-PNG behind and break every later test that actually compiles.
+    """
+    import os
+    from app.extensions import db
+    from app.models import get_document_template, get_financial_identity
+
+    monkeypatch.setattr("app.services.documents.financial_assets_dir",
+                        lambda: tmp_path)
+    logo = tmp_path / "logo.png"
+    logo.write_bytes(b"first-image-bytes")
+
+    ident = get_financial_identity()
+    original = ident.logo_filename
+    ident.logo_filename = "logo.png"
+    db.session.commit()
+    try:
+        before = get_document_template("invoice").content_hash
+
+        # Same filename, different picture — what the old key was blind to.
+        logo.write_bytes(b"a-completely-different-and-longer-image")
+        os.utime(logo, (0, 0))
+
+        assert get_document_template("invoice").content_hash != before
+    finally:
+        ident.logo_filename = original
+        db.session.commit()
+
+
+def test_preview_title_is_not_double_escaped(ctx):
+    """The invoice title comes from {invoice_type}, a bold placeholder in a
+    preview. Escaping it blindly printed the markup — and document.tex wraps
+    the title in \\MakeUppercase, so it surfaced as \\TEXTBF{INVOICE\\_TYPE}."""
+    from app.models import get_document_template
+    from app.services.documents import assemble_tex, placeholder_vars
+
+    tex = assemble_tex("invoice", get_document_template("invoice"),
+                       placeholder_vars("invoice"))
+    assert r"\textbackslash{}textbf" not in tex
+    assert r"\MakeUppercase{\textbf{invoice\_type}}" in tex
+
+
 def test_pdf_body_rawlatex_var_renders_raw_with_escaped_literals(app):
     """The pdf_body fix: a RawLatex value substituted into {var} stays live
     LaTeX while the literal text around it is still escaped."""

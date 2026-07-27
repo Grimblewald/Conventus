@@ -204,7 +204,12 @@ def assemble_tex(kind: str, tpl, vars_: dict, *, has_logo: bool = False,
         "flag_invoice": _flag("isinvoice", kind == "invoice"),
         "logo_file": RawLatex(logo_name),
         "signature_file": RawLatex(signature_name),
-        "doc_title": latex_escape(doc_title),
+        # RawLatex-aware like every other value: the invoice title comes from
+        # {invoice_type}, which in a preview is a bold placeholder. Escaping it
+        # blindly printed the markup itself — and document.tex wraps the title
+        # in \MakeUppercase, so it surfaced as \TEXTBF{INVOICE\_TYPE}.
+        "doc_title": (doc_title if isinstance(doc_title, RawLatex)
+                      else latex_escape(str(doc_title))),
         "site_name": esc("site_name"),
         "business_legal_name": esc("business_legal_name"),
         "business_address": esc("business_address"),
@@ -729,23 +734,56 @@ _PREVIEW_VARS = (
 )
 
 
+# Issuer facts: configured once in Financial Identity, identical on every
+# document, and NOT something an admin fills in per document. A preview shows
+# them for real — the same rule the letterhead images and the GST treatment
+# already follow. Showing a bold `business_legal_name` in place of the name the
+# admin just saved reads as "my settings didn't take".
+_IDENTITY_VARS = (
+    "business_legal_name", "business_number", "business_address",
+    "business_contact_email", "payment_instructions",
+    "signatory_name", "signatory_role",
+)
+
+
 def placeholder_vars(kind: str) -> dict[str, RawLatex]:
-    """Full variable dict for a preview: every value a bold `\\textbf{name}`
-    placeholder (the name itself LaTeX-escaped). Every variable is set to a
-    truthy RawLatex, so the optional skeleton sections all appear showing their
-    field names — and the numeric fields (amount / gst_amount / amount_ex_gst)
-    read as their bold names, never a computed $0.00. Callers overlay real
-    values on top."""
+    """Full variable dict for a preview: per-document values become bold
+    `\\textbf{name}` placeholders (the name itself LaTeX-escaped), while the
+    configured issuer facts render for real.
+
+    Every per-document variable is set to a truthy RawLatex, so the optional
+    skeleton sections all appear showing their field names — and the numeric
+    fields (amount / gst_amount / amount_ex_gst) read as their bold names,
+    never a computed $0.00. An issuer field that is *unset* keeps its bold
+    placeholder, so a preview still shows the admin what they have yet to fill
+    in. Callers overlay real values on top."""
     from ..models import get_financial_identity
 
     vars_ = {name: RawLatex(r"\textbf{" + latex_escape(name) + "}")
              for name in _PREVIEW_VARS}
+
+    ident = get_financial_identity()
     # GST is a configured fact, not a field to fill in: a preview shows the
     # tax treatment the identity is actually set to, so an admin can see
     # whether their documents will carry GST lines or the no-GST statement.
-    registered = get_financial_identity().gst_registered
+    registered = ident.gst_registered
     vars_["gst_applies"] = "1" if registered else ""
     vars_["gst_registered"] = "1" if registered else ""
+
+    from ..models import get_site_settings
+    real = {
+        "business_legal_name": ident.legal_name or get_site_settings().site_name,
+        "business_number": ident.abn,
+        "business_address": ident.address,
+        "business_contact_email": ident.contact_email,
+        "payment_instructions": ident.payment_instructions,
+        "signatory_name": ident.signatory_name,
+        "signatory_role": ident.signatory_role,
+    }
+    for name in _IDENTITY_VARS:
+        value = (real.get(name) or "").strip()
+        if value:
+            vars_[name] = value
     return vars_
 
 

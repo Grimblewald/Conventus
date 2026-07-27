@@ -23,7 +23,7 @@
     <label for="legal_name"><strong>Legal name</strong></label>
     <input type="text" id="legal_name" name="legal_name" class="input"
            value="{{ ident.legal_name or '' }}"
-           placeholder="e.g. Australian Controlled Release Society Ltd">
+           placeholder="e.g. Example Society Incorporated">
     <p class="muted">The entity that issues the document — often longer than the site name. Fills {{ '{business_legal_name}' }}; blank falls back to the site name.</p>
   </div>
 
@@ -31,7 +31,7 @@
     <div class="form-group" style="margin-bottom:16px;">
       <label for="abn"><strong>ABN</strong></label>
       <input type="text" id="abn" name="abn" class="input"
-             value="{{ ident.abn or '' }}" placeholder="e.g. 17 602 379 475">
+             value="{{ ident.abn or '' }}" placeholder="e.g. 12 345 678 901">
       <p class="muted">Fills {{ '{business_number}' }}. An invoice for a taxable sale without an ABN can trigger 47% withholding by the payer.</p>
     </div>
     <div class="form-group" style="margin-bottom:16px;">
@@ -76,7 +76,7 @@
     <div class="form-group" style="margin-bottom:16px;">
       <label for="signatory_name"><strong>Signatory name</strong></label>
       <input type="text" id="signatory_name" name="signatory_name" class="input"
-             value="{{ ident.signatory_name or '' }}" placeholder="e.g. Tim Barnes">
+             value="{{ ident.signatory_name or '' }}" placeholder="e.g. A. Treasurer">
     </div>
     <div class="form-group" style="margin-bottom:16px;">
       <label for="signatory_role"><strong>Signatory role</strong></label>

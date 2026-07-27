@@ -68,4 +68,89 @@
     if (!sel || !sel.value) return;
     window.location = sel.value;
   });
+
+  // Send Invoice: the sponsorship level follows the conference, and choosing a
+  // level fills the line item and amount. Progressive enhancement only — the
+  // server resolves the same pair from conference_id/tier_id, so a submit
+  // without any of this still produces the right invoice.
+  var levelsHost = document.querySelector("[data-invoice-levels]");
+  if (levelsHost) {
+    var levels = {};
+    try {
+      levels = JSON.parse(levelsHost.dataset.invoiceLevels || "{}");
+    } catch (err) {
+      levels = {};
+    }
+    var confSel = document.querySelector("[data-invoice-conference]");
+    var levelSel = document.querySelector("[data-invoice-level]");
+    var amount = document.querySelector("[data-invoice-amount]");
+    var note = document.querySelector("[data-invoice-amount-note]");
+    var customItem = document.querySelector("[data-invoice-custom-item]");
+
+    // The price the chosen level costs, so we can tell "untouched" (keep it in
+    // step with the level) from "deliberately overridden" (leave it alone).
+    var levelPrice = "";
+
+    function currentLevel() {
+      var list = levels[confSel.value] || [];
+      for (var i = 0; i < list.length; i++) {
+        if (list[i].id === levelSel.value) return list[i];
+      }
+      return null;
+    }
+
+    function applyLevel() {
+      var lvl = currentLevel();
+      var custom = !lvl;
+      if (customItem) customItem.hidden = !custom;
+      var itemInput = customItem && customItem.querySelector("input");
+      if (itemInput) itemInput.disabled = !custom;
+
+      if (!lvl) {
+        if (note) note.textContent = "";
+        levelPrice = "";
+        return;
+      }
+      // Only overwrite an amount the sender hasn't deliberately changed.
+      if (amount && (amount.value === "" || amount.value === levelPrice)) {
+        amount.value = lvl.amount;
+      }
+      levelPrice = lvl.amount;
+      if (note) {
+        note.textContent = lvl.amount
+          ? "Level price " + lvl.amount + " — edit to bill a negotiated amount."
+          : "This level has no price set; enter the amount to bill.";
+      }
+    }
+
+    function fillLevels() {
+      var list = levels[confSel.value] || [];
+      // A new conference has different levels, so the old choice cannot carry
+      // over; fall back to its first level (or custom when it sells none).
+      var previous = "";
+      levelSel.innerHTML = "";
+      list.forEach(function (lvl) {
+        var opt = document.createElement("option");
+        opt.value = lvl.id;
+        opt.textContent = lvl.name + (lvl.amount ? " — " + lvl.amount : "");
+        levelSel.appendChild(opt);
+      });
+      var custom = document.createElement("option");
+      custom.value = "custom";
+      custom.textContent = list.length ? "Other / custom…" : "Custom item…";
+      levelSel.appendChild(custom);
+      levelSel.value = previous && levelSel.querySelector('[value="' + previous + '"]')
+        ? previous : (list.length ? list[0].id : "custom");
+      applyLevel();
+    }
+
+    if (confSel && levelSel) {
+      confSel.addEventListener("change", fillLevels);
+      levelSel.addEventListener("change", applyLevel);
+      // The options are already rendered server-side for the current
+      // conference, so only sync the dependent fields on load — rebuilding
+      // here would discard a level restored after a validation error.
+      applyLevel();
+    }
+  }
 })();

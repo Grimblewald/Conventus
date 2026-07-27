@@ -220,12 +220,17 @@
     <div class="edit-section-body">
       {% if c.sponsor_tiers %}
       <table class="table">
-        <thead><tr><th style="width:64px">Order</th><th>Name</th><th>Sponsors</th><th style="width:70px"></th></tr></thead>
+        <thead><tr><th style="width:64px">Order</th><th>Name</th><th style="width:110px">Price</th><th>Sponsors</th><th style="width:70px"></th></tr></thead>
         <tbody id="sponsor-tiers-tbody">
           {% for st in c.sponsor_tiers %}
           <tr class="stier-row" data-tier-id="{{ st.id }}">
             <td><input class="input" name="stier_order_{{ st.id }}" value="{{ st.display_order }}" style="width:64px;"></td>
             <td><input class="input" name="stier_name_{{ st.id }}" value="{{ st.name }}"></td>
+            {# Never shown publicly — the sponsor listing is logos only. This is
+               what Send Invoice bills for the level. #}
+            <td><input class="input" name="stier_price_{{ st.id }}" style="width:100px;"
+                       value="{{ st.price|format_amount if st.price is not none else '' }}"
+                       placeholder="—" title="What this level costs. Admin-only; never shown on the site."></td>
             <td class="stier-sponsors-cell">
               <div class="sponsor-list" data-tier-id="{{ st.id }}">
                 {% for s in st.sponsors %}
@@ -259,6 +264,7 @@
         <tr class="stier-row stier-row--new">
           <td><input class="input" name="new_stier_order[]" value="" style="width:64px;"></td>
           <td><input class="input" name="new_stier_name[]" value=""></td>
+          <td><input class="input" name="new_stier_price[]" value="" style="width:100px;" placeholder="—"></td>
           <td class="stier-sponsors-cell">
             <div class="sponsor-list" data-tier-id="new">
               <span class="muted" style="font-size:12px;">Save first, then add sponsors.</span>

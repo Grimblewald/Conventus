@@ -416,11 +416,10 @@ class TestSendInvoicePreview:
         resp = admin_client.post("/admin/financial/send-invoice/preview", data={
             "to": "sponsor@example.org",
             "recipient_name": "Acme Pty Ltd",
-            "description": "Gold sponsorship",
+            "tier_id": "custom",
             "item": "Sponsor package",
             "amount": "5500.00",
-            "reference": "INV-PREVIEW-1",
-            "due_date": "30 September 2026",
+            "due_date": "2026-09-30",
             "include_gst": "1",
         })
         assert resp.status_code == 200
@@ -439,8 +438,8 @@ class TestSendInvoicePreview:
             before = (IssuedDocument.query.count(), PaymentEvent.query.count())
 
         admin_client.post("/admin/financial/send-invoice/preview", data={
-            "to": "sponsor@example.org", "description": "Gold sponsorship",
-            "amount": "100.00", "reference": "INV-PREVIEW-2",
+            "to": "sponsor@example.org", "tier_id": "custom",
+            "item": "Gold sponsorship", "amount": "100.00",
         })
 
         with app.app_context():
@@ -479,8 +478,8 @@ class TestSendInvoicePreview:
 
         # This invoice is billed WITHOUT GST (box left unticked).
         resp = client.post("/admin/financial/send-invoice/preview", data={
-            "to": "sponsor@example.org", "description": "Sponsorship",
-            "amount": "500.00", "reference": "INV-NOGST",
+            "to": "sponsor@example.org", "tier_id": "custom",
+            "item": "Sponsorship", "amount": "500.00",
             # include_gst intentionally absent → GST off for this invoice
         })
         assert resp.status_code == 200
@@ -504,3 +503,226 @@ class TestSendInvoicePreview:
             assert v["recipient_address"] == "1 Example St"
             assert v["gst_applies"] == "1"
             assert v["payment_link"].endswith("/pay/invoice/INV-X")
+
+
+class TestSendInvoiceCatalogue:
+    """Raising an invoice is a choice from the catalogue, not a typing exercise.
+
+    The sender picks a conference and a sponsorship level; the description,
+    line item, amount and billing period all follow from that pair, and the
+    reference — which keys the ledger group, the pay link and the document's
+    identity — is minted server-side and never solicited from the form.
+    """
+
+    @staticmethod
+    def _conference(app, title, start, end, levels=()):
+        from datetime import date
+        from app.extensions import db
+        from app.models import Conference
+        from app.models.sponsor import SponsorTier
+        import secrets
+        with app.app_context():
+            c = Conference(slug=f"c-{secrets.token_hex(4)}", title=title,
+                           start_date=start, end_date=end)
+            db.session.add(c)
+            db.session.flush()
+            ids = []
+            for i, (name, price) in enumerate(levels):
+                t = SponsorTier(conference_id=c.id, name=name,
+                                display_order=i * 10, price=price)
+                db.session.add(t)
+                db.session.flush()
+                ids.append(t.id)
+            db.session.commit()
+            return c.id, ids
+
+    def test_conferences_are_ordered_by_nearness_to_today(self, seeded, app):
+        """Past and future interleave: what matters is how close a meeting is
+        to now, not which side of now it falls on."""
+        from datetime import date, timedelta
+        from app.services.invoice import invoiceable_conferences
+
+        today = date.today()
+        far_past, _ = self._conference(app, "Far past",
+                                       today - timedelta(days=900),
+                                       today - timedelta(days=898))
+        near_past, _ = self._conference(app, "Near past",
+                                        today - timedelta(days=10),
+                                        today - timedelta(days=8))
+        far_future, _ = self._conference(app, "Far future",
+                                         today + timedelta(days=800),
+                                         today + timedelta(days=802))
+        near_future, _ = self._conference(app, "Near future",
+                                          today + timedelta(days=5),
+                                          today + timedelta(days=7))
+
+        with app.app_context():
+            order = [c.id for c in invoiceable_conferences()]
+
+        mine = [i for i in order if i in
+                {far_past, near_past, far_future, near_future}]
+        assert mine[0] == near_future, "5 days away should outrank 10 days ago"
+        assert mine[1] == near_past
+        assert mine.index(far_future) < mine.index(far_past)
+
+    def test_a_running_conference_sorts_first(self, seeded, app):
+        from datetime import date, timedelta
+        from app.services.invoice import default_conference
+
+        today = date.today()
+        self._conference(app, "Soon", today + timedelta(days=3),
+                         today + timedelta(days=4))
+        running, _ = self._conference(app, "Running", today - timedelta(days=1),
+                                      today + timedelta(days=1))
+        with app.app_context():
+            assert default_conference().id == running
+
+    def test_level_supplies_the_line_item_and_amount(self, seeded, app,
+                                                     admin_client, monkeypatch):
+        """The two dropdowns are the whole input — nothing else is retyped."""
+        from datetime import date
+        captured = {}
+
+        def _fake_send(to, **kw):
+            captured.update(kw)
+            captured["to"] = to
+            return True
+        monkeypatch.setattr("app.services.invoice.send_manual_invoice", _fake_send)
+        from app.blueprints.admin import financial as fin
+        monkeypatch.setattr(fin, "send_manual_invoice", _fake_send, raising=False)
+
+        cid, tiers = self._conference(app, "Physics 2026",
+                                      date(2026, 9, 1), date(2026, 9, 3),
+                                      levels=[("Gold", 500000)])
+        admin_client.post("/admin/financial/send-invoice", data={
+            "to": "sponsor@example.org", "conference_id": str(cid),
+            "tier_id": str(tiers[0]),
+        }, follow_redirects=True)
+
+        assert captured["item"] == "Gold sponsorship"
+        assert captured["amount_cents"] == 500000
+        assert captured["description"] == "Sponsorship — Physics 2026"
+        assert captured["period"] == "1–3 September 2026"
+
+    def test_amount_can_be_overridden_for_a_negotiated_deal(self, seeded, app):
+        from datetime import date
+        from app.blueprints.admin.financial import _resolve_send_invoice
+
+        cid, tiers = self._conference(app, "Physics 2026",
+                                      date(2026, 9, 1), date(2026, 9, 3),
+                                      levels=[("Gold", 500000)])
+        with app.test_request_context():
+            f = _resolve_send_invoice({
+                "to": "s@example.org", "conference_id": str(cid),
+                "tier_id": str(tiers[0]), "amount": "4200.00",
+            })
+        assert f["errors"] == []
+        assert f["amount"] == 420000          # negotiated, not the tier price
+        assert f["item"] == "Gold sponsorship"
+
+    def test_reference_is_never_taken_from_the_form(self, seeded, app):
+        """It keys the ledger group, the pay link and the document identity —
+        not something to hand to whoever is raising the invoice."""
+        from datetime import date
+        from app.blueprints.admin.financial import _resolve_send_invoice
+
+        cid, tiers = self._conference(app, "Physics 2026",
+                                      date(2026, 9, 1), date(2026, 9, 3),
+                                      levels=[("Gold", 500000)])
+        with app.test_request_context():
+            f = _resolve_send_invoice({
+                "to": "s@example.org", "conference_id": str(cid),
+                "tier_id": str(tiers[0]), "reference": "ATTACKER-CHOSEN",
+            })
+        assert f["reference"] != "ATTACKER-CHOSEN"
+        assert f["reference"].startswith("INV-")
+        assert len(f["reference"]) <= 30
+
+    def test_references_do_not_repeat(self, seeded, app):
+        from app.services.invoice import next_invoice_reference
+        with app.app_context():
+            refs = {next_invoice_reference() for _ in range(25)}
+        assert len(refs) == 25
+
+    def test_due_date_is_stored_as_prose_from_the_date_picker(self, seeded, app):
+        """`<input type="date">` submits ISO; the document reads as prose."""
+        from app.blueprints.admin.financial import _display_date
+        with app.app_context():
+            assert _display_date("2026-09-30") == "30 September 2026"
+            assert _display_date("") == ""
+            assert _display_date("whenever") == "whenever"   # never discarded
+
+    def test_a_level_from_another_conference_is_rejected(self, seeded, app):
+        """Guards the obvious tampering case and an admin with a stale form."""
+        from datetime import date
+        from app.blueprints.admin.financial import _resolve_send_invoice
+
+        a_id, a_tiers = self._conference(app, "Conf A", date(2026, 9, 1),
+                                         date(2026, 9, 3),
+                                         levels=[("Gold", 500000)])
+        b_id, _ = self._conference(app, "Conf B", date(2026, 10, 1),
+                                   date(2026, 10, 3))
+        with app.test_request_context():
+            f = _resolve_send_invoice({
+                "to": "s@example.org", "conference_id": str(b_id),
+                "tier_id": str(a_tiers[0]),
+            })
+        assert any("does not belong" in e for e in f["errors"])
+
+    def test_custom_invoice_needs_its_own_item(self, seeded, app):
+        from datetime import date
+        from app.blueprints.admin.financial import _resolve_send_invoice
+
+        cid, _ = self._conference(app, "Physics 2026", date(2026, 9, 1),
+                                  date(2026, 9, 3))
+        with app.test_request_context():
+            missing = _resolve_send_invoice({
+                "to": "s@example.org", "conference_id": str(cid),
+                "tier_id": "custom", "amount": "300.00"})
+            given = _resolve_send_invoice({
+                "to": "s@example.org", "conference_id": str(cid),
+                "tier_id": "custom", "item": "Exhibitor booth",
+                "amount": "300.00"})
+        assert any("Describe the item" in e for e in missing["errors"])
+        assert given["errors"] == []
+        assert given["item"] == "Exhibitor booth"
+
+    def test_a_level_with_no_price_asks_for_an_amount(self, seeded, app):
+        from datetime import date
+        from app.blueprints.admin.financial import _resolve_send_invoice
+
+        cid, tiers = self._conference(app, "Physics 2026", date(2026, 9, 1),
+                                      date(2026, 9, 3),
+                                      levels=[("Partner", None)])
+        with app.test_request_context():
+            f = _resolve_send_invoice({
+                "to": "s@example.org", "conference_id": str(cid),
+                "tier_id": str(tiers[0])})
+        assert any("no price set" in e for e in f["errors"])
+
+    def test_form_offers_the_conference_and_level_pickers(self, seeded, app,
+                                                          admin_client):
+        from datetime import date
+        cid, tiers = self._conference(app, "Physics 2026", date(2026, 9, 1),
+                                      date(2026, 9, 3),
+                                      levels=[("Gold", 500000)])
+        body = admin_client.get("/admin/financial/send-invoice").data.decode()
+        assert 'name="conference_id"' in body
+        assert 'name="tier_id"' in body
+        # Levels render server-side, so the form works without JavaScript.
+        assert "Gold" in body
+        # The reference is never an input.
+        assert 'name="reference"' not in body
+        assert 'type="date"' in body
+
+    def test_tier_price_is_admin_only(self, seeded, app, client):
+        """Prices are an invoicing fact; the public sponsor listing is logos."""
+        from datetime import date
+        from app.models import Conference
+        cid, _ = self._conference(app, "Physics 2026", date(2026, 9, 1),
+                                  date(2026, 9, 3), levels=[("Gold", 500000)])
+        with app.app_context():
+            slug = Conference.query.get(cid).slug
+        resp = client.get(f"/conferences/{slug}")
+        if resp.status_code == 200:
+            assert b"5000.00" not in resp.data

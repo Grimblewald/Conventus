@@ -17,6 +17,11 @@ class SponsorTier(db.Model):
     )
     name = db.Column(db.String(80), nullable=False)
     display_order = db.Column(db.Integer, default=0, nullable=False)
+    # What this sponsorship level costs, in minor units (cents), or NULL when
+    # the tier isn't sold at a set price. NEVER rendered publicly — the sponsor
+    # listing shows logos only. It exists so Send Invoice can fill the line
+    # item and amount from a chosen level instead of retyping both.
+    price = db.Column(db.Integer, nullable=True)
 
     sponsors = db.relationship(
         "Sponsor",

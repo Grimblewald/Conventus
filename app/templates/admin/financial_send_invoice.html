@@ -30,36 +30,62 @@
            value="{{ form.get('recipient_name', '') }}" placeholder="Acme Pty Ltd">
   </div>
 
-  <div class="form-group" style="margin-bottom:16px;">
-    <label for="description"><strong>Invoice for</strong> <span class="muted">— fills {{ '{conference_title}' }}</span></label>
-    <input type="text" id="description" name="description" class="input" required
-           value="{{ form.get('description', '') }}" placeholder="Sponsorship — Annual Conference 2026">
+  {# The invoice line is chosen, not typed: pick the conference and the
+     sponsorship level and the description, item, amount and billing period all
+     follow. The reference is minted server-side and never shown as an input —
+     it keys the ledger group and the pay link, which is not a decision to hand
+     to whoever is raising the invoice. #}
+  <div class="row-2" data-invoice-levels='{{ levels|tojson }}'>
+    <div class="form-group" style="margin-bottom:16px;">
+      <label for="conference_id"><strong>Conference</strong></label>
+      <select class="select" id="conference_id" name="conference_id" required
+              data-invoice-conference>
+        {% for c in conferences %}
+        <option value="{{ c.id }}"
+                {% if c.id|string == (form.get('conference_id', '') or selected_conference_id|string) %}selected{% endif %}>
+          {{ c.title }} — {{ c.date_range }}{% if not c.is_upcoming %} (past){% endif %}
+        </option>
+        {% endfor %}
+      </select>
+      <p class="muted">Ordered by nearness to today, so the current meeting is
+        first. Fills {{ '{conference_title}' }} and {{ '{conference_dates}' }}.</p>
+    </div>
+    <div class="form-group" style="margin-bottom:16px;">
+      <label for="tier_id"><strong>Sponsorship level</strong></label>
+      {# Rendered server-side for the selected conference so the form works with
+         JavaScript disabled; the script only repopulates it when the
+         conference changes. #}
+      {% set chosen_conf = form.get('conference_id', '') or selected_conference_id|string %}
+      {% set chosen_tier = form.get('tier_id', '') %}
+      <select class="select" id="tier_id" name="tier_id" data-invoice-level>
+        {% for lvl in levels.get(chosen_conf, []) %}
+        <option value="{{ lvl.id }}" {% if lvl.id == chosen_tier %}selected{% endif %}>
+          {{ lvl.name }}{% if lvl.amount %} — {{ lvl.amount }}{% endif %}
+        </option>
+        {% endfor %}
+        <option value="custom" {% if chosen_tier == 'custom' %}selected{% endif %}>
+          {% if levels.get(chosen_conf) %}Other / custom…{% else %}Custom item…{% endif %}
+        </option>
+      </select>
+      <p class="muted">Sets the line item and amount. Prices come from the
+        conference's <a href="{{ url_for('admin.conferences') }}">sponsor tiers</a>
+        and are never shown publicly.</p>
+    </div>
   </div>
 
   <div class="row-2">
-    <div class="form-group" style="margin-bottom:16px;">
+    <div class="form-group" style="margin-bottom:16px;" data-invoice-custom-item
+         {% if chosen_tier != 'custom' and levels.get(chosen_conf) %}hidden{% endif %}>
       <label for="item"><strong>Item</strong> <span class="muted">— fills {{ '{tier_name}' }}</span></label>
       <input type="text" id="item" name="item" class="input"
-             value="{{ form.get('item', '') }}" placeholder="Gold Sponsor Package">
+             value="{{ form.get('item', '') }}" placeholder="Exhibitor booth — 3m×2m">
     </div>
     <div class="form-group" style="margin-bottom:16px;">
       <label for="amount"><strong>Amount ({{ site.currency_code }})</strong></label>
-      <input type="text" id="amount" name="amount" class="input" required
-             value="{{ form.get('amount', '') }}" placeholder="500.00">
-    </div>
-  </div>
-
-  <div class="row-2">
-    <div class="form-group" style="margin-bottom:16px;">
-      <label for="reference"><strong>Reference</strong> <span class="muted">— fills {{ '{transaction_id}' }}</span></label>
-      <input type="text" id="reference" name="reference" class="input" maxlength="30"
-             value="{{ form.get('reference', '') }}" placeholder="{{ suggested_ref }}">
-      <p class="muted">Must be unique and ≤30 characters. It keys the invoice's ledger group and its pay-online link.</p>
-    </div>
-    <div class="form-group" style="margin-bottom:16px;">
-      <label for="period"><strong>Period / dates</strong> <span class="muted">(optional — fills {{ '{conference_dates}' }})</span></label>
-      <input type="text" id="period" name="period" class="input"
-             value="{{ form.get('period', '') }}" placeholder="1–3 September 2026">
+      <input type="text" id="amount" name="amount" class="input"
+             value="{{ form.get('amount', '') }}" placeholder="500.00"
+             data-invoice-amount>
+      <p class="muted" data-invoice-amount-note></p>
     </div>
   </div>
 
@@ -78,8 +104,8 @@
     </div>
     <div class="form-group" style="margin-bottom:16px;">
       <label for="due_date"><strong>Due date</strong> <span class="muted">(optional — fills {{ '{due_date}' }})</span></label>
-      <input type="text" id="due_date" name="due_date" class="input"
-             value="{{ form.get('due_date', '') }}" placeholder="e.g. 30 September 2026 (net 30)">
+      <input type="date" id="due_date" name="due_date" class="input"
+             value="{{ form.get('due_date', '') }}">
     </div>
   </div>
 
@@ -109,7 +135,7 @@
       Sends the invoice email with the PDF attached and a durable pay-online
       link ({{ '{payment_link}' }}). Recorded in the
       <a href="{{ url_for('admin.financial_transactions') }}">transaction ledger</a>
-      under the reference above; paying the link sends the receipt automatically.
+      under a freshly minted reference; paying the link sends the receipt automatically.
     </p>
   </div>
 

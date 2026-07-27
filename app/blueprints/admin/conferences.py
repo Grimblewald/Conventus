@@ -27,6 +27,23 @@ from ...services.uploads import (
 from ...services.citations import fetch_metadata, format_reference_compact, normalize_doi
 
 
+def _tier_price(raw: str | None, current: int | None) -> int | None:
+    """Parse a sponsor-tier price field into cents.
+
+    Blank means "this level has no set price" (NULL), which is different from
+    zero — a free tier is a real thing and must survive a save. Unparseable
+    input keeps the current value rather than silently zeroing what a sponsor
+    is billed.
+    """
+    text = (raw or "").strip()
+    if not text:
+        return None
+    try:
+        return parse_cents(text)
+    except ValueError:
+        return current
+
+
 # ---------------------------------------------------------------------------
 # List + create
 # ---------------------------------------------------------------------------
@@ -298,6 +315,8 @@ def conference_save(cid):
                     st.display_order = int(request.form.get(f"stier_order_{st.id}") or st.display_order)
                 except ValueError:
                     pass
+            if f"stier_price_{st.id}" in request.form:
+                st.price = _tier_price(request.form.get(f"stier_price_{st.id}"), st.price)
 
             # Sponsors within this tier
             for s in list(st.sponsors):
@@ -348,6 +367,7 @@ def conference_save(cid):
         # Add new sponsor tiers
         new_st_names = request.form.getlist("new_stier_name[]")
         new_st_orders = request.form.getlist("new_stier_order[]")
+        new_st_prices = request.form.getlist("new_stier_price[]")
         for i, name in enumerate(new_st_names):
             name = name.strip()
             if not name:
@@ -357,10 +377,15 @@ def conference_save(cid):
                 order = int(new_st_orders[i] or 0)
             except (IndexError, ValueError):
                 pass
+            try:
+                price = _tier_price(new_st_prices[i], None)
+            except IndexError:
+                price = None
             db.session.add(SponsorTier(
                 conference_id=c.id,
                 name=name,
                 display_order=order,
+                price=price,
             ))
 
         # -- Organising committee --

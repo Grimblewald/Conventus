@@ -77,6 +77,26 @@ def _make_reg(app, *, status="pending", amount=11000, txn="TXN-1"):
         return reg.id, ref, email
 
 
+def _sponsorship(app, price=50000, name="Gold"):
+    """A conference with one priced sponsorship level — the pair the Send
+    Invoice form now asks for instead of free-text description/item/amount.
+    Returns (conference_id, tier_id)."""
+    import secrets
+    from app.models import Conference
+    from app.models.sponsor import SponsorTier
+    tag = secrets.token_hex(4)
+    with app.app_context():
+        c = Conference(slug=f"sponsor-conf-{tag}", title="Physics 2026",
+                       start_date=date(2026, 9, 1), end_date=date(2026, 9, 3))
+        db.session.add(c)
+        db.session.flush()
+        t = SponsorTier(conference_id=c.id, name=name, display_order=10,
+                        price=price)
+        db.session.add(t)
+        db.session.commit()
+        return c.id, t.id
+
+
 def _post_webhook(client, monkeypatch, result: WebhookResult):
     """POST a webhook whose verification yields `result` (gateway stubbed)."""
     class _Gateway:
@@ -194,20 +214,21 @@ def test_manual_invoice_render_error_records_nothing(seed_templates, admin_clien
     monkeypatch.setattr("app.services.invoice.render_document",
                         lambda *a, **k: (_ for _ in ()).throw(
                             RenderError("boom", log="! bad")))
+    conf_id, tier_id = _sponsorship(app)
     with app.app_context():
         from app.models import PaymentEvent
         before = PaymentEvent.query.count()
 
     resp = admin_client.post("/admin/financial/send-invoice", data={
-        "to": "sponsor@example.org", "description": "Gold sponsorship",
-        "item": "Sponsorship", "amount": "500.00", "reference": "INV-FAIL",
+        "to": "sponsor@example.org", "conference_id": str(conf_id),
+        "tier_id": str(tier_id),
     }, follow_redirects=True)
     assert resp.status_code == 200
     assert b"could not be generated" in resp.data
     with app.app_context():
         from app.models import PaymentEvent
+        # Nothing recorded at all — not even under the reference it minted.
         assert PaymentEvent.query.count() == before
-        assert PaymentEvent.query.filter_by(merchant_reference="INV-FAIL").count() == 0
 
 
 # --- (7) {payment_link} lands in the manual invoice body and PDF vars --------

@@ -169,6 +169,90 @@ def send_test_invoice(to_email: str) -> bool:
                           attachment=attachment)
 
 
+# ---------------------------------------------------------------------------
+# Raising an invoice from the catalogue: which conference, which sponsorship
+# level. The sender picks two things; the line item, the amount, the billing
+# period and the reference all follow from them.
+# ---------------------------------------------------------------------------
+
+def conference_proximity(conference, today=None) -> int:
+    """Days between *today* and the conference, in either direction.
+
+    Zero while it is running. Direction is deliberately discarded: an invoice
+    raised the week after a meeting is exactly as likely as one raised the week
+    before, so what makes a conference relevant is how near it is to now, not
+    whether it has happened yet.
+    """
+    today = today or datetime.utcnow().date()
+    if conference.start_date <= today <= conference.end_date:
+        return 0
+    return min(abs((conference.start_date - today).days),
+               abs((conference.end_date - today).days))
+
+
+def invoiceable_conferences():
+    """Every conference, nearest to now first — past and future interleaved.
+
+    Ordering by absolute distance keeps whatever is actually current at the top
+    of the picker: the meeting in progress, then the one just finished or about
+    to start, with long-ago and far-off events trailing. Ties break toward the
+    later date, so a future meeting outranks an equidistant past one.
+    """
+    from ..models import Conference
+
+    today = datetime.utcnow().date()
+    return sorted(Conference.query.all(),
+                  key=lambda c: (conference_proximity(c, today), -c.start_date.toordinal()))
+
+
+def default_conference():
+    """The conference an invoice most likely concerns: simply the nearest one
+    to now (see `invoiceable_conferences`)."""
+    conferences = invoiceable_conferences()
+    return conferences[0] if conferences else None
+
+
+def sponsorship_line(conference, tier) -> dict:
+    """The invoice line for a sponsorship level: what it is, what it costs, and
+    the period it covers — all derived, none retyped.
+
+    `tier` may be None for a custom (non-sponsorship) invoice, in which case
+    only the conference-derived fields come back and the caller supplies the
+    rest.
+    """
+    line = {
+        "description": f"Sponsorship — {conference.title}" if tier is not None
+                       else conference.title,
+        "period": conference.date_range,
+        "item": "",
+        "amount_cents": None,
+    }
+    if tier is not None:
+        line["item"] = f"{tier.name} sponsorship"
+        line["amount_cents"] = tier.price
+    return line
+
+
+def next_invoice_reference() -> str:
+    """A fresh, unused invoice reference.
+
+    Never solicited from the sender: the reference keys the ledger group, the
+    durable pay link and the document's identity, it must be unique and ≤30
+    characters, and none of that is a judgement an admin should be asked to
+    make while raising an invoice. Retries on the (vanishingly unlikely)
+    collision rather than handing a duplicate back to the caller.
+    """
+    import secrets
+
+    stamp = datetime.utcnow().strftime("%Y%m%d")
+    for _ in range(20):
+        ref = f"INV-{stamp}-{secrets.token_hex(2).upper()}"
+        if not PaymentEvent.query.filter_by(merchant_reference=ref).count():
+            return ref
+    # 20 collisions on 16 bits within one day: widen rather than fail.
+    return f"INV-{stamp}-{secrets.token_hex(4).upper()}"[:30]
+
+
 def manual_invoice_vars(to: str, *, recipient_name: str, description: str,
                         item: str, amount_cents: int, reference: str,
                         period: str = "", due_date: str = "",

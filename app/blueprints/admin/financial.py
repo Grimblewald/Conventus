@@ -495,109 +495,213 @@ def financial_test_invoice():
     return redirect(url_for("admin.financial"))
 
 
+def _send_invoice_context(form=None):
+    """Everything the Send Invoice template needs to render.
+
+    The conference list, the sponsorship levels keyed by conference (so the
+    level picker can follow the conference picker without a round trip), and
+    the level prices the amount field is prefilled from.
+    """
+    from ...models import get_financial_identity
+    from ...services.invoice import (
+        default_conference, default_manual_invoice_body, invoiceable_conferences,
+    )
+    from ...services.jinja_filters import format_amount
+
+    conferences = invoiceable_conferences()
+    selected_id = None
+    if form:
+        try:
+            selected_id = int(form.get("conference_id") or 0) or None
+        except (TypeError, ValueError):
+            selected_id = None
+    if selected_id is None:
+        default = default_conference()
+        selected_id = default.id if default is not None else None
+
+    levels = {
+        str(c.id): [
+            {"id": str(t.id), "name": t.name,
+             "amount": format_amount(t.price) if t.price is not None else "",
+             "item": f"{t.name} sponsorship"}
+            for t in sorted(c.sponsor_tiers, key=lambda t: t.display_order)
+        ]
+        for c in conferences
+    }
+    return {
+        "form": form if form is not None else {},
+        "ident": get_financial_identity(),
+        "default_body": default_manual_invoice_body(),
+        "conferences": conferences,
+        "selected_conference_id": selected_id,
+        "levels": levels,
+    }
+
+
+def _resolve_send_invoice(form):
+    """Turn the submitted form into the invoice's resolved fields, or errors.
+
+    The sender chooses a conference and a sponsorship level; the line item, the
+    amount, the billing period and the description all follow from that pair.
+    The reference is never taken from the form — it is minted here (see
+    `next_invoice_reference`), because it keys the ledger group, the pay link
+    and the document's identity, and is not a judgement to hand to whoever
+    happens to be raising an invoice.
+    """
+    from ...models import Conference
+    from ...models.sponsor import SponsorTier
+    from ...services.invoice import next_invoice_reference, sponsorship_line
+    from ...services.jinja_filters import parse_cents
+
+    errors = []
+    to = (form.get("to") or "").strip()
+    cc_raw = (form.get("cc") or "").replace(";", ",")
+    cc = [a.strip() for a in cc_raw.split(",") if a.strip()]
+
+    if "@" not in to:
+        errors.append("Enter a valid recipient email.")
+    errors += [f"Invalid CC address: {a}" for a in cc if "@" not in a]
+
+    conference = None
+    try:
+        conference = Conference.query.get(int(form.get("conference_id") or 0))
+    except (TypeError, ValueError):
+        conference = None
+    if conference is None:
+        errors.append("Choose the conference this invoice is for.")
+
+    tier = None
+    tier_id = (form.get("tier_id") or "").strip()
+    if tier_id and tier_id != "custom":
+        try:
+            tier = SponsorTier.query.get(int(tier_id))
+        except (TypeError, ValueError):
+            tier = None
+        if tier is None or (conference and tier.conference_id != conference.id):
+            errors.append("That sponsorship level does not belong to the "
+                          "chosen conference.")
+            tier = None
+
+    line = sponsorship_line(conference, tier) if conference else {
+        "description": "", "period": "", "item": "", "amount_cents": None}
+
+    # A custom invoice supplies its own line; a sponsorship one may still
+    # override the amount, since sponsorships get negotiated.
+    item = line["item"]
+    if tier is None:
+        item = (form.get("item") or "").strip()
+        if not item:
+            errors.append("Describe the item being invoiced.")
+
+    amount = line["amount_cents"]
+    raw_amount = (form.get("amount") or "").strip()
+    if raw_amount:
+        try:
+            amount = parse_cents(raw_amount)
+        except ValueError:
+            errors.append("Enter a valid amount, e.g. 500.00.")
+            amount = None
+    if amount is None:
+        errors.append("This level has no price set — enter an amount, or set "
+                      "the level's price on the conference.")
+    elif amount <= 0:
+        errors.append("Enter a valid amount, e.g. 500.00.")
+
+    return {
+        "errors": errors,
+        "to": to,
+        "cc": cc,
+        "recipient_name": (form.get("recipient_name") or "").strip(),
+        "description": line["description"],
+        "period": line["period"],
+        "item": item,
+        "amount": amount or 0,
+        "reference": next_invoice_reference(),
+        "due_date": _display_date(form.get("due_date")),
+        "recipient_abn": (form.get("recipient_abn") or "").strip(),
+        "recipient_address": (form.get("recipient_address") or "").strip(),
+        "include_gst": form.get("include_gst") == "1",
+        "subject_override": (form.get("subject") or "").strip(),
+        "body_override": (form.get("body") or "").strip(),
+    }
+
+
+def _display_date(raw):
+    """`<input type="date">` submits ISO (2026-09-30); documents read as prose
+    ("30 September 2026"). Anything unparseable passes through untouched."""
+    text = (raw or "").strip()
+    if not text:
+        return ""
+    try:
+        return datetime.strptime(text, "%Y-%m-%d").strftime("%-d %B %Y")
+    except ValueError:
+        return text
+
+
 @admin_bp.route("/financial/send-invoice", methods=["GET", "POST"])
 @requires_permission("financial.manage")
 def financial_send_invoice():
     """Send a templated invoice for an agreed amount to chosen recipients
     (e.g. sponsors), with the PDF attached and a durable pay link embedded."""
-    from ...models import PaymentEvent
     from ...services.documents import RenderError
-    from ...services.invoice import default_manual_invoice_body, send_manual_invoice
-    from ...services.jinja_filters import format_amount, parse_cents
+    from ...services.invoice import send_manual_invoice
+    from ...services.jinja_filters import format_amount
 
-    from ...models import get_financial_identity
-
-    ident = get_financial_identity()
-    suggested_ref = f"INV-{datetime.utcnow().strftime('%Y%m%d')}-{secrets.token_hex(2).upper()}"
-    default_body = default_manual_invoice_body()
-
-    if request.method == "POST":
-        to = (request.form.get("to") or "").strip()
-        cc_raw = (request.form.get("cc") or "").replace(";", ",")
-        cc = [a.strip() for a in cc_raw.split(",") if a.strip()]
-        recipient_name = (request.form.get("recipient_name") or "").strip()
-        description = (request.form.get("description") or "").strip()
-        item = (request.form.get("item") or "").strip()
-        reference = (request.form.get("reference") or "").strip() or suggested_ref
-        period = (request.form.get("period") or "").strip()
-        subject_override = (request.form.get("subject") or "").strip()
-        body_override = (request.form.get("body") or "").strip()
-        due_date = (request.form.get("due_date") or "").strip()
-        recipient_abn = (request.form.get("recipient_abn") or "").strip()
-        recipient_address = (request.form.get("recipient_address") or "").strip()
-        include_gst = request.form.get("include_gst") == "1"
-
-        errors = []
-        if "@" not in to:
-            errors.append("Enter a valid recipient email.")
-        errors += [f"Invalid CC address: {a}" for a in cc if "@" not in a]
-        if not description:
-            errors.append("Describe what the invoice is for.")
-        if len(reference) > 30:
-            errors.append("Reference must be 30 characters or fewer (payment "
-                          "platform limit, keeps future payment links possible).")
-        elif PaymentEvent.query.filter_by(merchant_reference=reference).count():
-            errors.append(f"Reference {reference} has already been used — "
-                          f"invoice references must be unique.")
-        try:
-            amount = parse_cents(request.form.get("amount") or "")
-        except ValueError:
-            amount = 0
-        if amount <= 0:
-            errors.append("Enter a valid amount, e.g. 500.00.")
-
-        if errors:
-            for e in errors:
-                flash(e, "error")
-            return render_template("admin/financial_send_invoice.html",
-                                   form=request.form, suggested_ref=suggested_ref,
-                                   ident=ident, default_body=default_body)
-
-        # §7 manual rule: a compile failure surfaces inline so the admin can fix
-        # the template — nothing is recorded or sent (no degraded manual sends).
-        try:
-            ok = send_manual_invoice(
-                to, cc=cc or None, recipient_name=recipient_name,
-                description=description, item=item, amount_cents=amount,
-                reference=reference, period=period,
-                subject_override=subject_override, body_override=body_override,
-                due_date=due_date, recipient_abn=recipient_abn,
-                recipient_address=recipient_address, include_gst=include_gst,
-            )
-        except RenderError as e:
-            flash(f"The invoice PDF could not be generated: {e}"
-                  + (f"\n{e.log}" if e.log else "")
-                  + "\nFix the document template, then try again.", "error")
-            return render_template("admin/financial_send_invoice.html",
-                                   form=request.form, suggested_ref=suggested_ref,
-                                   ident=ident, default_body=default_body)
-        audit.record("financial.invoice_sent",
-                     target_kind="invoice", target_id=reference,
-                     summary=(f"Invoice {reference} for ${format_amount(amount)} "
-                              f"sent to {to}"
-                              f"{' (cc ' + ', '.join(cc) + ')' if cc else ''}"
-                              f" by {current_user.email}"))
-        if ok:
-            from ...models import record_payment_event
-            record_payment_event(
-                merchant_reference=reference,
-                event_type="invoice.sent",
-                amount=amount,
-                note=(f"to {to}"
-                      f"{' (cc ' + ', '.join(cc) + ')' if cc else ''}"
-                      f" by {current_user.email}"),
-            )
-            flash(f"Invoice {reference} sent to {to}"
-                  f"{' (cc ' + ', '.join(cc) + ')' if cc else ''}.", "success")
-            return redirect(url_for("admin.financial_send_invoice"))
-        flash("Failed to send the invoice — check the mail settings.", "error")
+    if request.method != "POST":
         return render_template("admin/financial_send_invoice.html",
-                               form=request.form, suggested_ref=suggested_ref,
-                               ident=ident, default_body=default_body)
+                               **_send_invoice_context())
 
+    f = _resolve_send_invoice(request.form)
+    if f["errors"]:
+        for e in f["errors"]:
+            flash(e, "error")
+        return render_template("admin/financial_send_invoice.html",
+                               **_send_invoice_context(request.form))
+
+    to, cc, reference, amount = f["to"], f["cc"], f["reference"], f["amount"]
+
+    # §7 manual rule: a compile failure surfaces inline so the admin can fix
+    # the template — nothing is recorded or sent (no degraded manual sends).
+    try:
+        ok = send_manual_invoice(
+            to, cc=cc or None, recipient_name=f["recipient_name"],
+            description=f["description"], item=f["item"], amount_cents=amount,
+            reference=reference, period=f["period"],
+            subject_override=f["subject_override"],
+            body_override=f["body_override"],
+            due_date=f["due_date"], recipient_abn=f["recipient_abn"],
+            recipient_address=f["recipient_address"],
+            include_gst=f["include_gst"],
+        )
+    except RenderError as e:
+        flash(f"The invoice PDF could not be generated: {e}"
+              + (f"\n{e.log}" if e.log else "")
+              + "\nFix the document template, then try again.", "error")
+        return render_template("admin/financial_send_invoice.html",
+                               **_send_invoice_context(request.form))
+
+    audit.record("financial.invoice_sent",
+                 target_kind="invoice", target_id=reference,
+                 summary=(f"Invoice {reference} for ${format_amount(amount)} "
+                          f"sent to {to}"
+                          f"{' (cc ' + ', '.join(cc) + ')' if cc else ''}"
+                          f" by {current_user.email}"))
+    if ok:
+        from ...models import record_payment_event
+        record_payment_event(
+            merchant_reference=reference,
+            event_type="invoice.sent",
+            amount=amount,
+            note=(f"to {to}"
+                  f"{' (cc ' + ', '.join(cc) + ')' if cc else ''}"
+                  f" by {current_user.email}"),
+        )
+        flash(f"Invoice {reference} sent to {to}"
+              f"{' (cc ' + ', '.join(cc) + ')' if cc else ''}.", "success")
+        return redirect(url_for("admin.financial_send_invoice"))
+    flash("Failed to send the invoice — check the mail settings.", "error")
     return render_template("admin/financial_send_invoice.html",
-                           form={}, suggested_ref=suggested_ref,
-                           ident=ident, default_body=default_body)
+                           **_send_invoice_context(request.form))
 
 
 @admin_bp.route("/financial/send-invoice/preview", methods=["POST"])
@@ -613,27 +717,27 @@ def financial_send_invoice_preview():
 
     from ...services.documents import PregenBusy, RenderError, preview_document
     from ...services.invoice import manual_invoice_vars
-    from ...services.jinja_filters import parse_cents
 
-    reference = ((request.form.get("reference") or "").strip()
-                 or f"INV-{datetime.utcnow().strftime('%Y%m%d')}-PREVIEW")
-    try:
-        amount = parse_cents(request.form.get("amount") or "")
-    except ValueError:
-        amount = 0
+    # Same resolver as the send path, so the conference/level pair drives the
+    # preview's line item and amount exactly as it will drive the real send.
+    # Errors are not fatal here: a half-filled form should still preview, with
+    # the unfilled parts showing as bold field names.
+    f = _resolve_send_invoice(request.form)
+    reference = (f["reference"] if not f["errors"]
+                 else f"INV-{datetime.utcnow().strftime('%Y%m%d')}-PREVIEW")
 
     vars_ = manual_invoice_vars(
-        (request.form.get("to") or "").strip(),
-        recipient_name=(request.form.get("recipient_name") or "").strip(),
-        description=(request.form.get("description") or "").strip(),
-        item=(request.form.get("item") or "").strip(),
-        amount_cents=amount,
+        f["to"],
+        recipient_name=f["recipient_name"],
+        description=f["description"],
+        item=f["item"],
+        amount_cents=f["amount"],
         reference=reference,
-        period=(request.form.get("period") or "").strip(),
-        due_date=(request.form.get("due_date") or "").strip(),
-        recipient_abn=(request.form.get("recipient_abn") or "").strip(),
-        recipient_address=(request.form.get("recipient_address") or "").strip(),
-        include_gst=request.form.get("include_gst") == "1",
+        period=f["period"],
+        due_date=f["due_date"],
+        recipient_abn=f["recipient_abn"],
+        recipient_address=f["recipient_address"],
+        include_gst=f["include_gst"],
     )
     # Blank user fields stay a bold placeholder rather than an empty gap. But
     # the tax treatment is fully decided here (include_gst), so gst_applies must
@@ -645,6 +749,12 @@ def financial_send_invoice_preview():
     overrides = {k: v for k, v in vars_.items() if v not in ("", None)}
     overrides["gst_applies"] = vars_["gst_applies"]
     overrides["gst_registered"] = vars_["gst_registered"]
+    # No amount chosen yet: keep the money fields as bold placeholders. A
+    # formatted 0 is truthy and would otherwise print a real $0.00 — the one
+    # thing a preview must never show, since it reads as a genuine total.
+    if not f["amount"]:
+        for money in ("amount", "gst_amount", "amount_ex_gst"):
+            overrides.pop(money, None)
 
     try:
         pdf = preview_document("invoice", overrides)

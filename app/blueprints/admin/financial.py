@@ -567,6 +567,10 @@ def _resolve_send_invoice(form):
         conference = Conference.query.get(int(form.get("conference_id") or 0))
     except (TypeError, ValueError):
         conference = None
+    # A deleted conference is gone as far as the rest of the site is concerned,
+    # so it cannot be invoiced for even if its id is submitted directly.
+    if conference is not None and conference.deleted_at is not None:
+        conference = None
     if conference is None:
         errors.append("Choose the conference this invoice is for.")
 

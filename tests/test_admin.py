@@ -577,6 +577,34 @@ class TestSendInvoiceCatalogue:
         with app.app_context():
             assert default_conference().id == running
 
+    def test_deleted_conferences_are_not_invoiceable(self, seeded, app,
+                                                     admin_client):
+        """A soft-deleted conference is gone everywhere else on the site, so it
+        must not appear in the picker — nor be usable by submitting its id."""
+        from datetime import date, datetime, timedelta
+        from app.extensions import db
+        from app.models import Conference
+        from app.services.invoice import invoiceable_conferences
+
+        today = date.today()
+        gone, _ = self._conference(app, "Cancelled meeting",
+                                   today + timedelta(days=2),
+                                   today + timedelta(days=3))
+        with app.app_context():
+            Conference.query.get(gone).deleted_at = datetime.utcnow()
+            db.session.commit()
+            assert gone not in [c.id for c in invoiceable_conferences()]
+
+        page = admin_client.get("/admin/financial/send-invoice")
+        assert b"Cancelled meeting" not in page.data
+
+        # Submitting the id directly is rejected rather than silently invoiced.
+        resp = admin_client.post("/admin/financial/send-invoice", data={
+            "to": "sponsor@example.org", "conference_id": str(gone),
+            "tier_id": "custom", "item": "Booth", "amount": "500.00",
+        }, follow_redirects=True)
+        assert b"Choose the conference this invoice is for." in resp.data
+
     def test_level_supplies_the_line_item_and_amount(self, seeded, app,
                                                      admin_client, monkeypatch):
         """The two dropdowns are the whole input — nothing else is retyped."""

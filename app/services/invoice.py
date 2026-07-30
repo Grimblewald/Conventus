@@ -197,11 +197,15 @@ def invoiceable_conferences():
     of the picker: the meeting in progress, then the one just finished or about
     to start, with long-ago and far-off events trailing. Ties break toward the
     later date, so a future meeting outranks an equidistant past one.
+
+    Soft-deleted conferences are excluded; drafts are not, since sponsorship is
+    routinely agreed before the conference page goes live.
     """
     from ..models import Conference
 
     today = datetime.utcnow().date()
-    return sorted(Conference.query.all(),
+    live = Conference.query.filter(Conference.deleted_at.is_(None)).all()
+    return sorted(live,
                   key=lambda c: (conference_proximity(c, today), -c.start_date.toordinal()))
 
 

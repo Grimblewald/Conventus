@@ -157,6 +157,11 @@ class User(UserMixin, db.Model):
     # Soft delete
     deleted_at = db.Column(db.DateTime, nullable=True, index=True)
 
+    # Admin form preferences. Per-user rather than site-wide: two treasurers
+    # copy different people, and a shared admin machine must not hand one
+    # person's standing CC to whoever logs in next.
+    invoice_cc_default = db.Column(db.String(400), default="")
+
     role = db.relationship("Role", lazy="joined")
     registrations = db.relationship("Registration", backref="user", lazy=True)
     # NB: `abstracts` is defined as a backref on Abstract.author with an

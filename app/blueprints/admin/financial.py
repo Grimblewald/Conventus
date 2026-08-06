@@ -528,8 +528,15 @@ def _send_invoice_context(form=None):
         ]
         for c in conferences
     }
+    # A blank form starts from this admin's own standing CC, so the treasurer's
+    # address is not retyped for every sponsor. `submitted` rather than the
+    # truthiness of `form` is what tells the template which defaults still
+    # apply: seeding a value here would otherwise make an untouched form look
+    # submitted and silently drop the GST checkbox's default.
     return {
-        "form": form if form is not None else {},
+        "form": form if form is not None
+                else {"cc": current_user.invoice_cc_default or ""},
+        "submitted": form is not None,
         "ident": get_financial_identity(),
         "default_body": default_manual_invoice_body(),
         "conferences": conferences,
@@ -663,6 +670,14 @@ def financial_send_invoice():
                                **_send_invoice_context(request.form))
 
     to, cc, reference, amount = f["to"], f["cc"], f["reference"], f["amount"]
+
+    # Saving the standing CC is a form preference, not part of the send: it
+    # sticks whether or not the mail goes out, so a failed send does not lose
+    # it. An empty field with the box ticked clears the default — that is the
+    # only way to unset one.
+    if request.form.get("cc_default") == "1":
+        current_user.invoice_cc_default = ", ".join(cc)
+        db.session.commit()
 
     # §7 manual rule: a compile failure surfaces inline so the admin can fix
     # the template — nothing is recorded or sent (no degraded manual sends).

@@ -231,6 +231,71 @@ def test_manual_invoice_render_error_records_nothing(seed_templates, admin_clien
         assert PaymentEvent.query.count() == before
 
 
+# --- standing CC: remembered per sender, never site-wide ---------------------
+
+def test_invoice_cc_default_is_remembered_per_user(seed_templates, admin_client,
+                                                   app, mailbox, monkeypatch,
+                                                   login_user_session):
+    """Ticking "remember" stores the CC against the admin who sent it.
+
+    Per-user, not site-wide: two treasurers copy different people, and a shared
+    admin machine must not hand one person's standing CC to the next login.
+    """
+    monkeypatch.setattr("app.services.invoice.render_document",
+                        lambda *a, **k: b"%PDF-fake")
+    conf_id, tier_id = _sponsorship(app)
+
+    admin_client.post("/admin/financial/send-invoice", data={
+        "to": "sponsor@example.org", "conference_id": str(conf_id),
+        "tier_id": str(tier_id), "cc": "treasurer@example.org",
+        "cc_default": "1",
+    }, follow_redirects=True)
+
+    with app.app_context():
+        from app.models import User
+        u = User.query.filter_by(email="admin@test.example.org").first()
+        assert u.invoice_cc_default == "treasurer@example.org"
+
+    # Comes back prefilled on this admin's next blank form…
+    page = admin_client.get("/admin/financial/send-invoice")
+    assert b'value="treasurer@example.org"' in page.data
+
+    # …and lands on that admin's row alone, so a second treasurer starts clean.
+    # (Asserted on the model rather than through a second logged-in request:
+    # pytest-flask pushes one request context per test, so `current_user` is
+    # cached and cannot be swapped mid-test.)
+    other = login_user_session(email="other-admin@test.example.org",
+                               full_name="Other Admin", role_name="admin")
+    with app.app_context():
+        from app.models import User
+        assert not db.session.get(User, other).invoice_cc_default
+
+
+def test_invoice_cc_default_untouched_when_box_unticked(seed_templates,
+                                                        admin_client, app,
+                                                        mailbox, monkeypatch):
+    """A one-off CC for a single sponsor must not overwrite the standing one."""
+    monkeypatch.setattr("app.services.invoice.render_document",
+                        lambda *a, **k: b"%PDF-fake")
+    conf_id, tier_id = _sponsorship(app)
+
+    with app.app_context():
+        from app.models import User
+        u = User.query.filter_by(email="admin@test.example.org").first()
+        u.invoice_cc_default = "treasurer@example.org"
+        db.session.commit()
+
+    admin_client.post("/admin/financial/send-invoice", data={
+        "to": "sponsor@example.org", "conference_id": str(conf_id),
+        "tier_id": str(tier_id), "cc": "one-off@example.org",
+    }, follow_redirects=True)
+
+    with app.app_context():
+        from app.models import User
+        u = User.query.filter_by(email="admin@test.example.org").first()
+        assert u.invoice_cc_default == "treasurer@example.org"
+
+
 # --- (7) {payment_link} lands in the manual invoice body and PDF vars --------
 
 def test_manual_invoice_embeds_pay_link(seed_templates, app, mailbox, monkeypatch):

@@ -21,11 +21,16 @@
       <label for="cc"><strong>CC</strong> <span class="muted">(optional, comma-separated)</span></label>
       <input type="text" id="cc" name="cc" class="input"
              value="{{ form.get('cc', '') }}" placeholder="treasurer@example.org, president@example.org">
+      <label class="muted" style="display:flex; align-items:center; gap:8px; cursor:pointer; margin-top:6px;">
+        <input type="checkbox" name="cc_default" value="1"
+               {% if form.get('cc_default') or (not submitted and current_user.invoice_cc_default) %}checked{% endif %}>
+        Remember for next time
+      </label>
     </div>
   </div>
 
   <div class="form-group" style="margin-bottom:16px;">
-    <label for="recipient_name"><strong>Recipient name</strong> <span class="muted">— fills {{ '{user_name}' }}</span></label>
+    <label for="recipient_name"><strong>Recipient name</strong></label>
     <input type="text" id="recipient_name" name="recipient_name" class="input"
            value="{{ form.get('recipient_name', '') }}" placeholder="Acme Pty Ltd">
   </div>
@@ -47,8 +52,6 @@
         </option>
         {% endfor %}
       </select>
-      <p class="muted">Ordered by nearness to today, so the current meeting is
-        first. Fills {{ '{conference_title}' }} and {{ '{conference_dates}' }}.</p>
     </div>
     <div class="form-group" style="margin-bottom:16px;">
       <label for="tier_id"><strong>Sponsorship level</strong></label>
@@ -67,16 +70,15 @@
           {% if levels.get(chosen_conf) %}Other / custom…{% else %}Custom item…{% endif %}
         </option>
       </select>
-      <p class="muted">Sets the line item and amount. Prices come from the
-        conference's <a href="{{ url_for('admin.conferences') }}">sponsor tiers</a>
-        and are never shown publicly.</p>
+      <p class="muted">Sets the line item and amount, from the conference's
+        <a href="{{ url_for('admin.conferences') }}">sponsor tiers</a>.</p>
     </div>
   </div>
 
   <div class="row-2">
     <div class="form-group" style="margin-bottom:16px;" data-invoice-custom-item
          {% if chosen_tier != 'custom' and levels.get(chosen_conf) %}hidden{% endif %}>
-      <label for="item"><strong>Item</strong> <span class="muted">— fills {{ '{tier_name}' }}</span></label>
+      <label for="item"><strong>Item</strong></label>
       <input type="text" id="item" name="item" class="input"
              value="{{ form.get('item', '') }}" placeholder="Exhibitor booth — 3m×2m">
     </div>
@@ -90,7 +92,7 @@
   </div>
 
   <div class="form-group" style="margin-bottom:16px;">
-    <label for="recipient_address"><strong>Recipient address</strong> <span class="muted">(optional — printed under their name)</span></label>
+    <label for="recipient_address"><strong>Recipient address</strong> <span class="muted">(optional)</span></label>
     <textarea id="recipient_address" name="recipient_address" class="input" rows="4"
               style="font-family:monospace;"
               placeholder="Level 2, 100 Example Street&#10;Adelaide SA 5000&#10;Australia">{{ form.get('recipient_address', '') }}</textarea>
@@ -98,12 +100,12 @@
 
   <div class="row-2">
     <div class="form-group" style="margin-bottom:16px;">
-      <label for="recipient_abn"><strong>Recipient ABN</strong> <span class="muted">(optional — fills {{ '{recipient_abn}' }})</span></label>
+      <label for="recipient_abn"><strong>Recipient ABN</strong> <span class="muted">(optional)</span></label>
       <input type="text" id="recipient_abn" name="recipient_abn" class="input"
-             value="{{ form.get('recipient_abn', '') }}" placeholder="Their ABN — required on tax invoices over $1,000">
+             value="{{ form.get('recipient_abn', '') }}" placeholder="Required on tax invoices over $1,000">
     </div>
     <div class="form-group" style="margin-bottom:16px;">
-      <label for="due_date"><strong>Due date</strong> <span class="muted">(optional — fills {{ '{due_date}' }})</span></label>
+      <label for="due_date"><strong>Due date</strong> <span class="muted">(optional)</span></label>
       <input type="date" id="due_date" name="due_date" class="input"
              value="{{ form.get('due_date', '') }}">
     </div>
@@ -112,14 +114,16 @@
   <div class="form-group" style="margin-bottom:16px;">
     <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
       <input type="checkbox" name="include_gst" value="1"
-             {% if (form and form.get('include_gst') == '1') or (not form and ident.gst_registered) %}checked{% endif %}>
+             {% if (submitted and form.get('include_gst') == '1') or (not submitted and ident.gst_registered) %}checked{% endif %}>
       <strong>Amount includes GST</strong>
     </label>
-    <p class="muted" style="margin:4px 0 0 28px;">Breaks out {gst_amount}/{amount_ex_gst} (total ÷ 11) and titles it "Tax Invoice". Defaults to your <a href="{{ url_for('admin.financial_identity') }}">GST registration</a>. Only tick if the society is GST-registered.</p>
+    <p class="muted" style="margin:4px 0 0 28px;">Breaks out the GST component and
+      titles the document "Tax Invoice". Follows your
+      <a href="{{ url_for('admin.financial_identity') }}">GST registration</a>.</p>
   </div>
 
   <div class="form-group" style="margin-bottom:16px;">
-    <label for="subject"><strong>Subject override</strong> <span class="muted">(optional — template variables allowed)</span></label>
+    <label for="subject"><strong>Subject override</strong> <span class="muted">(optional)</span></label>
     <input type="text" id="subject" name="subject" class="input"
            value="{{ form.get('subject', '') }}" placeholder="Invoice {{ '{transaction_id}' }} — {{ '{conference_title}' }}">
   </div>
@@ -127,16 +131,8 @@
   <div class="form-group" style="margin-bottom:16px;">
     <label for="body"><strong>Invoice body</strong></label>
     <textarea id="body" name="body" class="input" rows="16" style="font-family:monospace;">{{ form.get('body') or default_body }}</textarea>
-    <p class="muted">Prefilled as a request-for-payment (not a receipt). Edit freely — template variables above are substituted at send time.</p>
-  </div>
-
-  <div class="card" style="padding:12px 16px; margin-bottom:16px; background:var(--c-page-bg);">
-    <p class="muted" style="margin:0;">
-      Sends the invoice email with the PDF attached and a durable pay-online
-      link ({{ '{payment_link}' }}). Recorded in the
-      <a href="{{ url_for('admin.financial_transactions') }}">transaction ledger</a>
-      under a freshly minted reference; paying the link sends the receipt automatically.
-    </p>
+    <p class="muted">Placeholders like {{ '{conference_title}' }} and
+      {{ '{payment_link}' }} are filled in at send time.</p>
   </div>
 
   <button class="btn btn-primary" type="submit">Send invoice</button>
@@ -145,8 +141,9 @@
           formmethod="POST">Download preview</button>
   <a class="btn btn-ghost" href="{{ url_for('admin.financial') }}">Cancel</a>
   <p class="muted" style="margin-top:8px; font-size:0.85rem;">
-    The preview is the exact PDF this form will send — nothing is emailed or
-    recorded. Fields you have not filled in yet appear as their field names.
+    Sending emails the PDF with a pay link and records it in the
+    <a href="{{ url_for('admin.financial_transactions') }}">transaction ledger</a>.
+    Preview downloads that same PDF without sending or recording anything.
   </p>
 </form>
 {% endblock %}

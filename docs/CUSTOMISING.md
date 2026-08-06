@@ -163,7 +163,7 @@ Filter by action substring or actor email.
   {business_legal_name} {business_number} {business_address}
   {business_contact_email} {signatory_name} {signatory_role}
   {recipient_abn} {recipient_address} {payment_instructions}
-  {payment_link} {sanitized_invoice_ref}` — is listed on both the dashboard and each template
+  {payment_link} {payment_reference} {sanitized_invoice_ref}` — is listed on both the dashboard and each template
   editor. **Download preview** renders the current form (including unsaved
   edits) as a PDF with every unset variable shown as its **bold field
   name** — e.g. `{amount}` prints as **amount** — rather than a guessed or

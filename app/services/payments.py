@@ -88,16 +88,41 @@ def payment_url_for(registration: Registration) -> str:
 
 
 def send_payment_email(registration: Registration, pay_url: str) -> bool:
-    """Email the member a payment link for their registration."""
-    from ..models.content import get_site_settings
+    """Email the member a payment link for their registration.
+
+    Carries the registration's reference and, if the society has configured
+    payment instructions, those too. A member paying by bank transfer has
+    nothing else to quote — the transfer arrives as a line on a statement, and
+    without the reference on it the treasurer cannot tell whose it is.
+    """
+    from ..models.content import get_financial_identity, get_site_settings
+    from .invoice import sanitized_reference
     conf = registration.conference
     site = get_site_settings()
     body = (
         f"Thank you for registering for {conf.title} ({conf.date_range}).\n\n"
         f"Tier: {registration.tier_name}\n"
-        f"Amount: {registration.amount / 100:.2f} {(site.currency_code or 'AUD').upper()}\n\n"
+        f"Amount: {registration.amount / 100:.2f} {(site.currency_code or 'AUD').upper()}\n"
+        f"Reference: {registration.reference}\n\n"
         f"To complete your registration, please visit:\n{pay_url}\n"
     )
+
+    instructions = (get_financial_identity().payment_instructions or "").strip()
+    if instructions:
+        # The same variables the documents resolve, so an issuer writes their
+        # EFT block once and it reads correctly wherever it is quoted.
+        for name, value in (
+            ("sanitized_invoice_ref", sanitized_reference(registration.reference)),
+            ("payment_reference", registration.reference),
+            ("transaction_id", registration.transaction_id or registration.reference),
+            ("amount", f"{registration.amount / 100:.2f}"),
+            ("currency_code", (site.currency_code or "AUD").upper()),
+            ("currency_symbol", site.currency_symbol or ""),
+            ("site_name", site.site_name),
+            ("payment_link", pay_url),
+        ):
+            instructions = instructions.replace("{" + name + "}", str(value))
+        body += f"\nOr pay by bank transfer:\n{instructions}\n"
     return send_mail(
         to=registration.user.email,
         subject=f"Payment for {conf.title}",

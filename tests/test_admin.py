@@ -849,3 +849,51 @@ class TestRegistrationLookup:
         rid, _ = self._registration(app)
         page = admin_client.get("/admin/registrations?q=REG-999999")
         assert f"REG-{rid:06d}".encode() not in page.data
+
+    def test_marking_paid_records_a_manual_ledger_event(self, seeded, app,
+                                                        admin_client):
+        """Money that settles outside the gateway leaves no webhook behind, so
+        without this the ledger has no record of it at all."""
+        from app.models import PaymentEvent
+        rid, _ = self._registration(app)
+
+        admin_client.post(f"/admin/registrations/{rid}/status",
+                          data={"status": "paid"}, follow_redirects=True)
+
+        with app.app_context():
+            evts = PaymentEvent.query.filter_by(registration_id=rid).all()
+            manual = [e for e in evts if e.event_type == "manual.paid"]
+            assert len(manual) == 1
+            # Distinguishable from a gateway-confirmed payment, and carrying
+            # who asserted it plus the reference the payer would have quoted.
+            assert not any(e.event_type.startswith("payment.") for e in evts)
+            assert f"REG-{rid:06d}" in manual[0].note
+            assert "admin@test.example.org" in manual[0].note
+            assert manual[0].amount == 11000
+
+    def test_manual_payment_survives_reconciliation(self, seeded, app,
+                                                    admin_client, monkeypatch):
+        """A bank transfer has no Worldline payment to find. Reconciliation
+        must not undo the treasurer's word — it only ever considers
+        registrations still pending or processing."""
+        from app.models import Registration
+        rid, _ = self._registration(app)
+        admin_client.post(f"/admin/registrations/{rid}/status",
+                          data={"status": "paid"}, follow_redirects=True)
+
+        # Record what reconcile asks about rather than raising, so an unrelated
+        # pending registration left by another test cannot fail this one.
+        asked: list = []
+
+        class _Gateway:
+            def get_payment_status(self, *a, **k):
+                asked.append((a, k))
+                return None
+        monkeypatch.setattr("app.services.payments._active_gateway",
+                            lambda: _Gateway())
+
+        with app.app_context():
+            from app.services.reconcile import reconcile_payments
+            reconcile_payments()
+            assert Registration.query.get(rid).status == "paid"
+            assert not any(str(rid) in str(call) for call in asked), asked

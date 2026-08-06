@@ -158,6 +158,7 @@ def registration_status(reg_id):
     reg = Registration.query.get_or_404(reg_id)
     new_status = (request.form.get("status") or "").strip()
     if new_status in ("pending", "paid", "refunded", "cancelled", "failed", "processing"):
+        old_status = reg.status
         reg.status = new_status
         db.session.commit()
         from ...security import audit as audit_log
@@ -165,6 +166,28 @@ def registration_status(reg_id):
             "registration.status_changed",
             target_kind="registration", target_id=reg.id,
             summary=f"{current_user.email} → {reg.status}",
+        )
+
+        # A payment settled outside the gateway — a bank transfer, cash at the
+        # desk, a waiver — leaves no trace in the ledger, because no webhook
+        # ever fires for it. Recording it under `manual.*` gives that money the
+        # same paper trail a card payment gets, and keeps it distinguishable
+        # from `payment.*` (gateway) and `reconcile.*` (gateway, after the
+        # fact) so nobody later mistakes it for something Worldline confirmed.
+        #
+        # Nothing overwrites this: reconcile_payments() only ever considers
+        # registrations still `pending` or `processing`, so a manually settled
+        # one is not a candidate and survives every subsequent run.
+        from ...models import record_payment_event
+        from ...services.invoice import _reg_merchant_reference
+        record_payment_event(
+            transaction_id=reg.transaction_id or "",
+            merchant_reference=_reg_merchant_reference(reg),
+            registration_id=reg.id,
+            event_type=f"manual.{new_status}",
+            amount=reg.amount,
+            note=(f"{reg.reference}: {old_status} → {new_status}, "
+                  f"set by {current_user.email}"),
         )
         flash(f"Registration marked as {new_status}.", "success")
     return redirect(url_for("admin.registrations"))

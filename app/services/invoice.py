@@ -152,6 +152,7 @@ def send_test_invoice(to_email: str) -> bool:
         "currency_code": site.currency_code,
         "currency_symbol": site.currency_symbol,
         "transaction_id": "TEST-000000",
+        "payment_reference": "TEST-000000",
         "payment_date": datetime.utcnow().strftime("%-d %B %Y"),
         "site_name": site.site_name,
         "registration_id": "0",
@@ -287,8 +288,13 @@ def _finalise_issuer_text(vars_: dict) -> dict:
     as the reference. Self-reference is excluded so the block cannot embed a
     copy of itself.
     """
+    # The reference the PAYER quotes, which is not always the gateway's
+    # transaction id: a registration's is REG-000123, derived from the id and
+    # present from the moment they register, while transaction_id stays null
+    # until a payment settles. Falls back to transaction_id for documents that
+    # predate the distinction.
     vars_["sanitized_invoice_ref"] = sanitized_reference(
-        vars_.get("transaction_id", ""))
+        vars_.get("payment_reference") or vars_.get("transaction_id", ""))
     text = vars_.get("payment_instructions") or ""
     if text:
         vars_["payment_instructions"] = _render(
@@ -322,6 +328,7 @@ def manual_invoice_vars(to: str, *, recipient_name: str, description: str,
         "currency_code": site.currency_code,
         "currency_symbol": site.currency_symbol,
         "transaction_id": reference,
+        "payment_reference": reference,
         "payment_date": datetime.utcnow().strftime("%-d %B %Y"),
         "site_name": site.site_name,
         "registration_id": "N/A",
@@ -413,6 +420,7 @@ def _registration_vars(reg: Registration, kind: str) -> dict:
         "currency_code": site.currency_code,
         "currency_symbol": site.currency_symbol,
         "transaction_id": reg.transaction_id or "N/A",
+        "payment_reference": reg.reference,
         "payment_date": datetime.utcnow().strftime("%-d %B %Y"),
         "site_name": site.site_name,
         "registration_id": str(reg.id),
@@ -435,6 +443,7 @@ def _manual_receipt_vars(reference: str, recipient: str,
         "currency_code": site.currency_code,
         "currency_symbol": site.currency_symbol,
         "transaction_id": reference,
+        "payment_reference": reference,
         "payment_date": datetime.utcnow().strftime("%-d %B %Y"),
         "site_name": site.site_name,
         "registration_id": "N/A",

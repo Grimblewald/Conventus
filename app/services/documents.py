@@ -731,7 +731,7 @@ _PREVIEW_VARS = (
     "registration_id", "payment_date", "due_date", "currency_symbol",
     "currency_code", "amount", "gst_amount", "amount_ex_gst",
     "payment_instructions", "payment_link", "invoice_type",
-    "sanitized_invoice_ref",
+    "sanitized_invoice_ref", "payment_reference",
 )
 
 

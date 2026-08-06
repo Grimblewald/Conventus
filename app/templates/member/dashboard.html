@@ -22,9 +22,15 @@
             <td>{{ r.tier_name }}</td>
             <td>{{ site.currency_symbol }}{{ r.amount | format_amount }} {{ site.currency_code }}</td>
             <td><span class="status" data-v="{{ r.status }}">{{ r.status }}</span></td>
-            <td>
-              {% if r.status in ('pending', 'failed') and (payments_open_to_members() or current_user.is_admin or can('financial.manage')) %}
+            <td style="display:flex; gap:6px; flex-wrap:wrap;">
+              {% if r.status in ('pending', 'failed', 'cancelled') and (payments_open_to_members() or current_user.is_admin or can('financial.manage')) %}
                 <a class="btn btn-primary btn-sm" href="{{ url_for('member.pay_registration', reg_id=r.id) }}">Pay</a>
+              {% endif %}
+              {# Details stay editable while the conference is still taking
+                 registrations — dietary and accessibility needs change, and
+                 hunting for the conference page to amend them is a detour. #}
+              {% if r.conference.accepts_registrations and not r.conference.is_draft %}
+                <a class="btn btn-ghost btn-sm" href="{{ url_for('member.register_conf', slug=r.conference.slug) }}">Update</a>
               {% endif %}
             </td>
           </tr>

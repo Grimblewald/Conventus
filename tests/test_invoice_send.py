@@ -570,36 +570,6 @@ class TestZeroFeeRegistration:
             assert reg.status == "pending"
             assert reg.payment_sent_at is not None
 
-    def test_editing_a_paid_registration_does_not_rebill(self, seeded, app,
-                                                         member_client, mailbox,
-                                                         monkeypatch):
-        """Changing a dietary note must not mark a paid attendee unpaid and
-        send them a second payment request."""
-        from app.extensions import db
-        from app.models import Registration
-        monkeypatch.setattr("app.blueprints.member.payments_open_to_members",
-                            lambda: True)
-        slug, (tier,) = self._conference(app, [11000])
-
-        member_client.post(f"/conferences/{slug}/register",
-                           data={"tier": tier}, follow_redirects=True)
-        with app.app_context():
-            reg = Registration.query.order_by(Registration.id.desc()).first()
-            rid = reg.id
-            reg.status = "paid"
-            db.session.commit()
-
-        mailbox.clear()
-        member_client.post(f"/conferences/{slug}/register",
-                           data={"tier": tier, "dietary": "Vegetarian"},
-                           follow_redirects=True)
-
-        with app.app_context():
-            reg = Registration.query.get(rid)
-            assert reg.status == "paid"
-            assert reg.dietary == "Vegetarian"
-        assert not mailbox, "a settled registration was billed again on edit"
-
 
 class TestDurableRegistrationPayLink:
     """The person who registers is often not the person who pays.
@@ -720,3 +690,123 @@ class TestDurableRegistrationPayLink:
         without a session, and it is not derivable from the id."""
         rid, _token = self._reg(app)
         assert member_client.get(f"/pay/{rid}").status_code == 403
+
+
+class TestRegistrationTierChange:
+    """Switching tiers must not let anyone settle a fee they still owe."""
+
+    @staticmethod
+    def _conf(app, amounts):
+        import secrets
+        from datetime import timedelta
+        from app.models import Conference
+        from app.models.conference import PriceTier
+        tag = secrets.token_hex(4)
+        today = date.today()
+        with app.app_context():
+            c = Conference(slug=f"tier-{tag}", title="Physics 2026",
+                           start_date=today + timedelta(days=30),
+                           end_date=today + timedelta(days=32),
+                           is_accepting_registrations=True, is_draft=False)
+            db.session.add(c)
+            db.session.flush()
+            names = []
+            for i, amt in enumerate(amounts):
+                t = PriceTier(conference_id=c.id, name=f"T{i}-{amt}",
+                              amount=amt, display_order=i * 10)
+                db.session.add(t)
+                names.append(t.name)
+            db.session.commit()
+            return c.slug, names
+
+    def test_free_then_paid_tier_is_billed_again(self, seeded, app,
+                                                 member_client, mailbox,
+                                                 monkeypatch):
+        """The fee-waiver hole: a zero-fee tier marks the registration paid, so
+        switching back to a paying tier must not inherit that."""
+        from app.models import Registration
+        monkeypatch.setattr("app.blueprints.member.payments_open_to_members",
+                            lambda: True)
+        slug, (free, paid) = self._conf(app, [0, 11000])
+
+        member_client.post(f"/conferences/{slug}/register",
+                           data={"tier": free}, follow_redirects=True)
+        with app.app_context():
+            reg = Registration.query.order_by(Registration.id.desc()).first()
+            rid = reg.id
+            assert reg.status == "paid" and reg.amount == 0
+
+        member_client.post(f"/conferences/{slug}/register",
+                           data={"tier": paid}, follow_redirects=True)
+        with app.app_context():
+            reg = Registration.query.get(rid)
+            assert reg.amount == 11000
+            assert reg.status == "pending", "fee waived by switching tiers"
+        assert "To complete your registration" in mailbox[-1]["body"]
+
+    def test_a_cancelled_registration_reopens_on_save(self, seeded, app,
+                                                      member_client, mailbox,
+                                                      monkeypatch):
+        """An abandoned checkout leaves someone who still wants to come and
+        still owes — editing must not freeze them as cancelled."""
+        from app.models import Registration
+        monkeypatch.setattr("app.blueprints.member.payments_open_to_members",
+                            lambda: True)
+        slug, (paid,) = self._conf(app, [11000])
+
+        member_client.post(f"/conferences/{slug}/register",
+                           data={"tier": paid}, follow_redirects=True)
+        with app.app_context():
+            reg = Registration.query.order_by(Registration.id.desc()).first()
+            rid = reg.id
+            reg.status = "cancelled"      # as the payment.cancelled webhook sets it
+            db.session.commit()
+
+        member_client.post(f"/conferences/{slug}/register",
+                           data={"tier": paid}, follow_redirects=True)
+        with app.app_context():
+            assert Registration.query.get(rid).status == "pending"
+
+    def test_a_genuinely_paid_registration_stays_paid(self, seeded, app,
+                                                      member_client, mailbox,
+                                                      monkeypatch):
+        """The protection that motivated the guard still holds."""
+        from app.models import Registration
+        monkeypatch.setattr("app.blueprints.member.payments_open_to_members",
+                            lambda: True)
+        slug, (paid,) = self._conf(app, [11000])
+
+        member_client.post(f"/conferences/{slug}/register",
+                           data={"tier": paid}, follow_redirects=True)
+        with app.app_context():
+            reg = Registration.query.order_by(Registration.id.desc()).first()
+            rid = reg.id
+            reg.status = "paid"
+            reg.transaction_id = "TXN-REAL"   # money actually moved
+            db.session.commit()
+
+        mailbox.clear()
+        member_client.post(f"/conferences/{slug}/register",
+                           data={"tier": paid, "dietary": "Vegetarian"},
+                           follow_redirects=True)
+        with app.app_context():
+            reg = Registration.query.get(rid)
+            assert reg.status == "paid"
+            assert reg.dietary == "Vegetarian"
+        assert not mailbox, "a paid attendee was billed again"
+
+    def test_resaving_a_free_registration_does_not_stack_events(
+            self, seeded, app, member_client, mailbox):
+        from app.models import PaymentEvent, Registration
+        slug, (free,) = self._conf(app, [0])
+
+        for _ in range(3):
+            member_client.post(f"/conferences/{slug}/register",
+                               data={"tier": free}, follow_redirects=True)
+
+        with app.app_context():
+            reg = Registration.query.order_by(Registration.id.desc()).first()
+            evts = PaymentEvent.query.filter_by(
+                registration_id=reg.id,
+                event_type="registration.no_payment_due").count()
+            assert evts == 1

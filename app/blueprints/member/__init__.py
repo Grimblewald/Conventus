@@ -95,6 +95,34 @@ def profile():
 # Conference registration
 # ---------------------------------------------------------------------------
 
+def _settled_by_payment(reg) -> bool:
+    """True when this registration was settled by money actually moving.
+
+    Deliberately narrower than `status == "paid"`, because a zero-fee tier
+    produces that status too: a sponsor or plenary place is marked paid because
+    nothing was owed, not because anything was received. Counting those as
+    settled would let someone switch to a free tier, be marked paid, switch
+    back to a paying tier and keep the paid status — waiving their own fee.
+
+    "cancelled" and "failed" are not settled either. An abandoned checkout
+    leaves an attendee who still wants to come and still owes; freezing the
+    registration in that state strands them with no way to pay.
+    """
+    from ...models import PaymentEvent
+
+    if reg.status not in ("paid", "refunded"):
+        return False
+    if reg.transaction_id:
+        return True
+    return db.session.query(
+        PaymentEvent.query
+        .filter(PaymentEvent.registration_id == reg.id,
+                db.or_(PaymentEvent.event_type.like("payment.%"),
+                       PaymentEvent.event_type.like("manual.%"),
+                       PaymentEvent.event_type.like("reconcile.%")))
+        .exists()).scalar()
+
+
 @member_bp.route("/conferences/<slug>/register", methods=["GET", "POST"])
 @login_required
 def register_conf(slug):
@@ -167,11 +195,13 @@ def register_conf(slug):
         reg.accessibility = (request.form.get("accessibility") or "").strip()
         reg.custom_data = custom_data if custom_data else None
         reg.sub_events = sub_event_data if any(v.get("attending") for v in sub_event_data.values()) else None
-        # Editing a registration must not un-settle it. Resetting every save to
-        # "pending" would mark a paid attendee unpaid — and then bill them
-        # again below — for changing a dietary note.
-        was_settled = reg.status in ("paid", "refunded", "cancelled")
-        if not was_settled:
+        # Editing must not un-settle a registration somebody actually paid for
+        # — resetting every save to "pending" would mark them unpaid and bill
+        # them again for changing a dietary note. But "settled" has to mean
+        # money moved, not merely status == "paid": see _settled_by_payment.
+        prior_status = reg.status
+        settled = _settled_by_payment(reg)
+        if not settled:
             reg.status = "pending"
         if not existing:
             db.session.add(reg)
@@ -180,7 +210,7 @@ def register_conf(slug):
                      target_kind="registration", target_id=reg.id,
                      summary=f"{current_user.email} → {c.slug} ({tier.name})")
 
-        if was_settled:
+        if settled:
             flash("Registration updated.", "success")
         elif reg.amount == 0:
             # A sponsor, plenary speaker or comped attendee. There is nothing
@@ -188,15 +218,21 @@ def register_conf(slug):
             # treasurer's unpaid list for a conference that owes nothing.
             reg.status = "paid"
             db.session.commit()
-            record_payment_event(
-                merchant_reference=_reg_merchant_reference(reg),
-                registration_id=reg.id,
-                event_type="registration.no_payment_due",
-                amount=0,
-                note=f"{reg.reference}: {tier.name} carries no fee",
-            )
-            send_registration_confirmation(reg)
-            flash("Registration confirmed — no payment is required.", "success")
+            # Only on the way in. Re-saving a fee-waived registration should
+            # not stack another ledger row or send the confirmation again.
+            if prior_status != "paid":
+                record_payment_event(
+                    merchant_reference=_reg_merchant_reference(reg),
+                    registration_id=reg.id,
+                    event_type="registration.no_payment_due",
+                    amount=0,
+                    note=f"{reg.reference}: {tier.name} carries no fee",
+                )
+                send_registration_confirmation(reg)
+                flash("Registration confirmed — no payment is required.",
+                      "success")
+            else:
+                flash("Registration updated.", "success")
         elif payments_open_to_members():
             pay_url = payment_url_for(reg)
             send_payment_email(reg, pay_url)

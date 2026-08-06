@@ -104,7 +104,11 @@ def send_payment_email(registration: Registration, pay_url: str) -> bool:
         f"Tier: {registration.tier_name}\n"
         f"Amount: {registration.amount / 100:.2f} {(site.currency_code or 'AUD').upper()}\n"
         f"Reference: {registration.reference}\n\n"
-        f"To complete your registration, please visit:\n{pay_url}\n"
+        f"To complete your registration, please visit:\n{pay_url}\n\n"
+        f"You can update your registration any time by logging in. Changes to "
+        f"dietary and accessibility requirements need to reach us before we "
+        f"send the final numbers to caterers and venues, so please make them "
+        f"as early as you can.\n"
     )
 
     instructions = (get_financial_identity().payment_instructions or "").strip()

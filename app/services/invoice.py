@@ -32,12 +32,15 @@ def _business_vars(amount_cents: int, gst: bool | None = None) -> dict:
     """Issuer and tax variables shared by every document, from the single
     FinancialIdentity row.
 
-    GST-inclusive pricing: the GST component of an inclusive total is
-    total ÷ 11 (10% GST). `gst` overrides the identity's registration for one
-    send (the Send Invoice form's per-recipient toggle). `gst_applies` is the
-    control flag the renderer keys on — it travels in the variables so a
-    stored document regenerates with the tax treatment it was issued under,
-    not today's setting.
+    GST-inclusive pricing: the tax component of an inclusive total is
+    `total × rate / (100 + rate)` — at the Australian 10% that is total ÷ 11,
+    a 10% rate expressed against an inclusive amount rather than an 11% one.
+    `gst` overrides the identity's registration for one send (the Send Invoice
+    form's per-recipient toggle). `gst_applies` is the control flag the
+    renderer keys on — it travels in the variables so a stored document
+    regenerates with the tax treatment it was issued under, not today's
+    setting, and `gst_rate` travels with it for the same reason: a document
+    reissued after a rate change must still print the rate it was taxed at.
 
     `gst_registered` is a SEPARATE fact and must stay separate: "no GST on this
     sale" and "this issuer is not registered for GST" are different statements,
@@ -48,7 +51,8 @@ def _business_vars(amount_cents: int, gst: bool | None = None) -> dict:
     ident = get_financial_identity()
     site = get_site_settings()
     gst_on = ident.gst_registered if gst is None else gst
-    gst_cents = round(amount_cents / 11) if gst_on else 0
+    rate = ident.gst_percent
+    gst_cents = round(amount_cents * rate / (100 + rate)) if gst_on else 0
     return {
         "business_legal_name": ident.legal_name or site.site_name,
         "business_number": ident.abn or "",
@@ -59,6 +63,7 @@ def _business_vars(amount_cents: int, gst: bool | None = None) -> dict:
         "signatory_role": ident.signatory_role or "",
         "gst_applies": "1" if gst_on else "",
         "gst_registered": "1" if ident.gst_registered else "",
+        "gst_rate": ident.gst_percent_label,
         "invoice_type": "Tax Invoice" if gst_on else "Invoice",
         "gst_amount": format_amount(gst_cents),
         "amount_ex_gst": format_amount(amount_cents - gst_cents),

@@ -252,6 +252,10 @@ class FinancialIdentity(db.Model):
     legal_name = db.Column(db.String(200), default="")   # falls back to site name
     abn = db.Column(db.String(40), default="")
     gst_registered = db.Column(db.Boolean, default=False, nullable=False)
+    # Percent, not a fraction. Nullable so the guarded migration can add it to
+    # existing rows without inventing a rate — NULL reads as the Australian
+    # 10% through gst_percent below.
+    gst_rate = db.Column(db.Float, nullable=True)
     address = db.Column(db.Text, default="")             # multi-line, incl. C/- line
     contact_email = db.Column(db.String(200), default="")
     payment_instructions = db.Column(db.Text, default="")  # EFT block on invoices
@@ -264,6 +268,26 @@ class FinancialIdentity(db.Model):
     updated_at = db.Column(db.DateTime, default=datetime.utcnow,
                            onupdate=datetime.utcnow, nullable=False)
 
+    DEFAULT_GST_RATE = 10.0
+
+    @property
+    def gst_percent(self) -> float:
+        """The GST rate as a percentage — 10 for Australia, the default.
+
+        Prices are quoted GST-inclusive, so the tax component of a total is
+        `total × rate / (100 + rate)`; at 10% that is the familiar total ÷ 11,
+        which is a 10% rate expressed against an inclusive amount, not an 11%
+        one.
+        """
+        if self.gst_rate is None:
+            return self.DEFAULT_GST_RATE
+        return float(self.gst_rate)
+
+    @property
+    def gst_percent_label(self) -> str:
+        """The rate as it should be printed: "10", not "10.0"; "12.5" kept."""
+        return f"{self.gst_percent:g}"
+
     @property
     def render_fingerprint(self) -> str:
         """The identity facts that change a rendered document, joined for
@@ -271,6 +295,7 @@ class FinancialIdentity(db.Model):
         return "|".join([
             self.legal_name or "", self.abn or "",
             "1" if self.gst_registered else "0",
+            self.gst_percent_label,
             self.address or "", self.contact_email or "",
             self.payment_instructions or "",
             self.signatory_name or "", self.signatory_role or "",

@@ -233,6 +233,10 @@ def assemble_tex(kind: str, tpl, vars_: dict, *, has_logo: bool = False,
         "amount": esc("amount"),
         "gst_amount": esc("gst_amount"),
         "amount_ex_gst": esc("amount_ex_gst"),
+        # Documents issued before the rate was configurable carry no gst_rate
+        # in their snapshot, and a blank would print "GST (%)" on regeneration.
+        # They were all taxed at the Australian 10%, so that is what they say.
+        "gst_rate": esc("gst_rate") if v.get("gst_rate") else "10",
         "payment_instructions": esc("payment_instructions"),
         "payment_link": esc("payment_link"),
         "pdf_body": body_tex,
@@ -770,6 +774,10 @@ def placeholder_vars(kind: str) -> dict[str, RawLatex]:
     registered = ident.gst_registered
     vars_["gst_applies"] = "1" if registered else ""
     vars_["gst_registered"] = "1" if registered else ""
+    # A configured fact like the registration itself, so it shows for real
+    # rather than as a placeholder — an admin proofing a 15% rate needs to see
+    # 15 on the page.
+    vars_["gst_rate"] = ident.gst_percent_label
 
     from ..models import get_site_settings
     real = {

@@ -966,3 +966,50 @@ def test_should_abort_predicate_prevents_tectonic_run(ctx, monkeypatch):
                       should_abort=lambda: True)
     assert "abandoned" in str(ei.value)
     assert launched == []
+
+
+def test_gst_rate_is_configurable_and_printed(ctx):
+    """The rate reaches both the arithmetic and the page.
+
+    A hardcoded "GST (10%)" line would state a false rate on a tax document
+    for any society that is not on the Australian rate.
+    """
+    from app.extensions import db
+    from app.models import get_document_template, get_financial_identity
+    from app.services.documents import assemble_tex, placeholder_vars
+    from app.services.invoice import _business_vars
+
+    ident = get_financial_identity()
+    ident.gst_registered = True
+
+    # Default: NULL reads as 10%, and 10% of a GST-inclusive total is the
+    # familiar total / 11 — a 10% rate, not an 11% one.
+    ident.gst_rate = None
+    db.session.commit()
+    assert get_financial_identity().gst_percent == 10.0
+    assert _business_vars(11000)["gst_amount"] == "10.00"
+
+    ident.gst_rate = 15.0
+    db.session.commit()
+    v = _business_vars(11500)
+    assert v["gst_rate"] == "15"
+    assert v["gst_amount"] == "15.00"        # 11500 * 15 / 115
+    assert v["amount_ex_gst"] == "100.00"
+
+    tex = assemble_tex("invoice", get_document_template("invoice"),
+                       placeholder_vars("invoice"))
+    assert r"GST (15\%)" in tex
+    assert r"GST (10\%)" not in tex
+
+
+def test_legacy_document_without_a_rate_reads_as_ten_percent(ctx):
+    """Documents issued before the rate was configurable carry no gst_rate in
+    their snapshot; regenerating one must not print "GST (%)"."""
+    from app.models import get_document_template
+    from app.services.documents import assemble_tex, placeholder_vars
+
+    v = placeholder_vars("invoice")
+    v["gst_applies"] = "1"
+    del v["gst_rate"]
+    tex = assemble_tex("invoice", get_document_template("invoice"), v)
+    assert r"GST (10\%)" in tex

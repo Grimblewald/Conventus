@@ -278,6 +278,13 @@ def financial_identity():
         ident.legal_name = (request.form.get("legal_name") or "").strip()
         ident.abn = (request.form.get("abn") or "").strip()
         ident.gst_registered = request.form.get("gst_registered") == "1"
+        # A blank or unparseable rate falls back to the default rather than
+        # zeroing the tax on every subsequent document.
+        try:
+            rate = float(request.form.get("gst_rate") or "")
+            ident.gst_rate = rate if 0 <= rate <= 100 else None
+        except ValueError:
+            ident.gst_rate = None
         ident.address = (request.form.get("address") or "").strip()
         ident.contact_email = (request.form.get("contact_email") or "").strip()
         ident.payment_instructions = (request.form.get("payment_instructions") or "").strip()

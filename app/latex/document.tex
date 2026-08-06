@@ -23,8 +23,8 @@
 %     signatory_role, user_name, user_email, recipient_abn, recipient_address,
 %     conference_title, conference_dates, tier_name, transaction_id,
 %     registration_id, payment_date, due_date, currency_symbol, currency_code,
-%     amount, gst_amount, amount_ex_gst, payment_instructions, payment_link,
-%     pdf_body
+%     amount, gst_amount, amount_ex_gst, gst_rate, payment_instructions,
+%     payment_link, pdf_body
 %
 % Packages are limited to those verified warm in the tectonic cache:
 % geometry, fontenc, helvet, graphicx, array, tabularx, xcolor.
@@ -137,7 +137,7 @@
 \begin{tabular}{r@{\hspace{6mm}}r}
   \ifgst
     Subtotal (excl.\ GST) (@@currency_code@@): & @@currency_symbol@@@@amount_ex_gst@@\\
-    GST (10\%) (@@currency_code@@): & @@currency_symbol@@@@gst_amount@@\\
+    GST (@@gst_rate@@\%) (@@currency_code@@): & @@currency_symbol@@@@gst_amount@@\\
   \else
     Subtotal (@@currency_code@@): & @@currency_symbol@@@@amount@@\\
   \fi

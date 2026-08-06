@@ -24,9 +24,17 @@
           var hidden = document.createElement("input");
           hidden.type = "hidden";
           hidden.name = orig.name;
-          hidden.value = orig.value;
 
           var selectedVal = orig.dataset.value || orig.value;
+
+          // The stored country arrives in data-value, because the server
+          // renders this <select> with no options for the script to fill —
+          // so orig.value is always "". Seeding the hidden field from it meant
+          // an unchanged country submitted nothing: the box showed
+          // "Australia (AU)", the payer left it alone precisely because it
+          // looked right, and the save failed on a missing country. Only
+          // picking from the dropdown ever set this.
+          hidden.value = selectedVal || "";
 
           if (selectedVal) {
             var match = countries.find(function (c) { return c.name === selectedVal; });

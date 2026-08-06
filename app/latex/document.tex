@@ -61,7 +61,7 @@
 \newif\ifisadjustment @@flag_adjustment@@
 
 \setlength{\parindent}{0pt}
-\setlength{\parskip}{6pt}
+\setlength{\parskip}{5pt}
 \pagestyle{empty}
 \color{ink}
 
@@ -112,7 +112,7 @@
   \ifbmail @@business_contact_email@@\fi
 \end{minipage}
 
-\vspace{14mm}
+\vspace{10mm}
 
 % --- Bill-to -------------------------------------------------------------
 \noindent
@@ -123,7 +123,7 @@
   {\color{muted}@@user_email@@}
 \end{minipage}
 
-\vspace{10mm}
+\vspace{8mm}
 
 % --- Line items ----------------------------------------------------------
 \noindent
@@ -211,14 +211,22 @@
 \fi
 
 % --- Sign-off ------------------------------------------------------------
+% Wrapped in a minipage because a minipage cannot break across pages. Left
+% loose, the block split wherever the page ran out — most often stranding the
+% legal entity name alone on a second page, under a signature that stayed on
+% the first. A signature separated from the entity it signs for is worse than
+% a page break, so the whole block now moves or stays as one.
 \ifsignatory
-\par\vspace{8mm}
+\par\vspace{6mm}
 \noindent
-With thanks,\\
-\ifhassig\includegraphics[height=14mm,keepaspectratio]{@@signature_file@@}\\[2pt]\fi
-{\bfseries @@signatory_name@@}\\
-@@signatory_role@@\\
-@@business_legal_name@@
+\begin{minipage}[t]{\linewidth}
+  \raggedright
+  With thanks,\\
+  \ifhassig\includegraphics[height=14mm,keepaspectratio]{@@signature_file@@}\\[2pt]\fi
+  {\bfseries @@signatory_name@@}\\
+  @@signatory_role@@\\
+  @@business_legal_name@@
+\end{minipage}
 \fi
 
 \end{document}

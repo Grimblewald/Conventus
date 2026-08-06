@@ -96,31 +96,24 @@ def profile():
 # ---------------------------------------------------------------------------
 
 def _settled_by_payment(reg) -> bool:
-    """True when this registration was settled by money actually moving.
+    """True when money actually arrived for this registration.
 
-    Deliberately narrower than `status == "paid"`, because a zero-fee tier
-    produces that status too: a sponsor or plenary place is marked paid because
-    nothing was owed, not because anything was received. Counting those as
-    settled would let someone switch to a free tier, be marked paid, switch
-    back to a paying tier and keep the paid status — waiving their own fee.
+    Answered from the ledger, because the two things that look like evidence
+    of payment are not. `transaction_id` is stamped on the registration by any
+    checkout attempt, including one the payer abandoned; and `payment.*` covers
+    `payment.created` and `payment.cancelled` as readily as `payment.captured`.
+    A registration with a cancelled attempt in its past satisfied both while
+    nobody had paid a cent — so switching to a fee-waived tier and back left it
+    marked paid and never billed.
 
-    "cancelled" and "failed" are not settled either. An abandoned checkout
-    leaves an attendee who still wants to come and still owes; freezing the
-    registration in that state strands them with no way to pay.
+    Narrower than `status == "paid"` for the same reason it always was: a
+    zero-fee tier produces that status with nothing received.
     """
-    from ...models import PaymentEvent
+    from ...models.payment_event import amount_received
 
-    if reg.status not in ("paid", "refunded"):
+    if reg.id is None:
         return False
-    if reg.transaction_id:
-        return True
-    return db.session.query(
-        PaymentEvent.query
-        .filter(PaymentEvent.registration_id == reg.id,
-                db.or_(PaymentEvent.event_type.like("payment.%"),
-                       PaymentEvent.event_type.like("manual.%"),
-                       PaymentEvent.event_type.like("reconcile.%")))
-        .exists()).scalar()
+    return amount_received(reg.id) > 0
 
 
 @member_bp.route("/conferences/<slug>/register", methods=["GET", "POST"])
@@ -210,11 +203,37 @@ def register_conf(slug):
                      target_kind="registration", target_id=reg.id,
                      summary=f"{current_user.email} → {c.slug} ({tier.name})")
 
-        if settled:
+        # Put the charge on the ledger. Until now it only ever carried credits
+        # — payments in — with `amount` the sole record of what was owed, and
+        # that is overwritten on every save. Recording the difference is what
+        # makes an upgrade bill the difference rather than the whole fee, and a
+        # downgrade credit it back rather than silently forgiving it.
+        reg.charge_to(amount, reason=(
+            f"tier set to {tier.name}"
+            + ("" if amount else " — no fee")))
+
+        outstanding = reg.amount_due
+        if reg.status == "refunded":
             flash("Registration updated.", "success")
-        elif reg.amount == 0:
-            # A sponsor, plenary speaker or comped attendee. There is nothing
-            # to ask for, and leaving it "pending" would park it in the
+        elif outstanding > 0:
+            # Owing something — whether that is the whole fee, or the balance
+            # after an upgrade on a registration already part paid.
+            if payments_open_to_members():
+                pay_url = payment_url_for(reg)
+                send_payment_email(reg, pay_url)
+                reg.payment_sent_at = datetime.utcnow()
+                db.session.commit()
+                flash("Registration saved. A payment link has been emailed to "
+                      "you.", "success")
+            else:
+                flash("Registration saved. Our payment portal is under "
+                      "construction — you will be notified when it is ready.",
+                      "warning")
+        elif settled:
+            flash("Registration updated.", "success")
+        else:
+            # Nothing owed and nothing received: a sponsor, plenary speaker or
+            # comped attendee. Leaving it "pending" would park it in the
             # treasurer's unpaid list for a conference that owes nothing.
             reg.status = "paid"
             db.session.commit()
@@ -233,16 +252,6 @@ def register_conf(slug):
                       "success")
             else:
                 flash("Registration updated.", "success")
-        elif payments_open_to_members():
-            pay_url = payment_url_for(reg)
-            send_payment_email(reg, pay_url)
-            reg.payment_sent_at = datetime.utcnow()
-            db.session.commit()
-            flash("Registration saved. A payment link has been emailed to you.",
-                  "success")
-        else:
-            flash("Registration saved. Our payment portal is under construction — "
-                  "you will be notified when it is ready.", "warning")
         return redirect(url_for("member.dashboard"))
 
     return render_template("member/register_conference.html",

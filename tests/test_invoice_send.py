@@ -782,8 +782,14 @@ class TestRegistrationTierChange:
             reg = Registration.query.order_by(Registration.id.desc()).first()
             rid = reg.id
             reg.status = "paid"
-            reg.transaction_id = "TXN-REAL"   # money actually moved
+            reg.transaction_id = "TXN-REAL"
             db.session.commit()
+            # Money actually moving is a ledger event, not a transaction id —
+            # a cancelled attempt stamps one of those too.
+            from app.models import record_payment_event
+            record_payment_event(registration_id=rid, transaction_id="TXN-REAL",
+                                 merchant_reference=reg.reference,
+                                 event_type="payment.captured", amount=11000)
 
         mailbox.clear()
         member_client.post(f"/conferences/{slug}/register",
@@ -810,3 +816,174 @@ class TestRegistrationTierChange:
                 registration_id=reg.id,
                 event_type="registration.no_payment_due").count()
             assert evts == 1
+
+
+class TestOutstandingLedger:
+    """What is owed comes from the ledger, not from a mutable scalar.
+
+    The ledger carried every credit and no debit: nothing recorded that a
+    registration had been *charged*, so `amount` was the only record of it and
+    every save overwrote it. Charge lines close that, and the balance they
+    produce is what gets billed.
+    """
+
+    @staticmethod
+    def _conf(app, amounts):
+        import secrets
+        from datetime import timedelta
+        from app.models import Conference
+        from app.models.conference import PriceTier
+        tag = secrets.token_hex(4)
+        today = date.today()
+        with app.app_context():
+            c = Conference(slug=f"led-{tag}", title="Physics 2026",
+                           start_date=today + timedelta(days=30),
+                           end_date=today + timedelta(days=32),
+                           is_accepting_registrations=True, is_draft=False)
+            db.session.add(c)
+            db.session.flush()
+            names = []
+            for i, amt in enumerate(amounts):
+                t = PriceTier(conference_id=c.id, name=f"T{i}-{amt}",
+                              amount=amt, display_order=i * 10)
+                db.session.add(t)
+                names.append(t.name)
+            db.session.commit()
+            return c.slug, names
+
+    def test_event_signs_come_from_the_event_type(self, app):
+        from app.models.payment_event import event_delta
+        with app.app_context():
+            # Charges raise the balance; a negative charge credits it back.
+            assert event_delta("registration.payment_due", 35000) == 35000
+            assert event_delta("registration.payment_due", -35000) == -35000
+            # Settlements reduce it, refunds put it back on the books.
+            assert event_delta("payment.captured", 35000) == -35000
+            assert event_delta("manual.paid", 35000) == -35000
+            assert event_delta("reconcile.paid", 35000) == -35000
+            assert event_delta("payment.refunded", 35000) == 35000
+            # An attempt is not a payment, and a checkout is not a charge —
+            # it carries the full amount on every retry.
+            assert event_delta("payment.cancelled", 35000) == 0
+            assert event_delta("payment.created", 35000) == 0
+            assert event_delta("checkout.created", 35000) == 0
+            assert event_delta("document.sent", 35000) == 0
+
+    def test_a_cancelled_attempt_is_not_a_payment(self, seeded, app,
+                                                  member_client, mailbox,
+                                                  monkeypatch):
+        """Reproduces reg_3 from production: a cancelled $350 attempt, then a
+        switch to a fee-waived tier, then back. It stayed marked paid because
+        the cancelled attempt looked like settlement."""
+        from app.models import Registration, record_payment_event
+        monkeypatch.setattr("app.blueprints.member.payments_open_to_members",
+                            lambda: True)
+        slug, (free, paid) = self._conf(app, [0, 35000])
+
+        member_client.post(f"/conferences/{slug}/register",
+                           data={"tier": paid}, follow_redirects=True)
+        with app.app_context():
+            reg = Registration.query.order_by(Registration.id.desc()).first()
+            rid = reg.id
+            # The abandoned checkout, exactly as Worldline reports it.
+            reg.transaction_id = "9000009620508325000"
+            db.session.commit()
+            for et in ("payment.created", "payment.cancelled"):
+                record_payment_event(registration_id=rid,
+                                     transaction_id="9000009620508325000",
+                                     merchant_reference=reg.reference,
+                                     event_type=et, amount=35000)
+            assert Registration.query.get(rid).amount_outstanding == 35000
+
+        member_client.post(f"/conferences/{slug}/register",
+                           data={"tier": free}, follow_redirects=True)
+        with app.app_context():
+            reg = Registration.query.get(rid)
+            assert reg.amount_outstanding == 0
+            assert reg.status == "paid"
+
+        member_client.post(f"/conferences/{slug}/register",
+                           data={"tier": paid}, follow_redirects=True)
+        with app.app_context():
+            reg = Registration.query.get(rid)
+            assert reg.amount_outstanding == 35000, "fee waived by a round trip"
+            assert reg.status == "pending"
+
+    def test_an_upgrade_bills_only_the_difference(self, seeded, app,
+                                                  member_client, mailbox,
+                                                  monkeypatch):
+        from app.models import Registration, record_payment_event
+        monkeypatch.setattr("app.blueprints.member.payments_open_to_members",
+                            lambda: True)
+        slug, (cheap, dear) = self._conf(app, [11000, 15000])
+
+        member_client.post(f"/conferences/{slug}/register",
+                           data={"tier": cheap}, follow_redirects=True)
+        with app.app_context():
+            reg = Registration.query.order_by(Registration.id.desc()).first()
+            rid = reg.id
+            record_payment_event(registration_id=rid,
+                                 merchant_reference=reg.reference,
+                                 event_type="payment.captured", amount=11000)
+            assert Registration.query.get(rid).amount_outstanding == 0
+
+        mailbox.clear()
+        member_client.post(f"/conferences/{slug}/register",
+                           data={"tier": dear}, follow_redirects=True)
+        with app.app_context():
+            reg = Registration.query.get(rid)
+            assert reg.amount_outstanding == 4000     # the difference, not 15000
+            assert reg.amount_due == 4000
+        assert "40.00" in mailbox[-1]["body"]
+
+    def test_a_downgrade_credits_rather_than_forgiving(self, seeded, app,
+                                                       member_client,
+                                                       monkeypatch):
+        from app.models import Registration, record_payment_event
+        monkeypatch.setattr("app.blueprints.member.payments_open_to_members",
+                            lambda: True)
+        slug, (cheap, dear) = self._conf(app, [11000, 15000])
+
+        member_client.post(f"/conferences/{slug}/register",
+                           data={"tier": dear}, follow_redirects=True)
+        with app.app_context():
+            reg = Registration.query.order_by(Registration.id.desc()).first()
+            rid = reg.id
+            record_payment_event(registration_id=rid,
+                                 merchant_reference=reg.reference,
+                                 event_type="payment.captured", amount=15000)
+
+        member_client.post(f"/conferences/{slug}/register",
+                           data={"tier": cheap}, follow_redirects=True)
+        with app.app_context():
+            reg = Registration.query.get(rid)
+            # Overpaid by 40.00 — visible as a credit, and never billed as a
+            # negative amount.
+            assert reg.amount_outstanding == -4000
+            assert reg.amount_due == 0
+
+    def test_a_registration_predating_charge_lines_gets_an_opening_balance(
+            self, seeded, app):
+        """Existing rows are not backfilled, so the balance has to seed itself
+        before anything reads it — otherwise an old registration bills zero."""
+        import secrets
+        from app.models import Conference, Registration, User
+        tag = secrets.token_hex(4)
+        with app.app_context():
+            u = User(email=f"old-{tag}@example.org", role_name="member")
+            db.session.add(u)
+            db.session.flush()
+            c = Conference(slug=f"old-{tag}", title="Physics 2026",
+                           start_date=date(2026, 9, 1), end_date=date(2026, 9, 3))
+            db.session.add(c)
+            db.session.flush()
+            reg = Registration(user_id=u.id, conference_id=c.id,
+                               tier_name="Standard", amount=11000,
+                               status="pending")
+            db.session.add(reg)
+            db.session.commit()
+            rid = reg.id
+            assert reg.amount_outstanding == 0     # nothing on the ledger yet
+
+            assert Registration.query.get(rid).amount_due == 11000
+            assert Registration.query.get(rid).amount_outstanding == 11000

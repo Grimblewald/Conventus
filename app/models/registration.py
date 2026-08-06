@@ -43,6 +43,14 @@ class Registration(db.Model):
     # that an HMAC would not.
     pay_token = db.Column(db.String(64), nullable=True, unique=True, index=True)
 
+    # What is still owed, maintained from the ledger (see
+    # payment_event.recompute_outstanding). Stored rather than summed on every
+    # read so there is one number, computed one way, for the places that bill,
+    # display and reconcile — `amount` is only ever the current sticker price
+    # of the chosen tier, and says nothing about what has been paid against it.
+    amount_outstanding = db.Column(db.Integer, default=0, nullable=False,
+                                   server_default="0")
+
     conference = db.relationship("Conference")
 
     def ensure_pay_token(self) -> str:
@@ -60,6 +68,67 @@ class Registration(db.Model):
             self.pay_token = secrets.token_urlsafe(32)
             _db.session.commit()
         return self.pay_token
+
+    def ensure_charge_baseline(self) -> int:
+        """Total charged to this registration, seeding it if nothing is there.
+
+        Registrations created before charge lines existed carry their fee only
+        in `amount`. Minted lazily, like the reference and the pay token, so
+        nothing needs backfilling — but it must happen before anything reads
+        the balance, or an old registration would look fully paid at zero.
+        """
+        from .payment_event import CHARGE_EVENTS, PaymentEvent, record_payment_event
+
+        charged = (PaymentEvent.query
+                   .filter(PaymentEvent.registration_id == self.id,
+                           PaymentEvent.event_type.in_(CHARGE_EVENTS))
+                   .with_entities(PaymentEvent.amount).all())
+        if charged:
+            return sum((a or 0) for (a,) in charged)
+        if self.amount:
+            record_payment_event(
+                registration_id=self.id,
+                merchant_reference=self.reference,
+                event_type="registration.payment_due",
+                amount=self.amount,
+                note=f"{self.reference}: opening balance for {self.tier_name}")
+        return self.amount or 0
+
+    @property
+    def amount_due(self) -> int:
+        """What to bill right now — never less than nothing.
+
+        The single number the pay link, the payment email and the admin views
+        all read, so an upgrade after a part payment asks for the difference
+        rather than the whole fee twice.
+        """
+        self.ensure_charge_baseline()
+        return max(0, self.amount_outstanding or 0)
+
+    def charge_to(self, new_amount: int, *, reason: str) -> int:
+        """Move the amount charged for this registration to *new_amount*.
+
+        Appends the difference as a ledger line rather than rewriting what was
+        charged before, so a tier change, an upgrade and an early-bird lapse
+        are all the same operation and all remain auditable. Returns the delta
+        recorded (0 when nothing changed, so callers can stay quiet).
+
+        Registrations that predate charge lines get a baseline first, from the
+        amount they were already carrying — without it their ledger would show
+        only the correction and the balance would come out short.
+        """
+        from .payment_event import record_payment_event
+
+        already = self.ensure_charge_baseline()
+        delta = int(new_amount) - already
+        if delta:
+            record_payment_event(
+                registration_id=self.id,
+                merchant_reference=self.reference,
+                event_type="registration.payment_due",
+                amount=delta,
+                note=f"{self.reference}: {reason}")
+        return delta
 
     @property
     def reference(self) -> str:

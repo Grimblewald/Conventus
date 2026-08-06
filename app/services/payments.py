@@ -65,9 +65,13 @@ def initiate_payment(registration: Registration,
     if not g:
         return None
     from ..models.content import get_site_settings
+    # The balance, not the sticker price: an upgrade on a registration that was
+    # already part paid must ask for the difference, and a link clicked twice
+    # must not ask for the whole fee again.
+    due = registration.amount_due
     result = g.create_checkout(
         registration,
-        amount=registration.amount,
+        amount=due,
         currency=(get_site_settings().currency_code or "AUD").upper(),
         return_url=return_url,
     )
@@ -80,7 +84,7 @@ def initiate_payment(registration: Registration,
         merchant_reference=result.merchant_reference,
         registration_id=registration.id,
         event_type="checkout.created",
-        amount=registration.amount,
+        amount=due,
         note="hosted checkout session created",
     )
     return result.redirect_url
@@ -142,7 +146,7 @@ def send_payment_email(registration: Registration, pay_url: str) -> bool:
     body = (
         f"Thank you for registering for {conf.title} ({conf.date_range}).\n\n"
         f"Tier: {registration.tier_name}\n"
-        f"Amount: {registration.amount / 100:.2f} {(site.currency_code or 'AUD').upper()}\n"
+        f"Amount: {registration.amount_due / 100:.2f} {(site.currency_code or 'AUD').upper()}\n"
         f"Reference: {registration.reference}\n\n"
         f"To complete your registration, please visit:\n{pay_url}\n\n"
         f"You can update your registration any time by logging in. Changes to "
@@ -159,7 +163,7 @@ def send_payment_email(registration: Registration, pay_url: str) -> bool:
             ("sanitized_invoice_ref", sanitized_reference(registration.reference)),
             ("payment_reference", registration.reference),
             ("transaction_id", registration.transaction_id or registration.reference),
-            ("amount", f"{registration.amount / 100:.2f}"),
+            ("amount", f"{registration.amount_due / 100:.2f}"),
             ("currency_code", (site.currency_code or "AUD").upper()),
             ("currency_symbol", site.currency_symbol or ""),
             ("site_name", site.site_name),

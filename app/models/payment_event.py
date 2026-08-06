@@ -40,6 +40,86 @@ class PaymentEvent(db.Model):
         return self.merchant_reference or self.transaction_id or "(unreferenced)"
 
 
+# --- What each event does to the balance -----------------------------------
+#
+# The ledger already carried every credit — payments, refunds, manual
+# settlements. What it never carried was the debit: nothing recorded that a
+# registration had been *charged* anything, so `Registration.amount` was the
+# only record of it, and that is overwritten on every edit. Charge lines close
+# that gap, and `registration.no_payment_due` was already one of them — a
+# charge that happens to be zero.
+#
+# checkout.created is deliberately weightless. It carries the full amount and
+# is written on every attempt, so three abandoned checkouts would otherwise
+# read as three charges.
+CHARGE_EVENTS = ("registration.payment_due", "registration.no_payment_due")
+
+_SETTLES = ("captured", "paid")
+_REVERSES = ("refunded",)
+_MONEY_NAMESPACES = ("payment", "manual", "reconcile", "refund")
+
+
+def event_delta(event_type: str, amount: int | None) -> int:
+    """What this event adds to (or takes off) the amount outstanding.
+
+    Positive raises the balance owing, negative reduces it. The sign comes
+    from the event type alone, which is what lets one function serve gateway
+    webhooks, manual settlements, reconciliation and tier changes alike.
+    """
+    if not amount:
+        return 0
+    if event_type in CHARGE_EVENTS:
+        return amount           # a tier change may charge a negative delta
+    namespace, _, verb = (event_type or "").partition(".")
+    if namespace in _MONEY_NAMESPACES:
+        if verb in _SETTLES:
+            return -amount
+        if verb in _REVERSES:
+            return amount       # a refund puts the balance back on the books
+    return 0
+
+
+def outstanding_for(registration_id: int) -> int:
+    """The amount still owed on a registration, from the ledger alone."""
+    rows = (PaymentEvent.query
+            .filter(PaymentEvent.registration_id == registration_id)
+            .with_entities(PaymentEvent.event_type, PaymentEvent.amount)
+            .all())
+    return sum(event_delta(t, a) for t, a in rows)
+
+
+def amount_received(registration_id: int) -> int:
+    """Money actually received against a registration, net of refunds.
+
+    The question "has anyone paid for this?" has to be answered from events
+    that moved money, not from evidence that somebody once tried. A cancelled
+    checkout leaves both a `payment.cancelled` row and a transaction id on the
+    registration, and treating either as settlement is how a registration with
+    an abandoned attempt in its past kept a paid status it had not earned.
+    """
+    rows = (PaymentEvent.query
+            .filter(PaymentEvent.registration_id == registration_id)
+            .with_entities(PaymentEvent.event_type, PaymentEvent.amount)
+            .all())
+    return -sum(event_delta(t, a) for t, a in rows if t not in CHARGE_EVENTS)
+
+
+def recompute_outstanding(registration_id: int) -> int | None:
+    """Refresh the stored balance for a registration and return it.
+
+    Called wherever an event lands, so the number maintains itself rather than
+    being recalculated — differently — at each of the places that read it.
+    """
+    from .registration import Registration
+
+    reg = db.session.get(Registration, registration_id)
+    if reg is None:
+        return None
+    reg.amount_outstanding = outstanding_for(registration_id)
+    db.session.commit()
+    return reg.amount_outstanding
+
+
 def record_payment_event(*, transaction_id: str = "", merchant_reference: str = "",
                          registration_id: int | None = None, event_type: str = "",
                          amount: int | None = None, note: str = "") -> None:
@@ -54,6 +134,10 @@ def record_payment_event(*, transaction_id: str = "", merchant_reference: str = 
             note=(note or "")[:400],
         ))
         db.session.commit()
+        # Every registration-linked event funnels through here, so this is the
+        # one place the balance has to be kept current.
+        if registration_id:
+            recompute_outstanding(registration_id)
     except Exception:
         log.exception("Failed to record payment event %r", event_type)
         try:

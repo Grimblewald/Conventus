@@ -19,6 +19,8 @@
       <div><dt>Tier</dt><dd>{{ reg.tier_name }}</dd></div>
       <div><dt>Amount</dt><dd>{{ site.currency_symbol }}{{ reg.amount | format_amount }} {{ site.currency_code }}</dd></div>
       <div><dt>Status</dt><dd><span class="status" data-v="{{ reg.status }}">{{ reg.status }}</span></dd></div>
+      <div><dt>Reference</dt><dd style="font-family:monospace;">{{ reg.reference }}
+        <span class="muted">({{ reg.sanitized_reference }} on a bank transfer)</span></dd></div>
       <div><dt>Transaction</dt><dd>{{ reg.transaction_id or '—' }}</dd></div>
       <div><dt>Last webhook</dt><dd>{{ reg.last_webhook_event or '—' }}</dd></div>
       <div><dt>Payment sent</dt><dd>{{ reg.payment_sent_at.strftime('%-d %b %Y %H:%M') if reg.payment_sent_at else '—' }}</dd></div>

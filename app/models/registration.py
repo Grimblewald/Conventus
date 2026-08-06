@@ -35,3 +35,26 @@ class Registration(db.Model):
     deleted_at = db.Column(db.DateTime, nullable=True, index=True)
 
     conference = db.relationship("Conference")
+
+    @property
+    def reference(self) -> str:
+        """The registration's payer-facing reference, e.g. REG-000123.
+
+        Derived from the id rather than stored: it must exist the moment the
+        registration does, because a member paying by bank transfer needs
+        something to quote long before any card checkout mints a merchant
+        reference. Deriving it also means it can never drift, be blank, or
+        collide — the id already guarantees all three.
+
+        Distinct from `transaction_id` (the gateway's per-operation id) and
+        from the checkout's merchant reference (reg_<id>-c<conf>u<user>-<hex>,
+        minted at checkout and absent until then).
+        """
+        return f"REG-{self.id:06d}"
+
+    @property
+    def sanitized_reference(self) -> str:
+        """`reference` as it survives a bank reference field — see
+        app.services.invoice.sanitized_reference for why the punctuation goes.
+        """
+        return self.reference.replace("-", "")

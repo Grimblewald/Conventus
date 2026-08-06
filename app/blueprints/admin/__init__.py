@@ -80,16 +80,61 @@ def index():
 # Registrations list — view and manually mark as paid.
 # ---------------------------------------------------------------------------
 
+def _search_registrations(query, q: str):
+    """Filter registrations by whatever the treasurer has in hand.
+
+    A bank transfer arrives as a line on a statement: a reference the payer
+    typed or pasted, and little else. So the search has to accept the payer's
+    reference (REG-000123, or REG000123 with the punctuation eaten by the
+    bank), a bare registration number, the gateway's transaction id, and the
+    checkout's merchant reference — as well as the payer's name or email,
+    since references get quoted wrong and a name is often all that survives.
+    """
+    import re as _re
+
+    from ...models import PaymentEvent
+    from ...models.user import User
+
+    like = f"%{q}%"
+    bare = _re.sub(r"[^A-Za-z0-9]", "", q)
+    clauses = [
+        User.full_name.ilike(like),
+        User.email.ilike(like),
+        Registration.transaction_id.ilike(like),
+    ]
+
+    # REG-000123 / REG000123 / 123 all resolve to the registration itself.
+    digits = _re.sub(r"^REG", "", bare, flags=_re.IGNORECASE)
+    if digits.isdigit():
+        clauses.append(Registration.id == int(digits))
+
+    # The checkout's merchant reference lives on the ledger, not here, and
+    # carries separators a bank may have stripped — so match it stripped too.
+    if bare:
+        stripped = db.func.replace(
+            db.func.replace(PaymentEvent.merchant_reference, "-", ""), "_", "")
+        clauses.append(PaymentEvent.query
+                       .filter(PaymentEvent.registration_id == Registration.id,
+                               stripped.ilike(f"%{bare}%"))
+                       .exists())
+
+    return query.outerjoin(User, Registration.user_id == User.id).filter(
+        db.or_(*clauses))
+
+
 @admin_bp.route("/registrations")
 @requires_permission("registrations.view")
 def registrations():
     conference_id = request.args.get("conference_id", type=int)
     status_filter = request.args.get("status", "all")
+    q = (request.args.get("q") or "").strip()
     query = Registration.query.filter(Registration.deleted_at.is_(None))
     if conference_id:
         query = query.filter_by(conference_id=conference_id)
     if status_filter != "all":
         query = query.filter_by(status=status_filter)
+    if q:
+        query = _search_registrations(query, q)
     regs = query.order_by(Registration.created_at.desc()).all()
     conf_list = (
         Conference.query
@@ -103,6 +148,7 @@ def registrations():
         conferences=conf_list,
         conference_id=conference_id,
         status_filter=status_filter,
+        q=q,
     )
 
 

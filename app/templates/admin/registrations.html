@@ -16,7 +16,7 @@
      href="{{ url_for('admin.registrations', conference_id=conference_id, status='refunded') }}">Refunded</a>
 </div>
 
-<div style="display:flex; gap:8px; margin-bottom:18px;">
+<div style="display:flex; gap:8px; margin-bottom:18px; flex-wrap:wrap;">
   <select class="select" style="max-width:300px;" data-jump>
     <option value="{{ url_for('admin.registrations', status=status_filter) }}">All conferences</option>
     {% for c in conferences %}
@@ -24,16 +24,30 @@
               {% if conference_id == c.id %}selected{% endif %}>{{ c.title }}</option>
     {% endfor %}
   </select>
+
+  {# Reconciling a bank transfer starts from a statement line, so the box takes
+     the payer's reference in whatever form the bank left it, as well as a
+     name, email or transaction id. #}
+  <form method="get" style="display:flex; gap:8px; flex:1; min-width:260px;">
+    <input type="hidden" name="status" value="{{ status_filter }}">
+    {% if conference_id %}<input type="hidden" name="conference_id" value="{{ conference_id }}">{% endif %}
+    <input type="search" name="q" class="input" value="{{ q or '' }}" style="flex:1;"
+           placeholder="Reference, name, email or transaction id">
+    <button class="btn btn-primary" type="submit">Search</button>
+    {% if q %}<a class="btn btn-ghost"
+       href="{{ url_for('admin.registrations', conference_id=conference_id, status=status_filter) }}">Clear</a>{% endif %}
+  </form>
 </div>
 
 {% if regs %}
 <div style="overflow-x:auto;">
 <table class="table">
-  <thead><tr><th>User</th><th>Conference</th><th>Tier</th><th>Amount</th><th>Status</th><th>Payment sent</th><th>Date</th>
+  <thead><tr><th>Reference</th><th>User</th><th>Conference</th><th>Tier</th><th>Amount</th><th>Status</th><th>Payment sent</th><th>Date</th>
       {% if can('registrations.edit') %}<th></th>{% endif %}</tr></thead>
   <tbody>
     {% for r in regs %}
     <tr>
+      <td style="font-family:monospace; white-space:nowrap;">{{ r.reference }}</td>
       <td><a href="{{ url_for('admin.registration_detail', reg_id=r.id) }}">{{ r.user.email if r.user else '—' }}</a></td>
       <td>{{ r.conference.title if r.conference else '—' }}</td>
       <td>{{ r.tier_name }}</td>

@@ -754,3 +754,98 @@ class TestSendInvoiceCatalogue:
         resp = client.get(f"/conferences/{slug}")
         if resp.status_code == 200:
             assert b"5000.00" not in resp.data
+
+
+class TestRegistrationLookup:
+    """Reconciling a bank transfer means starting from a statement line.
+
+    The payer quotes a reference; the treasurer has to turn that back into a
+    registration to mark paid. Registrations carry no reference until a card
+    checkout mints one, so the payer-facing reference is derived from the id
+    and exists from the moment the registration does.
+    """
+
+    @staticmethod
+    def _registration(app, email="payer@example.org", status="pending"):
+        import secrets
+        import string
+        from datetime import date
+        from app.extensions import db
+        from app.models import Conference, Registration, User
+        # Letters only: a hex tag would put digits in the seeded email, and a
+        # bare-number search would then match it by substring — making the
+        # "finds only this registration" assertions pass or fail on the tag.
+        tag = "".join(secrets.choice(string.ascii_lowercase) for _ in range(8))
+        with app.app_context():
+            u = User(email=f"{tag}-{email}", full_name="Pat Payer",
+                     role_name="member")
+            db.session.add(u)
+            db.session.flush()
+            c = Conference(slug=f"reg-conf-{tag}", title="Physics 2026",
+                           start_date=date(2026, 9, 1), end_date=date(2026, 9, 3))
+            db.session.add(c)
+            db.session.flush()
+            r = Registration(user_id=u.id, conference_id=c.id,
+                             tier_name="Standard", amount=11000, status=status)
+            db.session.add(r)
+            db.session.commit()
+            return r.id, u.email
+
+    def test_reference_is_derived_and_bank_safe(self, app):
+        from app.models import Registration
+        rid, _ = self._registration(app)
+        with app.app_context():
+            reg = Registration.query.get(rid)
+            assert reg.reference == f"REG-{rid:06d}"
+            # The form a bank leaves behind: no punctuation, inside 18 chars.
+            assert reg.sanitized_reference == f"REG{rid:06d}"
+            assert len(reg.sanitized_reference) <= 18
+
+    def test_reference_is_listed(self, seeded, app, admin_client):
+        rid, _ = self._registration(app)
+        page = admin_client.get("/admin/registrations")
+        assert f"REG-{rid:06d}".encode() in page.data
+
+    def test_search_finds_the_registration_by_reference(self, seeded, app,
+                                                        admin_client):
+        """Punctuated, stripped, and bare-number forms all resolve — a bank may
+        have eaten the dash, and a payer may quote only the digits."""
+        rid, _ = self._registration(app)
+        other, _ = self._registration(app)
+
+        for term in (f"REG-{rid:06d}", f"REG{rid:06d}", str(rid)):
+            page = admin_client.get(f"/admin/registrations?q={term}")
+            assert f"REG-{rid:06d}".encode() in page.data, term
+            assert f"REG-{other:06d}".encode() not in page.data, term
+
+    def test_search_finds_the_registration_by_email(self, seeded, app,
+                                                    admin_client):
+        """References get quoted wrong; a name or address is often all that
+        survives a transfer."""
+        rid, email = self._registration(app)
+        other, _ = self._registration(app)
+        page = admin_client.get(f"/admin/registrations?q={email}")
+        assert f"REG-{rid:06d}".encode() in page.data
+        assert f"REG-{other:06d}".encode() not in page.data
+
+    def test_search_finds_the_registration_by_merchant_reference(
+            self, seeded, app, admin_client):
+        """A card payment's merchant reference lives on the ledger, not the
+        registration, and carries separators a bank may have stripped."""
+        from app.models import record_payment_event
+        rid, _ = self._registration(app)
+        other, _ = self._registration(app)
+        with app.app_context():
+            record_payment_event(merchant_reference=f"reg_{rid}-c1u1-a3f1",
+                                 registration_id=rid,
+                                 event_type="checkout.created", amount=11000)
+
+        for term in (f"reg_{rid}-c1u1-a3f1", f"reg{rid}c1u1a3f1"):
+            page = admin_client.get(f"/admin/registrations?q={term}")
+            assert f"REG-{rid:06d}".encode() in page.data, term
+            assert f"REG-{other:06d}".encode() not in page.data, term
+
+    def test_search_miss_returns_nothing(self, seeded, app, admin_client):
+        rid, _ = self._registration(app)
+        page = admin_client.get("/admin/registrations?q=REG-999999")
+        assert f"REG-{rid:06d}".encode() not in page.data

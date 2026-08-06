@@ -655,22 +655,15 @@ def review_recuse(assignment_id):
 @member_bp.route("/pay/<int:reg_id>")
 @login_required
 def pay_registration(reg_id):
+    """Compatibility entry point for links already in members' inboxes and for
+    the dashboard's Pay button. Paying itself lives on the public, token-keyed
+    route so a forwarded link works for whoever actually settles it — this only
+    checks ownership and hands over."""
     reg = Registration.query.get_or_404(reg_id)
     if reg.user_id != current_user.id:
         abort(403)
-    if reg.status == "paid":
-        flash("This registration is already paid.", "success")
-        return redirect(url_for("member.dashboard"))
-    if reg.status == "processing":
-        flash("Your payment is being processed.", "success")
-        return redirect(url_for("member.pay_result", reg_id=reg.id))
-    site = get_site_settings()
-    open_to_members = payments_open_to_members()
-    show_checkout = open_to_members or (_can_test_payments() and gateway_available())
-    return render_template("member/pay.html", reg=reg, site=site,
-                           gateway_available=show_checkout,
-                           testing=show_checkout and not open_to_members,
-                           sandbox=sandbox_mode())
+    return redirect(url_for("public.pay_registration",
+                            token=reg.ensure_pay_token()))
 
 
 def _can_test_payments() -> bool:

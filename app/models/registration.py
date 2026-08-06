@@ -34,7 +34,32 @@ class Registration(db.Model):
                            onupdate=datetime.utcnow, nullable=False)
     deleted_at = db.Column(db.DateTime, nullable=True, index=True)
 
+    # Capability token for the durable pay link. Stored rather than derived
+    # from the id: the id already yields `reference`, which a payer quotes on a
+    # bank transfer and the treasurer searches on, so a derived link could only
+    # be revoked by re-numbering the registration — which would change that
+    # reference under the payer and orphan its PaymentEvent history. A stored
+    # token is revoked by writing a new one, and survives a SECRET_KEY rotation
+    # that an HMAC would not.
+    pay_token = db.Column(db.String(64), nullable=True, unique=True, index=True)
+
     conference = db.relationship("Conference")
+
+    def ensure_pay_token(self) -> str:
+        """This registration's pay token, minting one on first use.
+
+        Lazy so existing registrations need no backfill — the same reason
+        `reference` is derived. 32 bytes of urlsafe randomness: the link is the
+        only thing standing in for a login, so it has to be unguessable and
+        unenumerable in a way a sequential id never was.
+        """
+        if not self.pay_token:
+            import secrets
+
+            from ..extensions import db as _db
+            self.pay_token = secrets.token_urlsafe(32)
+            _db.session.commit()
+        return self.pay_token
 
     @property
     def reference(self) -> str:

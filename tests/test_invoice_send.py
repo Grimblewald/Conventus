@@ -599,3 +599,124 @@ class TestZeroFeeRegistration:
             assert reg.status == "paid"
             assert reg.dietary == "Vegetarian"
         assert not mailbox, "a settled registration was billed again on edit"
+
+
+class TestDurableRegistrationPayLink:
+    """The person who registers is often not the person who pays.
+
+    An academic forwards the payment email to a grant administrator or a
+    finance office with no account here, so the link carries its own authority
+    — a capability token, not a session.
+    """
+
+    @staticmethod
+    def _reg(app, status="pending", amount=11000):
+        import secrets
+        from app.models import Conference, Registration, User
+        tag = secrets.token_hex(4)
+        with app.app_context():
+            u = User(email=f"payer-{tag}@example.org", full_name="Pat Payer",
+                     role_name="member")
+            db.session.add(u)
+            db.session.flush()
+            c = Conference(slug=f"tok-{tag}", title="Physics 2026",
+                           start_date=date(2026, 9, 1), end_date=date(2026, 9, 3))
+            db.session.add(c)
+            db.session.flush()
+            r = Registration(user_id=u.id, conference_id=c.id,
+                             tier_name="Standard", amount=amount, status=status)
+            db.session.add(r)
+            db.session.commit()
+            return r.id, r.ensure_pay_token()
+
+    def test_token_is_minted_lazily_and_is_unguessable(self, seeded, app):
+        from app.models import Registration
+        rid, token = self._reg(app)
+        _rid2, other = self._reg(app)
+        with app.app_context():
+            reg = Registration.query.get(rid)
+            # Stable once minted — the emailed link must not change under the
+            # payer on a later read.
+            assert reg.ensure_pay_token() == token
+            # Independent of the id and of each other, so holding one token
+            # (or a reference) tells you nothing about another registration's.
+            assert token != other
+            assert reg.reference not in token
+            assert len(token) >= 40
+
+    def test_link_pays_without_logging_in(self, seeded, app, client,
+                                          monkeypatch):
+        """The whole point: no session, and it still reaches the pay page."""
+        monkeypatch.setattr("app.services.payments.payments_open_to_members",
+                            lambda: True)
+        _rid, token = self._reg(app)
+        page = client.get(f"/pay/registration/{token}")
+        assert page.status_code == 200
+        assert b"Physics 2026" in page.data
+        # And the checkout form targets the token, not the login-gated route.
+        assert token.encode() in page.data
+
+    def test_unknown_token_reveals_nothing(self, seeded, app, client):
+        page = client.get("/pay/registration/not-a-real-token")
+        assert page.status_code == 200
+        assert b"not valid or is no longer available" in page.data
+
+    def test_a_paid_registration_cannot_be_paid_again(self, seeded, app, client,
+                                                      monkeypatch):
+        """A forwarded link outlives the payment. Two people holding the same
+        link must not each be able to start a fresh checkout."""
+        called = []
+        monkeypatch.setattr("app.services.payments.initiate_payment",
+                            lambda *a, **k: called.append(1) or "https://gw/x")
+        _rid, token = self._reg(app, status="paid")
+
+        page = client.get(f"/pay/registration/{token}")
+        assert b"Already paid" in page.data
+
+        # The POST is re-checked too — the page may have been rendered before
+        # somebody else paid.
+        resp = client.post(f"/pay/registration/{token}/checkout")
+        assert b"Already paid" in resp.data
+        assert not called, "a checkout was minted against a paid registration"
+
+    def test_refunded_and_cancelled_are_closed_too(self, seeded, app, client):
+        _rid, refunded = self._reg(app, status="refunded")
+        _rid2, cancelled = self._reg(app, status="cancelled")
+        assert b"Already refunded" in client.get(
+            f"/pay/registration/{refunded}").data
+        assert b"Registration cancelled" in client.get(
+            f"/pay/registration/{cancelled}").data
+
+    def test_payment_email_carries_the_token_link(self, seeded, app, mailbox):
+        from app.models import Registration
+        rid, token = self._reg(app)
+        with app.app_context():
+            from app.services.payments import payment_url_for, send_payment_email
+            reg = Registration.query.get(rid)
+            send_payment_email(reg, payment_url_for(reg))
+        assert mailbox
+        body = mailbox[-1]["body"]
+        assert f"/pay/registration/{token}" in body
+        # The sequential id never appears as a payable URL.
+        assert f"/pay/{rid}" not in body
+
+    def test_member_route_redirects_to_the_token_link(self, seeded, app,
+                                                      member_client):
+        """Dashboard buttons and links already in inboxes keep working."""
+        from app.models import Registration, User
+        rid, token = self._reg(app)
+        with app.app_context():
+            reg = Registration.query.get(rid)
+            me = User.query.filter_by(email="member@test.example.org").first()
+            reg.user_id = me.id
+            db.session.commit()
+        resp = member_client.get(f"/pay/{rid}")
+        assert resp.status_code in (301, 302)
+        assert token in resp.headers["Location"]
+
+    def test_another_members_registration_is_not_reachable_by_id(
+            self, seeded, app, member_client):
+        """The id route still checks ownership — the token is the only way in
+        without a session, and it is not derivable from the id."""
+        rid, _token = self._reg(app)
+        assert member_client.get(f"/pay/{rid}").status_code == 403

@@ -37,7 +37,7 @@
             Payment link was emailed to you on {{ reg.payment_sent_at.strftime('%-d %B %Y') }}.
           {% endif %}
         </p>
-        <a href="{{ url_for('member.pay_registration', reg_id=reg.id) }}" class="btn" style="margin-top:12px;">Return to Payment Page</a>
+        <a href="{% if pay_token %}{{ url_for('public.pay_registration', token=pay_token) }}{% else %}{{ url_for('member.pay_registration', reg_id=reg.id) }}{% endif %}" class="btn" style="margin-top:12px;">Return to Payment Page</a>
       {% endif %}
     </div>
 

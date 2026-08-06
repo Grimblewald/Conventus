@@ -52,11 +52,14 @@ def payments_open_to_members() -> bool:
     return bool(get_site_settings().payment_portal_enabled)
 
 
-def initiate_payment(registration: Registration) -> str | None:
+def initiate_payment(registration: Registration,
+                     return_url: str = "") -> str | None:
     """Start a payment checkout for a registration.
 
     Returns a redirect URL the user should be sent to, or None if no
-    gateway is configured (which means use the internal stub).
+    gateway is configured (which means use the internal stub). *return_url*
+    overrides where the payer lands afterwards, so a durable link forwarded to
+    someone without an account comes back to a public page.
     """
     g = _active_gateway()
     if not g:
@@ -66,6 +69,7 @@ def initiate_payment(registration: Registration) -> str | None:
         registration,
         amount=registration.amount,
         currency=(get_site_settings().currency_code or "AUD").upper(),
+        return_url=return_url,
     )
     if result.error:
         log.warning("Payment error for reg %d: %s", registration.id, result.error)
@@ -83,8 +87,16 @@ def initiate_payment(registration: Registration) -> str | None:
 
 
 def payment_url_for(registration: Registration) -> str:
-    """Return the URL a member visits to pay — always our confirmation page."""
-    return url_for("member.pay_registration", reg_id=registration.id, _external=True)
+    """The durable pay link for a registration — our page, never the gateway.
+
+    Keyed on the registration's capability token rather than its id, because
+    this URL is emailed and then forwarded: the person who registers is often
+    not the person who pays, and a grant administrator or finance office has no
+    account to log into. The token is what authorises payment, so it must not
+    be guessable the way a sequential id is.
+    """
+    return url_for("public.pay_registration",
+                   token=registration.ensure_pay_token(), _external=True)
 
 
 def send_registration_confirmation(registration: Registration) -> bool:

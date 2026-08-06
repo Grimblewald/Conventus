@@ -740,3 +740,135 @@ def dev_reload():
         abort(404)
     Path(__file__).parent.parent.parent.parent.joinpath("wsgi.py").touch()
     return "ok — reload triggered"
+
+
+# ---------------------------------------------------------------------------
+# Durable registration pay link
+#
+# The registration equivalent of the invoice link above, and public for the
+# same reason: the person who registers is often not the person who pays.
+# An academic forwards the email to a grant administrator or a finance office
+# who has no account here, and a login wall simply stops the money arriving.
+#
+# The capability is the token, not a session — 32 bytes of randomness, so the
+# sequential id that made the old /pay/<reg_id> route safe only behind a login
+# is never exposed. Rate-limited and answered with the same generic page as the
+# invoice link, so an unknown token reveals nothing an attacker could iterate.
+# ---------------------------------------------------------------------------
+
+def _registration_for_token(token: str):
+    """The live registration a pay token belongs to, or None."""
+    from ...models import Registration
+
+    if not token:
+        return None
+    return (Registration.query
+            .filter_by(pay_token=token)
+            .filter(Registration.deleted_at.is_(None))
+            .first())
+
+
+def _pay_link_unavailable(heading: str, message: str, reference: str = ""):
+    return render_template("public/pay_invoice_message.html", heading=heading,
+                           message=message, reference=reference), 200
+
+
+def _settled_message(reg):
+    """The page a settled registration answers with, or None if still payable.
+
+    Checked before a checkout is ever minted: a forwarded link outlives the
+    payment, and two people holding the same link must not each be able to
+    start a fresh session against a registration that is already paid.
+    """
+    if reg.status == "paid":
+        return _pay_link_unavailable(
+            "Already paid",
+            "This registration has already been paid. Nothing further is due, "
+            "and no payment has been taken just now.",
+            reg.reference)
+    if reg.status == "refunded":
+        return _pay_link_unavailable(
+            "Already refunded",
+            "This registration has been refunded, so it can no longer be paid "
+            "through this link.", reg.reference)
+    if reg.status == "cancelled":
+        return _pay_link_unavailable(
+            "Registration cancelled",
+            "This registration has been cancelled, so it can no longer be "
+            "paid.", reg.reference)
+    return None
+
+
+@public_bp.route("/pay/registration/<token>")
+@limiter.limit("10 per hour;3 per minute")
+def pay_registration(token):
+    """Durable registration pay link — the page, not the gateway."""
+    reg = _registration_for_token(token)
+    if reg is None:
+        return _pay_link_unavailable(
+            "Payment link not available",
+            "This payment link is not valid or is no longer available. If you "
+            "believe this is an error, please contact us.")
+
+    settled = _settled_message(reg)
+    if settled is not None:
+        return settled
+    if reg.status == "processing":
+        return redirect(url_for("public.pay_registration_result", token=token))
+
+    from ...services.payments import payments_open_to_members, sandbox_mode
+    return render_template("member/pay.html", reg=reg,
+                           site=get_site_settings(),
+                           gateway_available=payments_open_to_members(),
+                           testing=False, sandbox=sandbox_mode(),
+                           pay_token=token)
+
+
+@public_bp.route("/pay/registration/<token>/checkout", methods=["POST"])
+@limiter.limit("10 per hour;3 per minute")
+def pay_registration_checkout(token):
+    """Mint the hosted checkout for a durable registration link.
+
+    Re-checks the settled states rather than trusting the page that produced
+    this POST: the page may have been rendered before somebody else paid.
+    """
+    from ...services.payments import initiate_payment, payments_open_to_members
+
+    reg = _registration_for_token(token)
+    if reg is None:
+        return _pay_link_unavailable(
+            "Payment link not available",
+            "This payment link is not valid or is no longer available.")
+
+    settled = _settled_message(reg)
+    if settled is not None:
+        return settled
+    if not payments_open_to_members():
+        return _pay_link_unavailable(
+            "Online payment unavailable",
+            "Online card payment is currently unavailable. Please contact us "
+            "to arrange payment, quoting the reference below.", reg.reference)
+
+    redirect_url = initiate_payment(
+        reg, return_url=url_for("public.pay_registration_result", token=token,
+                                _external=True))
+    if not redirect_url:
+        return _pay_link_unavailable(
+            "Online payment unavailable",
+            "We couldn't start the online payment just now. Please try again "
+            "shortly, or contact us to arrange payment.", reg.reference)
+    return redirect(redirect_url)
+
+
+@public_bp.route("/pay/registration/<token>/result")
+def pay_registration_result(token):
+    """Return-from-checkout page for a durable registration link."""
+    reg = _registration_for_token(token)
+    if reg is None:
+        return _pay_link_unavailable(
+            "Payment link not available",
+            "This payment link is not available.")
+    return render_template("member/pay_result.html", reg=reg,
+                           site=get_site_settings(), pay_token=token,
+                           already_complete=reg.status in ("paid", "refunded",
+                                                           "processing"))

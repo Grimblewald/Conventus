@@ -39,7 +39,9 @@
         <li>After successful payment, you'll be returned to this website automatically.</li>
         <li>You'll receive an email invoice once payment is confirmed.</li>
       </ul>
-      <form method="POST" action="{{ url_for('member.pay_checkout', reg_id=reg.id) }}">
+      {# Posts to the token route: this page is reached through the durable link,
+         which the payer may not have an account for. #}
+      <form method="POST" action="{% if pay_token %}{{ url_for('public.pay_registration_checkout', token=pay_token) }}{% else %}{{ url_for('member.pay_checkout', reg_id=reg.id) }}{% endif %}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="btn" type="submit" style="margin-top:12px;">Proceed to Payment</button>
       </form>

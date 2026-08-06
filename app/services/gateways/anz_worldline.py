@@ -85,13 +85,19 @@ class ANZWorldlineGateway(PaymentGateway):
             log.exception("Failed to create Worldline client")
             return None
 
-    def create_checkout(self, registration, amount: int, currency: str = "AUD") -> CheckoutResult:
+    def create_checkout(self, registration, amount: int, currency: str = "AUD",
+                        return_url: str = "") -> CheckoutResult:
+        # The payer is not always the member: a durable pay link is forwarded to
+        # whoever settles the invoice, and they must come back to the public
+        # result page rather than a login-gated member one.
         reg_id = registration.id
         return self._create_hosted_checkout(
             amount=amount,
             currency=currency,
             merchant_reference=_registration_reference(registration),
-            return_url=url_for("member.pay_result", reg_id=reg_id, _external=True),
+            return_url=(return_url
+                        or url_for("member.pay_result", reg_id=reg_id,
+                                   _external=True)),
         )
 
     def create_test_checkout(self, amount: int, reference: str,

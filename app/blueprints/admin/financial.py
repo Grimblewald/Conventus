@@ -837,12 +837,24 @@ def _transaction_events(q: str):
              .outerjoin(User, Registration.user_id == User.id))
     if q:
         like = f"%{q}%"
+        # A payer quoting an invoice on a bank transfer copies the sanitized
+        # reference ({sanitized_invoice_ref} — INV2026080628D4), because the
+        # punctuated form does not reliably survive an 18-character BECS
+        # reference field. The treasurer then pastes what the bank statement
+        # shows, so the stored reference has to match with its separators
+        # taken out too, or the search that reconciliation depends on returns
+        # nothing for a perfectly valid payment.
+        import re as _re
+        bare = _re.sub(r"[^A-Za-z0-9]", "", q)
+        stripped = db.func.replace(
+            db.func.replace(PaymentEvent.merchant_reference, "-", ""), "_", "")
         query = query.filter(db.or_(
             PaymentEvent.transaction_id.ilike(like),
             PaymentEvent.merchant_reference.ilike(like),
             PaymentEvent.event_type.ilike(like),
             PaymentEvent.note.ilike(like),
             User.email.ilike(like),
+            *([stripped.ilike(f"%{bare}%")] if bare else []),
         ))
     return (query.order_by(PaymentEvent.created_at.desc(),
                            PaymentEvent.id.desc())

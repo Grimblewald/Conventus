@@ -67,6 +67,12 @@
     <label for="payment_instructions"><strong>Payment instructions</strong></label>
     <textarea id="payment_instructions" name="payment_instructions" class="input" rows="4" style="font-family:monospace;">{{ ident.payment_instructions or '' }}</textarea>
     <p class="muted">Fills {{ '{payment_instructions}' }} — the EFT / BSB / account details printed on invoices. Receipts don’t show this.</p>
+    <p class="muted">You can use {{ '{sanitized_invoice_ref}' }} here for the
+      payer to quote — the invoice reference with the dashes taken out
+      (INV2026080628D4), which fits an 18-character bank reference field and
+      survives banks that reject punctuation. Searching the
+      <a href="{{ url_for('admin.financial_transactions') }}">ledger</a> for
+      that form finds the invoice.</p>
   </div>
 
   <hr style="margin:20px 0; border-color:var(--c-card-border);">

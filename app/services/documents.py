@@ -731,6 +731,7 @@ _PREVIEW_VARS = (
     "registration_id", "payment_date", "due_date", "currency_symbol",
     "currency_code", "amount", "gst_amount", "amount_ex_gst",
     "payment_instructions", "payment_link", "invoice_type",
+    "sanitized_invoice_ref",
 )
 
 
@@ -784,6 +785,22 @@ def placeholder_vars(kind: str) -> dict[str, RawLatex]:
         value = (real.get(name) or "").strip()
         if value:
             vars_[name] = value
+
+    # Payment instructions are issuer free text that may itself contain
+    # placeholders (typically "REF: {sanitized_invoice_ref}"). A real send
+    # expands them before the value reaches the renderer, so a preview has to
+    # as well or the admin sees the raw braces and cannot tell whether they
+    # wrote the name correctly.
+    #
+    # Substituted with the plain field NAME, not the bold RawLatex the other
+    # placeholders use: this value goes on to be escaped as a leaf, so any
+    # markup folded in here would be printed literally — the same trap that
+    # once surfaced \TEXTBF{INVOICE\_TYPE} on the page.
+    text = vars_.get("payment_instructions")
+    if text and not isinstance(text, RawLatex):
+        for name in _PREVIEW_VARS:
+            text = text.replace("{" + name + "}", name)
+        vars_["payment_instructions"] = text
     return vars_
 
 

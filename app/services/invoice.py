@@ -163,6 +163,7 @@ def send_test_invoice(to_email: str) -> bool:
     # "payment link not available" page — which is itself worth proofing.
     vars_["payment_link"] = url_for("public.pay_invoice",
                                     reference="TEST-000000", _external=True)
+    _finalise_issuer_text(vars_)
     log.info("Sending test invoice to %s", to_email)
     attachment = _render_attachment("invoice", vars_, "TEST-000000")
     return _send_rendered("invoice", vars_, to=to_email, subject_prefix="[TEST] ",
@@ -257,6 +258,44 @@ def next_invoice_reference() -> str:
     return f"INV-{stamp}-{secrets.token_hex(4).upper()}"[:30]
 
 
+def sanitized_reference(reference: str) -> str:
+    """The reference in a form that survives a bank-transfer reference field.
+
+    A BECS lodgement reference is 18 characters from a restricted set, and
+    banks differ on whether they accept punctuation — so a payer quoting
+    `INV-20260806-28D4` on a transfer may have the hyphens stripped or the
+    field rejected outright. Stripping them here gives the payer something to
+    copy that is already bank-safe, well inside 18 characters.
+
+    Lossless, deliberately: the letters stay, so two references can never
+    sanitize to the same string. Dropping them for a digits-only form would
+    map INV-…-28D4 and INV-…-284D onto one number, and nothing downstream
+    could tell the two invoices apart.
+    """
+    return re.sub(r"[^A-Za-z0-9]", "", str(reference or "")).upper()
+
+
+def _finalise_issuer_text(vars_: dict) -> dict:
+    """Publish the bank-safe reference, and resolve variables *inside* the
+    configured payment instructions.
+
+    payment_instructions is issuer-configured free text that reaches the email
+    body and the PDF as a leaf value, and `_render` is a single pass — so a
+    placeholder written inside it would otherwise print literally. Expanding it
+    here, against everything else already resolved, is what lets an admin write
+    "REF: {sanitized_invoice_ref}" in Financial identity and have it come out
+    as the reference. Self-reference is excluded so the block cannot embed a
+    copy of itself.
+    """
+    vars_["sanitized_invoice_ref"] = sanitized_reference(
+        vars_.get("transaction_id", ""))
+    text = vars_.get("payment_instructions") or ""
+    if text:
+        vars_["payment_instructions"] = _render(
+            text, {k: v for k, v in vars_.items() if k != "payment_instructions"})
+    return vars_
+
+
 def manual_invoice_vars(to: str, *, recipient_name: str, description: str,
                         item: str, amount_cents: int, reference: str,
                         period: str = "", due_date: str = "",
@@ -295,7 +334,7 @@ def manual_invoice_vars(to: str, *, recipient_name: str, description: str,
     # ephemeral Worldline URL, which expires (§8).
     vars_["payment_link"] = url_for("public.pay_invoice", reference=reference,
                                     _external=True)
-    return vars_
+    return _finalise_issuer_text(vars_)
 
 
 def send_manual_invoice(to: str, *, recipient_name: str, description: str,
@@ -364,7 +403,7 @@ def _registration_vars(reg: Registration, kind: str) -> dict:
     site = get_site_settings()
     user = reg.user
     conf = reg.conference
-    return {
+    return _finalise_issuer_text({
         "user_name": user.full_name or user.email,
         "user_email": user.email,
         "conference_title": conf.title,
@@ -378,7 +417,7 @@ def _registration_vars(reg: Registration, kind: str) -> dict:
         "site_name": site.site_name,
         "registration_id": str(reg.id),
         **_business_vars(reg.amount),
-    }
+    })
 
 
 def _manual_receipt_vars(reference: str, recipient: str,
@@ -386,7 +425,7 @@ def _manual_receipt_vars(reference: str, recipient: str,
     """Real document variables for a manual invoice's receipt (paid via the
     durable link). The invoice's own reference fills {transaction_id}."""
     site = get_site_settings()
-    return {
+    return _finalise_issuer_text({
         "user_name": recipient,
         "user_email": recipient,
         "conference_title": "",
@@ -400,7 +439,7 @@ def _manual_receipt_vars(reference: str, recipient: str,
         "site_name": site.site_name,
         "registration_id": "N/A",
         **_business_vars(amount_cents),
-    }
+    })
 
 
 def _reg_merchant_reference(reg: Registration) -> str:

@@ -231,6 +231,72 @@ def test_manual_invoice_render_error_records_nothing(seed_templates, admin_clien
         assert PaymentEvent.query.count() == before
 
 
+# --- {sanitized_invoice_ref}: a bank-safe reference the payer can quote ------
+
+def test_sanitized_reference_is_bank_safe_and_lossless():
+    from app.services.invoice import sanitized_reference
+
+    assert sanitized_reference("INV-20260806-28D4") == "INV2026080628D4"
+    # Inside the 18-character BECS lodgement reference field.
+    assert len(sanitized_reference("INV-20260806-28D4")) <= 18
+    # Lossless: the letters stay, so two references cannot collide. A
+    # digits-only form would map both of these onto 20260806284.
+    assert (sanitized_reference("INV-20260806-28D4")
+            != sanitized_reference("INV-20260806-284D"))
+    assert sanitized_reference("") == ""
+
+
+def test_payment_instructions_expand_the_sanitized_ref(seed_templates, app,
+                                                       mailbox, monkeypatch):
+    """An admin writes "REF: {sanitized_invoice_ref}" in Financial identity and
+    it reaches the payer resolved — in the PDF variables and the email body.
+
+    payment_instructions is a leaf value in a single-pass render, so without
+    the expansion pass it would print the raw braces.
+    """
+    captured = {}
+
+    def _fake_render(kind, vars_, *a, **k):
+        captured.update(vars_)
+        return b"%PDF-fake"
+    monkeypatch.setattr("app.services.invoice.render_document", _fake_render)
+
+    with app.app_context():
+        from app.models import get_financial_identity
+        from app.services.invoice import send_manual_invoice
+        ident = get_financial_identity()
+        ident.payment_instructions = ("BSB: 015142\nACCOUNT: 457357624\n"
+                                      "REF: {sanitized_invoice_ref}")
+        db.session.commit()
+
+        send_manual_invoice("sponsor@example.org", recipient_name="Sponsor Co",
+                            description="Gold sponsorship", item="Sponsorship",
+                            amount_cents=50000, reference="INV-20260806-28D4",
+                            body_override="Pay to:\n{payment_instructions}")
+
+    assert captured["sanitized_invoice_ref"] == "INV2026080628D4"
+    assert "REF: INV2026080628D4" in captured["payment_instructions"]
+    assert "{sanitized_invoice_ref}" not in captured["payment_instructions"]
+
+    sent = [m for m in mailbox if m["to"] == "sponsor@example.org"]
+    assert sent and "REF: INV2026080628D4" in sent[0]["body"]
+
+
+def test_ledger_search_matches_the_sanitized_reference(admin_client, app):
+    """The treasurer pastes what the bank statement shows — the sanitized form
+    — and must find the invoice stored under its punctuated reference."""
+    _seed_invoice(app, reference="INV-20260806-28D4")
+
+    hit = admin_client.get("/admin/financial/transactions?q=INV2026080628D4")
+    assert b"INV-20260806-28D4" in hit.data
+
+    # The punctuated form still works, and an unrelated reference does not.
+    hit = admin_client.get("/admin/financial/transactions?q=INV-20260806-28D4")
+    assert b"INV-20260806-28D4" in hit.data
+    miss = admin_client.get("/admin/financial/transactions?q=INV9999999999")
+    assert b"INV-20260806-28D4" not in miss.data
+
+
 # --- standing CC: remembered per sender, never site-wide ---------------------
 
 def test_invoice_cc_default_is_remembered_per_user(seed_templates, admin_client,

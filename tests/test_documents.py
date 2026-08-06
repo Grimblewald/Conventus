@@ -203,6 +203,30 @@ def test_placeholder_fill_bold_names(ctx):
     assert "$0.00" not in tex
 
 
+def test_preview_expands_a_variable_inside_payment_instructions(ctx):
+    """An admin who writes "REF: {sanitized_invoice_ref}" in Financial identity
+    previews it resolved, not as raw braces — otherwise there is no way to tell
+    whether the variable name was written correctly before sending.
+
+    The substituted text must also survive escaping as a plain leaf value: a
+    bold RawLatex folded in here would print its own markup on the page.
+    """
+    from app.extensions import db
+    from app.models import get_document_template, get_financial_identity
+    from app.services.documents import assemble_tex, placeholder_vars
+
+    ident = get_financial_identity()
+    ident.payment_instructions = "BSB: 015142\nREF: {sanitized_invoice_ref}"
+    db.session.commit()
+
+    tex = assemble_tex("invoice", get_document_template("invoice"),
+                       placeholder_vars("invoice"))
+    assert "REF: sanitized" in tex
+    assert "{sanitized_invoice_ref}" not in tex
+    # No stray markup printed as text where the value was folded in.
+    assert r"\textbf{sanitized" not in tex
+
+
 def test_preview_shows_the_real_issuer_not_a_placeholder(ctx):
     """Issuer facts are configured once and identical on every document, so a
     preview renders them for real — the rule the letterhead images and the GST

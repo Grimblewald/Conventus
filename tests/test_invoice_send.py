@@ -41,6 +41,9 @@ def mailbox(monkeypatch):
 
     monkeypatch.setattr("app.services.invoice.send_mail", _record)
     monkeypatch.setattr("app.services.mail.send_mail", _record)
+    # payments.py binds send_mail at import, so patching app.services.mail
+    # alone leaves the registration confirmation and payment request escaping.
+    monkeypatch.setattr("app.services.payments.send_mail", _record)
     return box
 
 
@@ -486,3 +489,113 @@ def test_capture_on_invoice_sends_receipt(seed_templates, client, app,
         from app.models import PaymentEvent
         assert PaymentEvent.query.filter_by(merchant_reference="INV-CAP",
                                             event_type="document.sent").count() == 1
+
+
+class TestZeroFeeRegistration:
+    """Sponsors, plenary speakers and comped attendees register on a zero
+    fee tier. Billing them for $0.00 is nonsense, and leaving the
+    registration pending parks it in the treasurer's unpaid list forever."""
+
+    @staticmethod
+    def _conference(app, amounts):
+        """A conference accepting registrations, with a tier per amount.
+
+        Returns (slug, [tier_name]) — the form selects a tier by NAME.
+        """
+        import secrets
+        from datetime import date, timedelta
+        from app.extensions import db
+        from app.models import Conference
+        from app.models.conference import PriceTier
+        tag = secrets.token_hex(4)
+        today = date.today()
+        with app.app_context():
+            c = Conference(slug=f"zero-{tag}", title="Physics 2026",
+                           start_date=today + timedelta(days=30),
+                           end_date=today + timedelta(days=32),
+                           is_accepting_registrations=True, is_draft=False)
+            db.session.add(c)
+            db.session.flush()
+            ids = []
+            for i, amt in enumerate(amounts):
+                t = PriceTier(conference_id=c.id, name=f"Tier{i}-{amt}",
+                              amount=amt, display_order=i * 10)
+                db.session.add(t)
+                db.session.flush()
+                ids.append(t.name)
+            db.session.commit()
+            return c.slug, ids
+
+    def test_zero_fee_confirms_and_does_not_bill(self, seeded, app,
+                                                 member_client, mailbox):
+        from app.models import PaymentEvent, Registration
+        slug, (free_tier,) = self._conference(app, [0])
+
+        member_client.post(f"/conferences/{slug}/register",
+                           data={"tier": free_tier},
+                           follow_redirects=True)
+
+        assert mailbox, "a zero-fee registration still gets a confirmation"
+        sent = mailbox[-1]
+        assert "confirmed" in sent["subject"].lower()
+        assert "No payment is required" in sent["body"]
+        # The ask is absent — no amount due, no pay link.
+        assert "To complete your registration" not in sent["body"]
+
+        with app.app_context():
+            reg = Registration.query.order_by(Registration.id.desc()).first()
+            assert reg.amount == 0
+            # Settled, not parked in the unpaid list.
+            assert reg.status == "paid"
+            assert reg.payment_sent_at is None
+            evts = PaymentEvent.query.filter_by(registration_id=reg.id).all()
+            assert [e.event_type for e in evts] == ["registration.no_payment_due"]
+
+    def test_paid_tier_still_bills(self, seeded, app, member_client, mailbox,
+                                   monkeypatch):
+        """The zero-fee branch must not swallow a real fee."""
+        from app.models import Registration
+        monkeypatch.setattr("app.blueprints.member.payments_open_to_members",
+                            lambda: True)
+        slug, (paid_tier,) = self._conference(app, [11000])
+
+        member_client.post(f"/conferences/{slug}/register",
+                           data={"tier": paid_tier},
+                           follow_redirects=True)
+
+        assert mailbox
+        assert "To complete your registration" in mailbox[-1]["body"]
+        with app.app_context():
+            reg = Registration.query.order_by(Registration.id.desc()).first()
+            assert reg.status == "pending"
+            assert reg.payment_sent_at is not None
+
+    def test_editing_a_paid_registration_does_not_rebill(self, seeded, app,
+                                                         member_client, mailbox,
+                                                         monkeypatch):
+        """Changing a dietary note must not mark a paid attendee unpaid and
+        send them a second payment request."""
+        from app.extensions import db
+        from app.models import Registration
+        monkeypatch.setattr("app.blueprints.member.payments_open_to_members",
+                            lambda: True)
+        slug, (tier,) = self._conference(app, [11000])
+
+        member_client.post(f"/conferences/{slug}/register",
+                           data={"tier": tier}, follow_redirects=True)
+        with app.app_context():
+            reg = Registration.query.order_by(Registration.id.desc()).first()
+            rid = reg.id
+            reg.status = "paid"
+            db.session.commit()
+
+        mailbox.clear()
+        member_client.post(f"/conferences/{slug}/register",
+                           data={"tier": tier, "dietary": "Vegetarian"},
+                           follow_redirects=True)
+
+        with app.app_context():
+            reg = Registration.query.get(rid)
+            assert reg.status == "paid"
+            assert reg.dietary == "Vegetarian"
+        assert not mailbox, "a settled registration was billed again on edit"

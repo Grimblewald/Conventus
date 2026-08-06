@@ -15,13 +15,18 @@ from flask import (
 from flask_login import current_user, login_required
 
 from ...extensions import db
-from ...models import Abstract, Conference, OTPCode, Registration, ReviewAssignment
+from ...models import (
+    Abstract, Conference, OTPCode, Registration, ReviewAssignment,
+    record_payment_event,
+)
 from ...models.content import get_site_settings
 from ...security import audit
+from ...services.invoice import _reg_merchant_reference
 from ...services.mail import send_mail
 from ...services.payments import (
     gateway_available, initiate_payment, payment_url_for,
     payments_open_to_members, sandbox_mode, send_payment_email,
+    send_registration_confirmation,
 )
 from ...services.uploads import UploadError, remove_upload, save_figure, save_image
 from ...services.form_renderer import validate_form
@@ -162,7 +167,12 @@ def register_conf(slug):
         reg.accessibility = (request.form.get("accessibility") or "").strip()
         reg.custom_data = custom_data if custom_data else None
         reg.sub_events = sub_event_data if any(v.get("attending") for v in sub_event_data.values()) else None
-        reg.status = "pending"
+        # Editing a registration must not un-settle it. Resetting every save to
+        # "pending" would mark a paid attendee unpaid — and then bill them
+        # again below — for changing a dietary note.
+        was_settled = reg.status in ("paid", "refunded", "cancelled")
+        if not was_settled:
+            reg.status = "pending"
         if not existing:
             db.session.add(reg)
         db.session.commit()
@@ -170,7 +180,24 @@ def register_conf(slug):
                      target_kind="registration", target_id=reg.id,
                      summary=f"{current_user.email} → {c.slug} ({tier.name})")
 
-        if payments_open_to_members():
+        if was_settled:
+            flash("Registration updated.", "success")
+        elif reg.amount == 0:
+            # A sponsor, plenary speaker or comped attendee. There is nothing
+            # to ask for, and leaving it "pending" would park it in the
+            # treasurer's unpaid list for a conference that owes nothing.
+            reg.status = "paid"
+            db.session.commit()
+            record_payment_event(
+                merchant_reference=_reg_merchant_reference(reg),
+                registration_id=reg.id,
+                event_type="registration.no_payment_due",
+                amount=0,
+                note=f"{reg.reference}: {tier.name} carries no fee",
+            )
+            send_registration_confirmation(reg)
+            flash("Registration confirmed — no payment is required.", "success")
+        elif payments_open_to_members():
             pay_url = payment_url_for(reg)
             send_payment_email(reg, pay_url)
             reg.payment_sent_at = datetime.utcnow()

@@ -87,6 +87,34 @@ def payment_url_for(registration: Registration) -> str:
     return url_for("member.pay_registration", reg_id=registration.id, _external=True)
 
 
+def send_registration_confirmation(registration: Registration) -> bool:
+    """Confirm a registration that has nothing to pay.
+
+    Sponsors, plenary speakers and comped attendees register on a zero-amount
+    tier. Sending them a payment request for $0.00 is nonsense, but sending
+    nothing at all leaves them with no record that the registration landed —
+    so they get the same details, minus the ask.
+    """
+    from ..models.content import get_site_settings
+    conf = registration.conference
+    site = get_site_settings()
+    body = (
+        f"Your registration for {conf.title} ({conf.date_range}) is confirmed.\n\n"
+        f"Tier: {registration.tier_name}\n"
+        f"Reference: {registration.reference}\n\n"
+        f"No payment is required for this registration.\n\n"
+        f"You can update your registration any time by logging in. Changes to "
+        f"dietary and accessibility requirements need to reach us before we "
+        f"send the final numbers to caterers and venues, so please make them "
+        f"as early as you can.\n"
+    )
+    return send_mail(
+        to=registration.user.email,
+        subject=f"Registration confirmed — {conf.title}",
+        body=body,
+    )
+
+
 def send_payment_email(registration: Registration, pay_url: str) -> bool:
     """Email the member a payment link for their registration.
 

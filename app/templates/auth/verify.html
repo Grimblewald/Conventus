@@ -28,7 +28,10 @@
 
     <div style="margin-top: 36px; font-family: var(--f-ui);
                 font-size: 13.5px; color: var(--c-muted-text);">
-      Didn't receive it?
+      <p style="margin: 0 0 10px;">
+        Not there? Check your spam or junk folder — and check that
+        <strong>{{ email }}</strong> is spelled correctly.
+      </p>
       <form method="post" action="{{ url_for('auth.resend') }}"
             style="display: inline;">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

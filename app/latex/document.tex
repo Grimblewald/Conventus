@@ -85,14 +85,25 @@
 
 % --- Header: title + number/date (left), logo + issuer details (right) ----
 \noindent
-\begin{minipage}[t]{0.52\linewidth}
+% The split favours the issuer block: the left column's longest line is a
+% fixed-width label plus a reference ("Adjustment Number: INV-20260806-28D4",
+% ~68mm at 11pt), so it has room to spare at 0.46, while the address on the
+% right is free text a society can make as long as its postal address needs.
+\begin{minipage}[t]{0.46\linewidth}
   \vspace{0pt}
+  % Ragged, not justified: the longest label/reference pair ("Adjustment
+  % Number:" plus a widened reference) does not fit on one line, and
+  % justification stretched the interword spaces across the whole column to
+  % hide it. \mbox keeps the reference itself in one piece — it broke at its
+  % own hyphen otherwise, which is unreadable on a document whose entire
+  % purpose is to be quoted back.
+  \raggedright
   {\LARGE\bfseries\MakeUppercase{@@doc_title@@}}\\[6pt]
-  {\bfseries\numberlabel:} @@transaction_id@@\\
+  {\bfseries\numberlabel:} \mbox{@@transaction_id@@}\\
   {\bfseries\datelabel:} @@payment_date@@%
   \ifisinvoice\ifduedate\\{\bfseries Due Date:} @@due_date@@\fi\fi
 \end{minipage}\hfill
-\begin{minipage}[t]{0.44\linewidth}
+\begin{minipage}[t]{0.50\linewidth}
   \vspace{0pt}
   \raggedleft
   \ifhaslogo\includegraphics[height=20mm,keepaspectratio]{@@logo_file@@}\\[8pt]\fi

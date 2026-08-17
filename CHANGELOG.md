@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [Unreleased]  **MIGRATION REQUIRED**
 
 ### Fixed
 - **The abstract booklet PDF could not be compiled.** It still shelled out to
@@ -12,6 +12,12 @@
   rendering), runs it without shell-escape and with the project root no longer
   its working directory, and caps its memory. `pdflatex` is gone from the
   codebase; tectonic is the one toolchain.
+
+### Added
+- **Speaker biographies.** An abstract can carry an optional biography, set
+  only by staff who can edit abstracts — speakers cannot write their own from
+  the submission form. It appears beside the presenter's portrait on the public
+  abstract page whenever it's filled in, and clearing it hides it again.
 
 ### Fixed
 - **Document rendering could take the site down.** The renderer assumed a

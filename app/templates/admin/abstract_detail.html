@@ -42,6 +42,12 @@
     <br><small class="muted">Presenting author: <strong>{{ pa[0] }}</strong>{% if pa[1] %}, {{ pa[1] }}{% endif %}</small>
   {% endif %}
 </p>
+{% if a.bio_paragraphs %}
+  <h3>Speaker biography</h3>
+  {% for paragraph in a.bio_paragraphs %}
+  <p>{{ paragraph }}</p>
+  {% endfor %}
+{% endif %}
 <h3>Body</h3>
 <div class="md">{{ a.body | md | safe }}</div>
 {% if a.references %}

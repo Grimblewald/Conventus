@@ -16,11 +16,22 @@
 
     {% set pa = a.presenting_author %}
 
-    <!-- Profile picture -->
-    {% if a.profile_picture_filename %}
-    <div style="text-align:center; margin-bottom:16px;">
+    <!-- Profile picture, with the speaker biography beside it when set -->
+    {% set bio = a.bio_paragraphs %}
+    {% if a.profile_picture_filename or bio %}
+    <div style="display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap; margin-bottom:16px;{% if not bio %} justify-content:center;{% endif %}">
+      {% if a.profile_picture_filename %}
       <img src="{{ url_for('public.abstract_upload', name=a.profile_picture_filename) }}" alt="{{ pa[0] }}"
-           style="width:120px; height:120px; border-radius:50%; object-fit:cover;">
+           style="width:120px; height:120px; border-radius:50%; object-fit:cover; flex:0 0 auto;">
+      {% endif %}
+      {% if bio %}
+      <div style="flex:1 1 320px; min-width:0; font-size:0.95rem; line-height:1.6;">
+        <h3 style="margin-top:0; margin-bottom:8px;">About {{ pa[0] or 'the speaker' }}</h3>
+        {% for paragraph in bio %}
+        <p style="margin-bottom:12px;">{{ paragraph }}</p>
+        {% endfor %}
+      </div>
+      {% endif %}
     </div>
     {% endif %}
 

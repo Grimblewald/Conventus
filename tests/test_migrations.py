@@ -85,6 +85,7 @@ def test_fresh_database_upgrades_to_head(db_path):
     assert "booklet_header_filename" in _table_columns(db_path, "conferences")
     assert "is_contactable" in _table_columns(db_path, "committee_members")
     assert "gst_registered" in _table_columns(db_path, "financial_identity")
+    assert "speaker_bio" in _table_columns(db_path, "abstracts")
 
 
 def test_create_all_bootstrapped_database_upgrades_from_the_baseline(db_path):

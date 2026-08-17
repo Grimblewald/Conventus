@@ -776,6 +776,9 @@ def _apply_abstract_form(a: Abstract) -> list[str]:
     a.presentation_type = (request.form.get("presentation_type") or "Either").strip()
     a.keywords = (request.form.get("keywords") or "").strip()
     a.coi = (request.form.get("coi") or "").strip()
+    # Speaker bio is admin-only: it is set here and never from the member
+    # submission form, so `abs.edit` is what gates writing it.
+    a.speaker_bio = (request.form.get("speaker_bio") or "").strip()
     if not (a.title and a.authors and a.body):
         errors.append("Title, authors, and body are required.")
 

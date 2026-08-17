@@ -168,6 +168,94 @@ class TestCleanWebsite:
             Abstract.clean_website("x" * 301)
 
 
+class TestSpeakerBio:
+    """The bio is admin-only input (`abs.edit`), optional, and shows wherever
+    it is non-empty — leaving it blank is how you hide it."""
+
+    @pytest.fixture
+    def speaker_id(self, app, db, conference):
+        a = Abstract(user_id=None, conference_id=conference,
+                     title="Plenary with a bio", authors="P. Speaker|1|Uni",
+                     body="Plenary body.", status="plenary")
+        db.session.add(a)
+        db.session.commit()
+        return a.id
+
+    def test_admin_can_set_and_clear_bio(self, seeded, admin_client,
+                                         speaker_id, app):
+        bio = "Dr Speaker leads the imaging group.\n\nThey chair the panel."
+        admin_client.post(f"/admin/abstracts/{speaker_id}/edit",
+                          data=_form(title="Plenary with a bio",
+                                     status="plenary", speaker_bio=bio),
+                          follow_redirects=True)
+        with app.app_context():
+            a = Abstract.query.get(speaker_id)
+            assert a.speaker_bio == bio
+            assert len(a.bio_paragraphs) == 2
+
+        admin_client.post(f"/admin/abstracts/{speaker_id}/edit",
+                          data=_form(title="Plenary with a bio",
+                                     status="plenary", speaker_bio=""),
+                          follow_redirects=True)
+        with app.app_context():
+            assert Abstract.query.get(speaker_id).bio_paragraphs == []
+
+    def test_bio_is_optional(self, seeded, admin_client, conference, app):
+        """A form that never mentions the field still saves."""
+        resp = admin_client.post("/admin/abstracts/new",
+                                 data=_form(conference, title="No bio here"),
+                                 follow_redirects=True)
+        assert resp.status_code == 200
+        with app.app_context():
+            a = Abstract.query.filter_by(title="No bio here").first()
+            assert a is not None
+            assert a.bio_paragraphs == []
+
+    def test_bio_shows_on_public_page_only_when_set(self, seeded, client,
+                                                    speaker_id, app, db):
+        resp = client.get(f"/abstracts/{speaker_id}")
+        assert resp.status_code == 200
+        assert b"About" not in resp.data.split(b"<h2>")[0]
+
+        with app.app_context():
+            a = Abstract.query.get(speaker_id)
+            a.speaker_bio = "Runs the national imaging facility."
+            db.session.commit()
+        resp = client.get(f"/abstracts/{speaker_id}")
+        assert b"Runs the national imaging facility." in resp.data
+
+    def test_member_editing_own_abstract_cannot_touch_the_bio(
+            self, seeded, member_client, conference, app, db):
+        """The submission form has no bio field: a member posting one is
+        ignored, and editing their abstract does not wipe a staff-written bio."""
+        from app.models import Conference, User
+
+        with app.app_context():
+            u = User.query.filter_by(email="member@test.example.org").first()
+            a = Abstract(user_id=u.id, conference_id=conference,
+                         title="Member's own abstract",
+                         authors="M. Member|1|Uni", body="Member body.",
+                         status="submitted",
+                         speaker_bio="Written by the programme chair.")
+            db.session.add(a)
+            db.session.commit()
+            aid, slug = a.id, Conference.query.get(conference).slug
+
+        resp = member_client.post(
+            f"/conferences/{slug}/abstract?edit={aid}",
+            data={"title": "Member's own abstract", "authors": "M. Member|1|Uni",
+                  "body": "Body rewritten by the member.", "action": "draft",
+                  "presenting_author_index": "0",
+                  "speaker_bio": "I am extremely important."},
+            follow_redirects=True)
+        assert resp.status_code == 200
+
+        with app.app_context():
+            a = Abstract.query.get(aid)
+            assert a.body == "Body rewritten by the member."
+            assert a.speaker_bio == "Written by the programme chair."
+
+
 class TestBookletCompile:
     """The booklet compiles through the shared tectonic renderer (the same
     queue/lock the invoice documents use), not a separate pdflatex toolchain.

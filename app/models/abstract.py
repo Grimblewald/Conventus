@@ -38,6 +38,10 @@ class Abstract(db.Model):
     figure_filename = db.Column(db.String(240))
     profile_picture_filename = db.Column(db.String(240))
     website_url = db.Column(db.String(300), default="")
+    # Speaker biography — optional, set only from the admin abstract editor
+    # (`abs.edit`); the member submission form never touches it. Rendered
+    # wherever it is non-empty, so leaving it blank is how you hide it.
+    speaker_bio = db.Column(db.Text, default="")
     status = db.Column(db.String(40), default="submitted", nullable=False)
     reviewer_notes = db.Column(db.Text, default="")
     decided_by_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
@@ -102,6 +106,16 @@ class Abstract(db.Model):
         name = parts[0].strip() if parts else ""
         affil = parts[2].strip() if len(parts) > 2 else ""
         return (name, affil)
+
+    @property
+    def bio_paragraphs(self) -> list[str]:
+        """Speaker bio split into paragraphs for rendering. Empty when unset,
+        which is also the "don't show a bio" signal at every render site."""
+        raw = (self.speaker_bio or "").strip()
+        if not raw:
+            return []
+        return [p.strip() for p in raw.replace("\r\n", "\n").split("\n\n")
+                if p.strip()]
 
     @property
     def is_speaker(self) -> bool:

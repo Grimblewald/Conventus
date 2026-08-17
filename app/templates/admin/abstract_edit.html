@@ -113,6 +113,16 @@ comes from the authors field below.</p>
   </div>
 
   <div class="field">
+    <label for="speaker_bio">Speaker biography</label>
+    <textarea class="input" id="speaker_bio" name="speaker_bio" rows="6"
+              placeholder="Short biography of the presenting speaker.">{{ a.speaker_bio if a else '' }}</textarea>
+    <div class="help">Optional, and staff-only — speakers can't set this from
+      their own submission form. Shown beside the profile picture on the public
+      abstract page whenever it's filled in; clear it to hide it again. Blank
+      lines start a new paragraph.</div>
+  </div>
+
+  <div class="field">
     <label for="figure">Figure (PNG, JPG, TIFF or PDF)</label>
     <input class="input" id="figure" name="figure" type="file" accept=".png,.jpg,.jpeg,.tif,.tiff,.pdf">
     {% if a and a.figure_filename %}

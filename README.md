@@ -7,8 +7,9 @@ SQLite.  Lightweight enough to deploy on a Pi or an old phone.
 - Public pages, conferences, committee directory, announcements, contact form
 - Member accounts (OTP-only sign-in — no passwords stored, ever)
 - Per-conference registration & abstract submission + review
-- Abstract booklet compilation (LaTeX source zip with per-abstract folders,
-  header/footer/background images, portrait layout, dynamic figure sizing)
+- Abstract booklet compilation (LaTeX source zip with per-abstract folders, or
+  a PDF compiled with tectonic — header/footer/background images, portrait
+  layout, dynamic figure sizing)
 - An admin panel covering **every** customisable surface of the site:
   - **Site → Identity / Palette / Fonts / Images** (no developer required)
   - **Pages** — Markdown-bodied CMS pages with stable slugs
@@ -70,8 +71,8 @@ The recommended host is a small Linux VPS rented from **[Binary Lane][bl]** as i
    cd Conventus
    ```
 
-4. **Install tectonic** (renders invoice/receipt/adjustment-note PDFs — no
-   fallback exists if it's missing)
+4. **Install tectonic** (renders invoice/receipt/adjustment-note PDFs and the
+   abstract booklet — no fallback exists if it's missing)
 
    ```bash
    scripts/install-tectonic.sh

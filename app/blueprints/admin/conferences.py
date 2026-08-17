@@ -1389,10 +1389,11 @@ _KNOWN_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff"}
 def _convert_for_latex(src: Path, dst: Path) -> Path:
     """Ensure *src* is a LaTeX-compatible image, writing to *dst* as needed.
 
-    pdfLaTeX supports PNG, JPG, and PDF natively.  WEBP and TIFF are *not*
-    supported, so we transcode them to PNG.  If the source is already
-    compatible we just copy the bytes.  Returns the destination path
-    (may differ from *dst* if the suffix was changed).
+    The booklet compiles with tectonic (XeTeX), which — like pdfLaTeX before
+    it — reads PNG, JPG, and PDF natively.  WEBP and TIFF are *not* supported,
+    so we transcode them to PNG.  If the source is already compatible we just
+    copy the bytes.  Returns the destination path (may differ from *dst* if the
+    suffix was changed).
     """
     from PIL import Image
 
@@ -1522,32 +1523,41 @@ def conference_compile_booklet(cid):
                              download_name=f"abstracts-{c.slug}.zip")
 
 
+# The booklet is dozens of pages with images, so it gets a longer ceiling than
+# the one-page documents the shared renderer was tuned for — but it still goes
+# through the same queue and box-wide lock.
+_BOOKLET_COMPILE_TIMEOUT = 240
+_BOOKLET_WAIT_TIMEOUT = 300
+
+
 def _compile_pdf(src: Path, c: Conference, cache_file: Path):
-    import subprocess
+    """Compile the prepared booklet tree via the shared tectonic renderer."""
+    from ...services.documents import RenderError, compile_prepared_dir
+
     tex_file = src / "booklet.tex"
     try:
-        subprocess.run(
-            ["pdflatex", "-interaction=nonstopmode", "-output-directory",
-             str(src), str(tex_file)],
-            check=True, capture_output=True, timeout=120,
-        )
-        pdf = src / "booklet.pdf"
-        if pdf.exists():
-            cache_file.parent.mkdir(parents=True, exist_ok=True)
-            import shutil
-            shutil.copy2(pdf, cache_file)
-            return send_file(cache_file, as_attachment=True,
-                             download_name=f"booklet-{c.slug}.pdf")
-        flash("PDF compilation produced no output. Check the LaTeX source for errors.", "error")
-    except subprocess.CalledProcessError as e:
-        flash(f"PDF compilation failed. See error details below.", "error")
-        return ("<pre>" + e.stderr.decode("utf-8", errors="replace")[:5000] + "</pre>", 200,
-                {"Content-Type": "text/html"})
-    except FileNotFoundError:
-        flash("pdflatex is not installed on this server. Install texlive to enable PDF compilation.", "error")
-    except subprocess.TimeoutExpired:
-        flash("PDF compilation timed out (2 minute limit). The booklet may be too large.", "error")
-    return redirect(url_for("admin.conference_edit", cid=c.id))
+        pdf_bytes = compile_prepared_dir(
+            src, tex_file,
+            compile_timeout=_BOOKLET_COMPILE_TIMEOUT,
+            wait_timeout=_BOOKLET_WAIT_TIMEOUT)
+    except RenderError as e:
+        # A LaTeX failure carries the tectonic log — show it inline, it is what
+        # the editor needs to fix the source. Everything else (tectonic missing,
+        # queue timeout) has no log worth a page of its own.
+        if e.log:
+            # Escaped: the log quotes the .tex, which carries author-supplied
+            # abstract text.
+            from markupsafe import escape
+            flash("PDF compilation failed. See error details below.", "error")
+            return ("<pre>" + str(escape(e.log[:5000])) + "</pre>", 200,
+                    {"Content-Type": "text/html"})
+        flash(f"PDF compilation failed: {e}", "error")
+        return redirect(url_for("admin.conference_edit", cid=c.id))
+
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    cache_file.write_bytes(pdf_bytes)
+    return send_file(cache_file, as_attachment=True,
+                     download_name=f"booklet-{c.slug}.pdf")
 
 
 # ---------------------------------------------------------------------------

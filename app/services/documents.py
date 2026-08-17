@@ -471,7 +471,7 @@ def _box_compile_lock():
 
 def _compile(tectonic: str, job_dir: Path, tex_path: Path,
              source_date_epoch: int, memory_mb: int = 0,
-             should_abort=None) -> bytes:
+             should_abort=None, timeout: int = 0) -> bytes:
     """The ONE compile step: run tectonic on a prepared job dir and return the
     PDF bytes (or raise RenderError). Pure — no DB, no app context, no escaping;
     everything it needs is passed in, so it is safe to run on a worker thread.
@@ -480,7 +480,12 @@ def _compile(tectonic: str, job_dir: Path, tex_path: Path,
     `should_abort` is an optional predicate checked once the box-wide lock is
     held: a caller that timed out while this job waited behind the lock has
     stopped reading the result, so there is no point spending the single
-    machine-wide compile slot on it."""
+    machine-wide compile slot on it.
+
+    `timeout` overrides `_COMPILE_TIMEOUT` for jobs that are legitimately
+    slower than a one-page document (the abstract booklet, which is dozens of
+    pages plus images)."""
+    limit = timeout or _COMPILE_TIMEOUT
     # Network stays ON (a cold cache must still fetch packages).
     env = dict(os.environ, SOURCE_DATE_EPOCH=str(source_date_epoch))
     lock_fd = _box_compile_lock()
@@ -489,13 +494,13 @@ def _compile(tectonic: str, job_dir: Path, tex_path: Path,
             raise RenderError("compile abandoned before start (caller timed out)")
         proc = subprocess.run(
             [tectonic, "--outdir", str(job_dir), str(tex_path)],
-            capture_output=True, timeout=_COMPILE_TIMEOUT,
+            capture_output=True, timeout=limit,
             env=env, cwd=str(job_dir),
             preexec_fn=_memory_limiter(memory_mb),
         )
     except subprocess.TimeoutExpired as e:
         raise RenderError(
-            f"tectonic timed out after {_COMPILE_TIMEOUT}s",
+            f"tectonic timed out after {limit}s",
             log=_trim_log((e.stdout or b"") + (e.stderr or b"")))
     finally:
         try:
@@ -508,7 +513,9 @@ def _compile(tectonic: str, job_dir: Path, tex_path: Path,
             f"tectonic exited {proc.returncode}",
             log=_trim_log(proc.stdout + proc.stderr))
 
-    pdf = job_dir / "document.pdf"
+    # tectonic names the output after the input stem, so this follows the
+    # caller's .tex rather than assuming the document skeleton's name.
+    pdf = job_dir / (tex_path.stem + ".pdf")
     if not pdf.exists():
         raise RenderError("tectonic produced no PDF",
                           log=_trim_log(proc.stdout + proc.stderr))
@@ -522,15 +529,16 @@ class _CompileJob:
     not-yet-started job to skip the (now pointless) compile."""
 
     __slots__ = ("tectonic", "job_dir", "tex_path", "epoch", "memory_mb",
-                 "done", "pdf", "error", "abandoned")
+                 "timeout", "done", "pdf", "error", "abandoned")
 
     def __init__(self, tectonic: str, job_dir: Path, tex_path: Path,
-                 epoch: int, memory_mb: int = 0) -> None:
+                 epoch: int, memory_mb: int = 0, timeout: int = 0) -> None:
         self.tectonic = tectonic
         self.job_dir = job_dir
         self.tex_path = tex_path
         self.epoch = epoch
         self.memory_mb = memory_mb
+        self.timeout = timeout
         self.done = threading.Event()
         self.pdf: bytes | None = None
         self.error: RenderError | None = None
@@ -540,7 +548,8 @@ class _CompileJob:
         try:
             self.pdf = _compile(self.tectonic, self.job_dir, self.tex_path,
                                 self.epoch, self.memory_mb,
-                                should_abort=lambda: self.abandoned)
+                                should_abort=lambda: self.abandoned,
+                                timeout=self.timeout)
         except RenderError as e:
             self.error = e
         except Exception as e:                # never let a worker die on a job
@@ -610,21 +619,48 @@ def compile_backlog() -> int:
     return _compile_queue.qsize() + _running_jobs
 
 
-def _submit_and_wait(job: _CompileJob) -> bytes:
+def _submit_and_wait(job: _CompileJob, wait_timeout: int | None = None) -> bytes:
     """Enqueue a prepared job, block for its result up to the configured total
     wall-clock bound, and return the PDF bytes. On expiry the job is abandoned
     (skipped if still queued, its result discarded if mid-flight) and a
-    RenderError is raised — the queue is left consistent."""
+    RenderError is raised — the queue is left consistent.
+
+    `wait_timeout` overrides the configured bound for jobs whose own compile is
+    allowed to run longer than a document's (see `_compile`'s `timeout`)."""
+    limit = wait_timeout or _wait_timeout()
     _ensure_workers()
     _compile_queue.put(job)
-    if not job.done.wait(timeout=_wait_timeout()):
+    if not job.done.wait(timeout=limit):
         job.abandoned = True
         raise RenderError(
-            f"compile did not finish within {_wait_timeout()}s "
+            f"compile did not finish within {limit}s "
             f"(queue backlog too deep or tectonic stalled)")
     if job.error is not None:
         raise job.error
     return job.pdf if job.pdf is not None else b""
+
+
+def compile_prepared_dir(job_dir: Path, tex_path: Path, *,
+                         source_date_epoch: int = SOURCE_DATE_EPOCH,
+                         compile_timeout: int = 0,
+                         wait_timeout: int | None = None) -> bytes:
+    """Compile an ALREADY-PREPARED job directory and return the PDF bytes.
+
+    The public entry point for callers that build their own .tex tree rather
+    than the document skeleton — currently the abstract booklet, whose LaTeX is
+    generated per conference and `\\input`s one fragment per abstract. They get
+    the same tectonic binary discovery, the same capped queue, the same box-wide
+    lock and memory cap as `render_document`, so a booklet compile can't
+    outrun the invoice renderer on a small VPS. Raises RenderError on failure.
+
+    Must be called with an app context (config drives the memory cap); the
+    compile itself then runs on a worker thread without one.
+    """
+    tectonic = _resolve_tectonic()
+    return _submit_and_wait(
+        _CompileJob(tectonic, job_dir, tex_path, source_date_epoch,
+                    _compile_memory_mb(), compile_timeout),
+        wait_timeout=wait_timeout)
 
 
 def render_document(kind: str, vars_: dict[str, str],

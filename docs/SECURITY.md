@@ -58,6 +58,12 @@ in-repo LaTeX skeleton** (`app/latex/document.tex`) by tectonic.
 | Compile concurrency         | A process-wide queue caps concurrent tectonic processes (`DOC_COMPILE_WORKERS`, default 1) so bursts (bulk receipts, simultaneous previews) can't exhaust CPU/RAM on a small VPS |
 | No fallback                 | tectonic is a hard dependency, by design — there is no "degrade to plain email" path if it's missing or broken. `scripts/install-tectonic.sh` installs and pre-warms it; the admin Financial dashboard surfaces a loud warning if it's ever unavailable |
 
+The **abstract booklet** PDF is compiled by the same tectonic invocation, queue
+and box-wide lock (`documents.py::compile_prepared_dir`), so a large booklet
+can't starve the document renderer. Its LaTeX is generated per conference from
+abstract content, which is escaped the same way before it reaches the source —
+authors and admins never write raw `.tex` there either.
+
 ## Backups
 
 * Regular backups (admin download, `scripts/backup.py`, and the scheduled

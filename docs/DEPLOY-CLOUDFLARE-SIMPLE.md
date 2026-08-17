@@ -33,9 +33,9 @@ sudo apt install jq
 # curl, openssl — should already be present; install if not
 sudo apt install curl openssl
 
-# tectonic — LaTeX engine for invoice/receipt/adjustment-note PDFs. No
-# fallback exists if it's missing, so install it now even if you won't send
-# documents on day one.
+# tectonic — LaTeX engine for invoice/receipt/adjustment-note PDFs and the
+# abstract booklet. No fallback exists if it's missing, so install it now even
+# if you won't send documents on day one.
 scripts/install-tectonic.sh
 ```
 

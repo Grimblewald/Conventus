@@ -15,10 +15,11 @@ and the manual steps if you prefer to work without the script.
 * **cloudflared** (for the Cloudflare Tunnel path) — install from
   [Cloudflare's download page](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)
 * **tectonic** — the LaTeX engine that renders invoice/receipt/adjustment-note
-  PDFs. Run `scripts/install-tectonic.sh` (installs to `~/.local/bin`,
-  pre-warms the package cache). There is no fallback for a missing tectonic —
-  PDF documents simply won't render until it's installed — so do this before
-  going live even if you're not using the document system on day one.
+  PDFs and the abstract booklet. Run `scripts/install-tectonic.sh` (installs to
+  `~/.local/bin`, pre-warms the package cache). There is no fallback for a
+  missing tectonic — those PDFs simply won't render until it's installed — so
+  do this before going live even if you're not using the document system on day
+  one.
 * A way to receive email — SMTP credentials, or `MAIL_BACKEND=console` for
   local testing (OTPs print to the terminal)
 * **Optional:** Postgres if you expect bursty load; Redis if you run

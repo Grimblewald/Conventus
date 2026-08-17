@@ -166,3 +166,51 @@ class TestCleanWebsite:
             Abstract.clean_website("not a url")
         with pytest.raises(ValueError):
             Abstract.clean_website("x" * 301)
+
+
+class TestBookletCompile:
+    """The booklet compiles through the shared tectonic renderer (the same
+    queue/lock the invoice documents use), not a separate pdflatex toolchain.
+    Compiles for real, like tests/test_documents.py."""
+
+    @pytest.fixture
+    def booklet_conference(self, app, db):
+        from datetime import date
+        c = Conference.query.filter_by(slug="booklet-conf").first()
+        if not c:
+            c = Conference(slug="booklet-conf", title="Booklet Conference",
+                           start_date=date(2027, 3, 1), end_date=date(2027, 3, 3))
+            db.session.add(c)
+            db.session.commit()
+        if not Abstract.query.filter_by(conference_id=c.id).first():
+            db.session.add(Abstract(
+                user_id=None, conference_id=c.id, status="plenary",
+                title="Imaging at scale", authors="P. Speaker|1|Uni",
+                body="First paragraph.\n\nSecond paragraph with 50% & $signs."))
+            db.session.commit()
+        return c.id
+
+    def test_pdf_compiles(self, seeded, admin_client, booklet_conference):
+        resp = admin_client.post(
+            f"/admin/conferences/{booklet_conference}/compile-booklet",
+            data={"booklet_action": "pdf"})
+        assert resp.status_code == 200, resp.data[:500]
+        assert resp.data[:4] == b"%PDF"
+
+    def test_missing_tectonic_is_reported_not_crashed(self, seeded, admin_client,
+                                                      booklet_conference, app):
+        import shutil
+        from pathlib import Path
+        # A previous compile leaves a cached PDF that would be served without
+        # ever reaching tectonic.
+        shutil.rmtree(Path(app.config["UPLOAD_FOLDER"]) / "abstracts"
+                      / ".booklet-cache", ignore_errors=True)
+        app.config["TECTONIC_BIN"] = "/nonexistent/tectonic-xyz"
+        try:
+            resp = admin_client.post(
+                f"/admin/conferences/{booklet_conference}/compile-booklet",
+                data={"booklet_action": "pdf"}, follow_redirects=True)
+        finally:
+            app.config.pop("TECTONIC_BIN", None)
+        assert resp.status_code == 200
+        assert b"tectonic not found" in resp.data

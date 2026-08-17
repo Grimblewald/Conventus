@@ -1,6 +1,17 @@
 # Changelog
 
-## [0.3.1] - 2026-07-22
+## [Unreleased]
+
+### Fixed
+- **The abstract booklet PDF could not be compiled.** It still shelled out to
+  `pdflatex`, which no deploy installs — the site moved to tectonic for its
+  documents and the booklet was left behind, so the button only ever reported
+  "pdflatex is not installed on this server". The booklet now compiles through
+  the same renderer as invoices and receipts, which also puts it behind the
+  shared compile queue and box-wide lock (a long booklet can't starve invoice
+  rendering), runs it without shell-escape and with the project root no longer
+  its working directory, and caps its memory. `pdflatex` is gone from the
+  codebase; tectonic is the one toolchain.
 
 ### Fixed
 - **Document rendering could take the site down.** The renderer assumed a

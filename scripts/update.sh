@@ -193,12 +193,13 @@ uv run flask db upgrade
 ok "Migrations applied."
 
 # 3b. tectonic presence check — the PDF document system (invoices, receipts,
-# adjustment notes) has no plain-format fallback, so a missing tectonic must be
-# loud. Never auto-installs, never fails the update.
+# adjustment notes) and the abstract booklet have no plain-format fallback, so a
+# missing tectonic must be loud. Never auto-installs, never fails the update.
 if ! command -v tectonic >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/tectonic" ]; then
     echo ""
     warn "tectonic not found. PDF documents (invoices/receipts/adjustment"
-    echo "  notes) cannot be generated until it's installed. Run:"
+    echo "  notes) and the abstract booklet PDF cannot be generated until it's"
+    echo "  installed. Run:"
     echo "    scripts/install-tectonic.sh"
     echo ""
 fi

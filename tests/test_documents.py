@@ -477,7 +477,8 @@ def test_concurrency_cap_serialises(app, monkeypatch):
     intervals = []
     lock = threading.Lock()
 
-    def slow_compile(tectonic, job_dir, tex_path, epoch, memory_mb=0, should_abort=None):
+    def slow_compile(tectonic, job_dir, tex_path, epoch, memory_mb=0, should_abort=None,
+                     timeout=0):
         start = time.monotonic()
         time.sleep(0.15)
         end = time.monotonic()
@@ -505,7 +506,8 @@ def test_backlog_reports_position(app, monkeypatch):
     app.config["DOC_COMPILE_WORKERS"] = 1
     gate = threading.Event()
 
-    def gated_compile(tectonic, job_dir, tex_path, epoch, memory_mb=0, should_abort=None):
+    def gated_compile(tectonic, job_dir, tex_path, epoch, memory_mb=0, should_abort=None,
+                      timeout=0):
         gate.wait(5)
         return b"%PDF-fake"
 
@@ -530,7 +532,8 @@ def test_queue_survives_a_raising_job(app, monkeypatch):
     app.config["DOC_COMPILE_WORKERS"] = 1
     state = {"boom": True}
 
-    def flaky_compile(tectonic, job_dir, tex_path, epoch, memory_mb=0, should_abort=None):
+    def flaky_compile(tectonic, job_dir, tex_path, epoch, memory_mb=0, should_abort=None,
+                      timeout=0):
         if state["boom"]:
             state["boom"] = False
             raise ValueError("kaboom")
@@ -784,7 +787,8 @@ def test_concurrent_renders_never_overlap_across_threads(ctx):
     guard = threading.Lock()
     real = docs._compile
 
-    def _watched(tectonic, job_dir, tex_path, epoch, memory_mb=0, should_abort=None):
+    def _watched(tectonic, job_dir, tex_path, epoch, memory_mb=0, should_abort=None,
+                 timeout=0):
         with guard:
             active.append(1)
             peak.append(len(active))

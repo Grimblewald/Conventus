@@ -44,8 +44,12 @@ def reconcile_payments() -> dict:
         return {"checked": 0, "changes": [], "errors": [],
                 "error": "No enabled payment gateway."}
 
+    # `failed` is included because a first attempt that failed says nothing
+    # about a second that succeeded — and if that second webhook was the one
+    # missed, this sweep is the only thing that would ever notice.
     candidates = (Registration.query
-                  .filter(Registration.status.in_(("pending", "processing")),
+                  .filter(Registration.status.in_(("pending", "processing",
+                                                   "failed")),
                           Registration.deleted_at.is_(None))
                   .all())
 

@@ -167,7 +167,23 @@
         </div>
       {% endif %}
 
+      {% if payment_locked %}
+      {# Held while a checkout is open: changing the fee mid-payment would
+         settle a price that no longer exists. The POST refuses it too — this
+         is only so nobody fills the form in before finding that out. #}
+      <button class="btn btn-primary" type="submit" disabled
+              title="A payment for this registration is in progress. Changes unlock once the payment goes through, or by {{ payment_lock_until.strftime('%H:%M') }} UTC if it isn't completed.">
+        {{ 'Update registration' if existing else 'Register' }}
+      </button>
+      <p class="muted" style="margin-top:8px;">
+        A payment for this registration is in progress, so it can't be changed
+        at the moment. Changes unlock as soon as the payment goes through — or
+        by {{ payment_lock_until.strftime('%H:%M') }} UTC if you didn't
+        complete it.
+      </p>
+      {% else %}
       <button class="btn btn-primary" type="submit">{{ 'Update registration' if existing else 'Register' }}</button>
+      {% endif %}
     </form>
     {% endif %}
   </div>

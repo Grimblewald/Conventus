@@ -54,45 +54,47 @@ class Registration(db.Model):
     conference = db.relationship("Conference")
 
     def ensure_pay_token(self) -> str:
-        """This registration's pay token, minting one on first use.
+        """This registration's pay token, minting one if it somehow has none.
 
-        Lazy so existing registrations need no backfill — the same reason
-        `reference` is derived. 32 bytes of urlsafe randomness: the link is the
-        only thing standing in for a login, so it has to be unguessable and
-        unenumerable in a way a sequential id never was.
+        32 bytes of urlsafe randomness: the link is the only thing standing in
+        for a login, so it has to be unguessable and unenumerable in a way a
+        sequential id never was.
+
+        Tokens are minted where the registration is saved, and backfilled by
+        migration for older rows, so in practice this only ever reads. The
+        mint stays as a fallback because a registration created by some future
+        path with no token would otherwise 500 on a link it needs to serve.
         """
         if not self.pay_token:
-            import secrets
-
+            self.mint_pay_token()
             from ..extensions import db as _db
-            self.pay_token = secrets.token_urlsafe(32)
             _db.session.commit()
         return self.pay_token
 
-    def ensure_charge_baseline(self) -> int:
-        """Total charged to this registration, seeding it if nothing is there.
+    def mint_pay_token(self) -> str:
+        """Give this registration a pay token if it lacks one. Caller commits."""
+        if not self.pay_token:
+            import secrets
+            self.pay_token = secrets.token_urlsafe(32)
+        return self.pay_token
 
-        Registrations created before charge lines existed carry their fee only
-        in `amount`. Minted lazily, like the reference and the pay token, so
-        nothing needs backfilling — but it must happen before anything reads
-        the balance, or an old registration would look fully paid at zero.
+    def charged_total(self) -> int:
+        """Total charged to this registration, read from its charge lines.
+
+        A pure read. This used to seed a missing baseline on the spot, which
+        made it a write — and `amount_due` calls it, so merely loading the pay
+        page appended a financial record and committed whatever else the
+        session was holding. Baselines are now seeded where the money actually
+        changes: at registration save, and once by migration for the rows that
+        predate charge lines.
         """
-        from .payment_event import CHARGE_EVENTS, PaymentEvent, record_payment_event
+        from .payment_event import CHARGE_EVENTS, PaymentEvent
 
         charged = (PaymentEvent.query
                    .filter(PaymentEvent.registration_id == self.id,
                            PaymentEvent.event_type.in_(CHARGE_EVENTS))
                    .with_entities(PaymentEvent.amount).all())
-        if charged:
-            return sum((a or 0) for (a,) in charged)
-        if self.amount:
-            record_payment_event(
-                registration_id=self.id,
-                merchant_reference=self.reference,
-                event_type="registration.payment_due",
-                amount=self.amount,
-                note=f"{self.reference}: opening balance for {self.tier_name}")
-        return self.amount or 0
+        return sum((a or 0) for (a,) in charged)
 
     @property
     def amount_due(self) -> int:
@@ -102,7 +104,6 @@ class Registration(db.Model):
         all read, so an upgrade after a part payment asks for the difference
         rather than the whole fee twice.
         """
-        self.ensure_charge_baseline()
         return max(0, self.amount_outstanding or 0)
 
     def charge_to(self, new_amount: int, *, reason: str) -> int:
@@ -113,13 +114,14 @@ class Registration(db.Model):
         are all the same operation and all remain auditable. Returns the delta
         recorded (0 when nothing changed, so callers can stay quiet).
 
-        Registrations that predate charge lines get a baseline first, from the
-        amount they were already carrying — without it their ledger would show
-        only the correction and the balance would come out short.
+        A registration with no charge lines yet reads as nothing charged, so
+        the first call books the full amount — which is exactly right on the
+        way in, and why the rows that predate charge lines are backfilled by
+        migration rather than lazily on read.
         """
         from .payment_event import record_payment_event
 
-        already = self.ensure_charge_baseline()
+        already = self.charged_total()
         delta = int(new_amount) - already
         if delta:
             record_payment_event(

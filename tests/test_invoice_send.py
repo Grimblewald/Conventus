@@ -962,12 +962,17 @@ class TestOutstandingLedger:
             assert reg.amount_outstanding == -4000
             assert reg.amount_due == 0
 
-    def test_a_registration_predating_charge_lines_gets_an_opening_balance(
-            self, seeded, app):
-        """Existing rows are not backfilled, so the balance has to seed itself
-        before anything reads it — otherwise an old registration bills zero."""
+    def test_reading_the_balance_never_writes(self, seeded, app):
+        """`amount_due` is a pure read.
+
+        It used to seed a missing opening balance on the spot, which meant
+        merely loading the pay page appended to the ledger and committed
+        whatever else the session held. Seeding now happens where money is
+        actually decided — registration save, and once by migration for rows
+        that predate charge lines.
+        """
         import secrets
-        from app.models import Conference, Registration, User
+        from app.models import Conference, PaymentEvent, Registration, User
         tag = secrets.token_hex(4)
         with app.app_context():
             u = User(email=f"old-{tag}@example.org", role_name="member")
@@ -983,7 +988,13 @@ class TestOutstandingLedger:
             db.session.add(reg)
             db.session.commit()
             rid = reg.id
-            assert reg.amount_outstanding == 0     # nothing on the ledger yet
 
+            before = PaymentEvent.query.filter_by(registration_id=rid).count()
+            for _ in range(3):
+                assert Registration.query.get(rid).amount_due == 0
+                assert Registration.query.get(rid).charged_total() == 0
+            assert PaymentEvent.query.filter_by(registration_id=rid).count() == before
+
+            # Booking the charge is what makes it owed.
+            Registration.query.get(rid).charge_to(11000, reason="Standard")
             assert Registration.query.get(rid).amount_due == 11000
-            assert Registration.query.get(rid).amount_outstanding == 11000

@@ -178,6 +178,13 @@ def registration_status(reg_id):
         # Nothing overwrites this: reconcile_payments() only ever considers
         # registrations still `pending` or `processing`, so a manually settled
         # one is not a candidate and survives every subsequent run.
+        #
+        # The amount is the balance, not the sticker price. Crediting
+        # `reg.amount` would settle the whole fee again on a registration that
+        # was already part paid — and would credit it afresh every time the
+        # status was toggled back to paid, which a correction routinely does.
+        # Against the balance, the second toggle credits nothing, because
+        # nothing is owed.
         from ...models import record_payment_event
         from ...services.invoice import _reg_merchant_reference
         record_payment_event(
@@ -185,7 +192,7 @@ def registration_status(reg_id):
             merchant_reference=_reg_merchant_reference(reg),
             registration_id=reg.id,
             event_type=f"manual.{new_status}",
-            amount=reg.amount,
+            amount=reg.amount_due,
             note=(f"{reg.reference}: {old_status} → {new_status}, "
                   f"set by {current_user.email}"),
         )

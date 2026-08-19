@@ -150,3 +150,79 @@ def test_no_migration_guards_ddl_inside_a_batch_context(tmp_path):
         "error — the operations are emitted when the block exits. Use an "
         "sa.inspect() existence check before opening the batch. Offenders: "
         + ", ".join(offenders))
+
+
+def test_charge_baseline_backfill_over_a_populated_database(db_path):
+    """The b8e4a1c7d035 data migration, against rows that predate charge lines.
+
+    `amount_due` no longer seeds a missing opening balance when something reads
+    it, so a registration carrying its fee only in `amount` would bill zero
+    until this backfill runs. It has to work on a database with real rows in
+    it, which the empty-database migration tests never exercise.
+    """
+    import sqlite3
+
+    # Seed through the ORM so the fixture tracks the models rather than a
+    # hand-written column list that drifts.
+    seed = _run([sys.executable, "-c", """
+from datetime import date
+from app import create_app
+from app.extensions import db
+from app.models import Conference, PaymentEvent, Registration, User
+app = create_app()
+with app.app_context():
+    db.create_all()
+    u = User(email='old@example.org', role_name='member')
+    db.session.add(u)
+    c = Conference(slug='c', title='C', start_date=date(2026, 9, 1),
+                   end_date=date(2026, 9, 3))
+    db.session.add(c)
+    db.session.flush()
+    # One owing, one already settled by a card payment whose capture reached
+    # the ledger but whose charge line never did.
+    for amount, status in ((40000, 'pending'), (40000, 'paid')):
+        db.session.add(Registration(user_id=u.id, conference_id=c.id,
+                                    tier_name='Standard', amount=amount,
+                                    status=status, amount_outstanding=0))
+    db.session.flush()
+    paid = Registration.query.filter_by(status='paid').one()
+    db.session.add(PaymentEvent(transaction_id='PAY-1',
+                                merchant_reference=f'reg_{paid.id}',
+                                registration_id=paid.id,
+                                event_type='payment.captured', amount=40000))
+    db.session.commit()
+"""], db_path)
+    assert seed.returncode == 0, f"stdout={seed.stdout}\nstderr={seed.stderr}"
+
+    assert _flask_db(db_path, "stamp", BASELINE).returncode == 0
+    up = _flask_db(db_path, "upgrade")
+    assert up.returncode == 0, f"stdout={up.stdout}\nstderr={up.stderr}"
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        # Asserted as invariants, not literals: an earlier migration in the
+        # chain restates stored amounts in minor units, so the numbers these
+        # rows end up carrying are not the ones seeded.
+        rows = {r[0]: r for r in conn.execute(
+            "SELECT status, amount, amount_outstanding FROM registrations")}
+        captured = conn.execute(
+            "SELECT amount FROM payment_events "
+            "WHERE event_type = 'payment.captured'").fetchone()[0]
+        # The unpaid one now owes its fee, where before the backfill it owed
+        # nothing and would have billed zero.
+        assert rows["pending"][2] == rows["pending"][1]
+        # The paid one is credited by what actually arrived, not billed afresh.
+        assert rows["paid"][2] == rows["paid"][1] - captured
+        charges = conn.execute(
+            "SELECT COUNT(*) FROM payment_events "
+            "WHERE event_type = 'registration.payment_due'").fetchone()[0]
+        assert charges == 2
+        missing_tokens = conn.execute(
+            "SELECT COUNT(*) FROM registrations "
+            "WHERE pay_token IS NULL OR pay_token = ''").fetchone()[0]
+        assert missing_tokens == 0
+        assert "rate_buckets" in {
+            r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'")}
+    finally:
+        conn.close()

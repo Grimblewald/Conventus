@@ -660,7 +660,6 @@ def _invoice_amount(evts) -> int:
 
 
 @public_bp.route("/pay/invoice/<reference>")
-@limiter.limit("10 per hour;3 per minute")
 def pay_invoice(reference):
     """Durable invoice pay link (§8): mint a fresh hosted checkout for the
     invoice and redirect to Worldline. Rejects unknown/paid/refunded references
@@ -668,6 +667,9 @@ def pay_invoice(reference):
     from ...models import record_payment_event
     from ...services.payments import _active_gateway
 
+    spent = _link_budget("invoicelink.mint", reference, _LINK_MINT_LIMIT)
+    if spent is not None:
+        return spent
     evts = _invoice_events(reference)
     if evts is None or _invoice_pay_state(evts) in ("paid", "refunded"):
         return render_template("public/pay_invoice_message.html",
@@ -713,13 +715,22 @@ def pay_invoice(reference):
 @public_bp.route("/pay/invoice/<reference>/result")
 def pay_invoice_result(reference):
     """Return-from-checkout page for a durable invoice payment (§8): reflects
-    the ledger state like the member pay_result pattern."""
+    the ledger state like the member pay_result pattern.
+
+    Rate limited like its sibling, and answering unknown references with the
+    same page the pay route uses: an invoice reference carries only four hex
+    characters of entropy, so an endpoint that says "no such invoice" quickly
+    and distinctly is an index of the invoice book.
+    """
+    spent = _link_budget("invoicelink.view", reference, _LINK_VIEW_LIMIT)
+    if spent is not None:
+        return spent
     evts = _invoice_events(reference)
     if evts is None:
-        return render_template("public/pay_invoice_message.html",
-                               heading="Payment link not available",
-                               message="This payment link is not available.",
-                               reference=""), 200
+        return _pay_link_unavailable(
+            "Payment link not available",
+            "This payment link is not valid or is no longer available. If you "
+            "believe this is an error, please contact us.")
     return render_template("public/pay_invoice_result.html",
                            reference=reference, state=_invoice_pay_state(evts),
                            amount=_invoice_amount(evts))
@@ -755,6 +766,28 @@ def dev_reload():
 # is never exposed. Rate-limited and answered with the same generic page as the
 # invoice link, so an unknown token reveals nothing an attacker could iterate.
 # ---------------------------------------------------------------------------
+
+# A pay link is used by one or two people. These budgets are generous for a
+# finance office retrying a card and still bound how much noise one link can
+# make — minting checkouts is the expensive half, so it is the tighter of the
+# two. Keyed on the link, never the IP: see app/models/rate_limit.py.
+_LINK_VIEW_LIMIT = 20
+_LINK_MINT_LIMIT = 5
+_LINK_WINDOW = 3600
+
+
+def _link_budget(scope: str, resource: str, limit: int):
+    """None when the link may proceed, or the page to answer with instead."""
+    from ...models.rate_limit import allow
+
+    if allow(scope, resource, limit=limit, per_seconds=_LINK_WINDOW):
+        return None
+    return _pay_link_unavailable(
+        "Too many attempts",
+        "This payment link has been opened too many times in the last hour. "
+        "Please wait a little and try again, or contact us to arrange "
+        "payment.")
+
 
 def _registration_for_token(token: str):
     """The live registration a pay token belongs to, or None."""
@@ -800,9 +833,11 @@ def _settled_message(reg):
 
 
 @public_bp.route("/pay/registration/<token>")
-@limiter.limit("10 per hour;3 per minute")
 def pay_registration(token):
     """Durable registration pay link — the page, not the gateway."""
+    spent = _link_budget("paylink.view", token, _LINK_VIEW_LIMIT)
+    if spent is not None:
+        return spent
     reg = _registration_for_token(token)
     if reg is None:
         return _pay_link_unavailable(
@@ -825,7 +860,6 @@ def pay_registration(token):
 
 
 @public_bp.route("/pay/registration/<token>/checkout", methods=["POST"])
-@limiter.limit("10 per hour;3 per minute")
 def pay_registration_checkout(token):
     """Mint the hosted checkout for a durable registration link.
 
@@ -834,6 +868,9 @@ def pay_registration_checkout(token):
     """
     from ...services.payments import initiate_payment, payments_open_to_members
 
+    spent = _link_budget("paylink.mint", token, _LINK_MINT_LIMIT)
+    if spent is not None:
+        return spent
     reg = _registration_for_token(token)
     if reg is None:
         return _pay_link_unavailable(
@@ -863,6 +900,9 @@ def pay_registration_checkout(token):
 @public_bp.route("/pay/registration/<token>/result")
 def pay_registration_result(token):
     """Return-from-checkout page for a durable registration link."""
+    spent = _link_budget("paylink.view", token, _LINK_VIEW_LIMIT)
+    if spent is not None:
+        return spent
     reg = _registration_for_token(token)
     if reg is None:
         return _pay_link_unavailable(

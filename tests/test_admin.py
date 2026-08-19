@@ -789,6 +789,11 @@ class TestRegistrationLookup:
                              tier_name="Standard", amount=11000, status=status)
             db.session.add(r)
             db.session.commit()
+            # Book the charge the way saving a registration does. Balances come
+            # from the ledger, so a registration with no charge line owes
+            # nothing — which is the state the backfill migration exists to
+            # clear for rows created before charge lines.
+            r.charge_to(11000, reason="Standard")
             return r.id, u.email
 
     def test_reference_is_derived_and_bank_safe(self, app):

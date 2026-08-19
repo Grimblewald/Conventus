@@ -22,6 +22,7 @@ from .sponsor import Sponsor, SponsorTier
 from .announcement import Announcement
 from .registration import Registration
 from .payment_event import PaymentEvent, record_payment_event
+from .rate_limit import RateBucket
 from .issued_document import IssuedDocument
 from .abstract import Abstract, SPEAKER_STATUSES, SPEAKER_STATUS_ORDER, ALL_STATUSES
 from .organising_committee import OrganisingCommitteeMember
@@ -47,6 +48,7 @@ __all__ = [
     "Announcement",
     "Registration",
     "PaymentEvent", "record_payment_event",
+    "RateBucket",
     "IssuedDocument",
     "Abstract", "SPEAKER_STATUSES", "SPEAKER_STATUS_ORDER", "ALL_STATUSES",
     "OrganisingCommitteeMember",

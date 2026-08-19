@@ -79,13 +79,48 @@ def event_delta(event_type: str, amount: int | None) -> int:
     return 0
 
 
-def outstanding_for(registration_id: int) -> int:
-    """The amount still owed on a registration, from the ledger alone."""
+def _money_rows(registration_id: int):
+    """This registration's ledger rows, with each gateway operation counted
+    once (see `deduplicated`)."""
     rows = (PaymentEvent.query
             .filter(PaymentEvent.registration_id == registration_id)
-            .with_entities(PaymentEvent.event_type, PaymentEvent.amount)
+            .order_by(PaymentEvent.id.asc())
+            .with_entities(PaymentEvent.event_type, PaymentEvent.amount,
+                           PaymentEvent.transaction_id)
             .all())
-    return sum(event_delta(t, a) for t, a in rows)
+    return deduplicated(rows)
+
+
+def deduplicated(rows):
+    """Drop repeat deliveries of one gateway operation, keeping the first.
+
+    One payment can reach the ledger more than once: webhooks retry until they
+    are acknowledged, and a single payment may emit both `payment.paid` and
+    `payment.captured`. Every arrival is recorded — the ledger is append-only
+    and being able to see the redelivery is the point — but only the first may
+    move the balance, or a member who paid once is credited twice.
+
+    Keyed on the gateway's transaction id and the direction of the movement,
+    not the event name, because the two verbs above describe one capture under
+    one id. Rows without a transaction id (charge lines, manual settlements)
+    are deliberate local acts, never redeliveries, so they always count.
+    """
+    seen: set[tuple[str, int]] = set()
+    kept = []
+    for event_type, amount, txn in rows:
+        delta = event_delta(event_type, amount)
+        if txn and delta:
+            key = (txn, 1 if delta > 0 else -1)
+            if key in seen:
+                continue
+            seen.add(key)
+        kept.append((event_type, amount))
+    return kept
+
+
+def outstanding_for(registration_id: int) -> int:
+    """The amount still owed on a registration, from the ledger alone."""
+    return sum(event_delta(t, a) for t, a in _money_rows(registration_id))
 
 
 def amount_received(registration_id: int) -> int:
@@ -97,11 +132,8 @@ def amount_received(registration_id: int) -> int:
     registration, and treating either as settlement is how a registration with
     an abandoned attempt in its past kept a paid status it had not earned.
     """
-    rows = (PaymentEvent.query
-            .filter(PaymentEvent.registration_id == registration_id)
-            .with_entities(PaymentEvent.event_type, PaymentEvent.amount)
-            .all())
-    return -sum(event_delta(t, a) for t, a in rows if t not in CHARGE_EVENTS)
+    return -sum(event_delta(t, a) for t, a in _money_rows(registration_id)
+                if t not in CHARGE_EVENTS)
 
 
 def recompute_outstanding(registration_id: int) -> int | None:

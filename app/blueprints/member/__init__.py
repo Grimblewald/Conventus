@@ -116,6 +116,56 @@ def _settled_by_payment(reg) -> bool:
     return amount_received(reg.id) > 0
 
 
+# A hosted checkout is good for this long; Worldline expires the session
+# afterwards. The edit lock is held for the same window, so an abandoned
+# payment releases it rather than freezing the registration forever.
+CHECKOUT_LOCK_MINUTES = 120
+
+
+def payment_in_flight(reg):
+    """The unsettled checkout blocking edits, or None.
+
+    A checkout is minted against the amount owed at that moment. If the tier
+    changes while the payer is on the gateway's page, the capture that comes
+    back settles a price that no longer exists — and by then the money has
+    moved and we have no refund API. Rather than reconcile that afterwards,
+    the edit is refused while a payment is in the air.
+
+    Only the last two hours count: the session expires, and a member who
+    closed the tab must not be locked out of their own registration.
+    """
+    from datetime import timedelta
+
+    from ...models import PaymentEvent
+
+    if reg is None or reg.id is None:
+        return None
+    cutoff = datetime.utcnow() - timedelta(minutes=CHECKOUT_LOCK_MINUTES)
+    started = (PaymentEvent.query
+               .filter(PaymentEvent.registration_id == reg.id,
+                       PaymentEvent.event_type == "checkout.created",
+                       PaymentEvent.created_at >= cutoff)
+               .order_by(PaymentEvent.id.desc())
+               .first())
+    if started is None:
+        return None
+    # Anything terminal for that same attempt releases the lock early.
+    settled = (PaymentEvent.query
+               .filter(PaymentEvent.registration_id == reg.id,
+                       PaymentEvent.merchant_reference == started.merchant_reference,
+                       PaymentEvent.event_type != "checkout.created",
+                       PaymentEvent.id > started.id)
+               .first())
+    return None if settled else started
+
+
+def checkout_lock_expires_at(started):
+    """When the edit lock held by *started* lifts."""
+    from datetime import timedelta
+
+    return started.created_at + timedelta(minutes=CHECKOUT_LOCK_MINUTES)
+
+
 @member_bp.route("/conferences/<slug>/register", methods=["GET", "POST"])
 @login_required
 def register_conf(slug):
@@ -140,6 +190,20 @@ def register_conf(slug):
     sub_events = list(c.sub_events)
 
     if request.method == "POST":
+        # First, before any of the form is looked at: a registration with a
+        # payment in the air must not change, and that cannot depend on the
+        # rest of the submission being valid. Server-side because the disabled
+        # button is only the polite half — the form may have been rendered in
+        # another tab before the payment was started.
+        in_flight = payment_in_flight(existing)
+        if in_flight is not None:
+            flash("A payment for this registration is in progress, so it "
+                  "can't be changed right now. If you didn't complete the "
+                  "payment, you can edit again after "
+                  f"{checkout_lock_expires_at(in_flight):%H:%M} UTC, "
+                  "or as soon as the payment goes through.", "error")
+            return redirect(url_for("member.dashboard"))
+
         tier_name = (request.form.get("tier") or "").strip()
         tier = next((t for t in tiers if t.name == tier_name), None)
         if not tier:
@@ -198,6 +262,8 @@ def register_conf(slug):
             reg.status = "pending"
         if not existing:
             db.session.add(reg)
+            db.session.flush()          # need the id before the token is stored
+        reg.mint_pay_token()
         db.session.commit()
         audit.record("registration.saved",
                      target_kind="registration", target_id=reg.id,
@@ -254,9 +320,15 @@ def register_conf(slug):
                 flash("Registration updated.", "success")
         return redirect(url_for("member.dashboard"))
 
+    # The lock is enforced on POST regardless; passing it to the GET is what
+    # lets the page say so up front instead of failing on submit.
+    in_flight = payment_in_flight(existing)
     return render_template("member/register_conference.html",
                            c=c, tiers=tiers, existing=existing,
-                           schema=schema, sub_events=sub_events)
+                           schema=schema, sub_events=sub_events,
+                           payment_locked=in_flight is not None,
+                           payment_lock_until=(checkout_lock_expires_at(in_flight)
+                                               if in_flight else None))
 
 
 # ---------------------------------------------------------------------------
@@ -723,8 +795,11 @@ def pay_checkout(reg_id):
     reg = Registration.query.get_or_404(reg_id)
     if reg.user_id != current_user.id:
         abort(403)
-    if reg.status == "paid":
-        flash("This registration is already paid.", "success")
+    # The same states the public token route refuses. Checking only "paid"
+    # here left a refunded registration payable through a direct POST, taking
+    # money against nothing owed.
+    if reg.status in ("paid", "refunded"):
+        flash(f"This registration is already {reg.status}.", "success")
         return redirect(url_for("member.dashboard"))
     if reg.status == "processing":
         flash("Your payment is being processed.", "success")

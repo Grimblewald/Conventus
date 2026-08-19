@@ -3,6 +3,40 @@
 ## [Unreleased]  **MIGRATION REQUIRED**
 
 ### Fixed
+- **A payment could be credited twice.** One capture can reach the ledger more
+  than once — webhooks retry until they are acknowledged, and a single payment
+  may arrive as both `payment.paid` and `payment.captured`. Every arrival
+  credited the balance again, leaving a registration in credit for money that
+  was never received, which a later tier upgrade would then be billed against.
+  Deliveries are still all recorded; only the first moves the balance. Marking
+  a registration paid by hand now settles what is outstanding rather than the
+  full fee, so correcting a status back and forth no longer stacks credits
+  either.
+- **A registration could be changed while its payment was in the air.** A
+  checkout is created for the amount owed at that moment, so a tier changed
+  while the payer was on the gateway's page settled a price that no longer
+  existed — with the money already taken. Registrations are locked for editing
+  while a checkout is open, releasing when the payment lands or the session
+  expires. The form says so; the server enforces it, since the page may have
+  been open in another tab.
+- **Loading a page wrote to the financial ledger.** Reading what a registration
+  owed seeded a missing opening balance as a side effect, so merely opening the
+  pay page appended a record and committed whatever else was pending. Balances
+  are seeded where money is decided; a migration backfills the rows that
+  predate charge lines.
+- **Payment links are throttled per link rather than per IP.** Behind a proxy
+  every visitor shares one address, so the old limit was a single bucket for
+  the whole site: ten requests to a nonexistent link locked every genuine payer
+  out for an hour. Each link now carries its own budget.
+- **A refunded registration could still be paid** through a direct request to
+  the member checkout route, which checked only for "paid".
+- **Reconciliation now reaches failed registrations**, so a payment that
+  succeeded after an earlier failure is recovered when its webhook was missed.
+- **Invoice amounts reject unusable input** — negatives and exponent notation
+  parsed happily, and a negative price booked a charge that read as credit.
+- **The invoice result page no longer indexes the invoice book** — it is rate
+  limited like its sibling, and answers unknown references with the same page
+  as unpayable ones.
 - **The abstract booklet PDF could not be compiled.** It still shelled out to
   `pdflatex`, which no deploy installs — the site moved to tectonic for its
   documents and the booklet was left behind, so the button only ever reported

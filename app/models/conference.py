@@ -58,6 +58,11 @@ class Conference(db.Model):
     review_deadline = db.Column(db.Date, nullable=True)
 
     is_accepting_abstracts = db.Column(db.Boolean, default=True, nullable=False)
+    # Email the submitter a receipt, with a PDF of their abstract attached.
+    # On by default: the submission page has always told authors their
+    # abstract was received, and until now nothing confirmed it in writing.
+    abstract_receipt_email = db.Column(db.Boolean, default=True,
+                                       nullable=False, server_default="1")
     is_accepting_registrations = db.Column(db.Boolean, default=True, nullable=False)
     abstracts_reopen_date = db.Column(db.Date)
     registrations_reopen_date = db.Column(db.Date)

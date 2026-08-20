@@ -7,6 +7,9 @@
     {% if current_user.has_permission('abs.edit') %}
     <a class="btn btn-ghost btn-sm" href="{{ url_for('admin.abstract_edit', aid=a.id) }}">Edit abstract</a>
     {% endif %}
+    {# Outside the edit gate: reviewers hold abs.review and the route allows
+       either, so hiding it here would hide it from the people reading. #}
+    <a class="btn btn-quiet btn-sm" href="{{ url_for('admin.abstract_pdf', aid=a.id) }}">Download PDF</a>
     <a class="link" href="{{ url_for('admin.abstracts') }}">← back</a>
   </div>
 </div>

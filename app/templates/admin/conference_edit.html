@@ -90,6 +90,15 @@
                  value="{{ c.abstracts_reopen_date.isoformat() if c.abstracts_reopen_date else '' }}" style="max-width:240px;">
           <div class="help">Optional. When this date passes, abstracts reopen automatically.</div>
         </div>
+        <label class="check-label" style="margin-top:10px;">
+          <input type="checkbox" name="abstract_receipt_email"
+                 {% if c.abstract_receipt_email %}checked{% endif %}>
+          Email a receipt on submission
+        </label>
+        <div class="help">Confirms the submission to the author and attaches a
+          PDF of their abstract as the booklet will print it, so they can check
+          the formatting while there is still time to change it. This is a
+          receipt only — it says nothing about the review outcome.</div>
       </fieldset>
       <fieldset class="toggle-fieldset">
         <legend>Registrations</legend>

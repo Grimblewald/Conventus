@@ -48,6 +48,32 @@
   codebase; tectonic is the one toolchain.
 
 ### Added
+- **Abstract PDFs.** Any abstract can be downloaded as a PDF laid out exactly
+  as the booklet will print it — from the admin abstract page, and from a
+  presenter's own dashboard. It reuses the booklet's fragment builder rather
+  than a second renderer, so a preview cannot drift from the real thing.
+- **Submission receipts.** Submitting an abstract now sends the author a
+  confirmation with that PDF attached, so formatting can be checked while
+  there is still time to change it. Per-conference toggle, on by default; the
+  email states plainly that it is a receipt and not a decision. A failed
+  render never costs the email, only the attachment. Drafts send nothing.
+
+### Fixed
+- **Abstracts containing `_`, `%`, `$`, `~` or `^` broke the booklet.** Titles,
+  author names and affiliations were escaped for `&`, `#` and `_` only, and
+  the body for everything except `_` — so `TiO_2` in a body, or `50%` in a
+  title, failed the compile and took the entire conference booklet with it.
+  All of it now goes through the one escaping table.
+
+### Known
+- The booklet and abstract PDFs set in Latin Modern Roman, not the Helvetica
+  the preamble asks for: tectonic runs XeTeX, which accepts `helvet` and
+  silently ignores it. `\usepackage[T1]{fontenc}` restores Helvetica but
+  triggers a system-wide font scan that is irreproducible and too
+  memory-hungry for the capped compile child, so it is deliberately not
+  applied. Output is correct, only the typeface differs from the pdflatex era.
+
+### Added
 - **External links in the navigation and footer.** The target picker offered
   built-in pages and custom pages only, so a link to anywhere off-site could
   not be created from the admin at all — the `url:` scheme the renderer

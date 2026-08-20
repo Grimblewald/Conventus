@@ -5,12 +5,13 @@ from __future__ import annotations
 
 import re
 import secrets
+from io import BytesIO
 from pathlib import Path
 from datetime import datetime, timedelta
 
 from flask import (
     Blueprint, abort, current_app, flash, redirect, render_template,
-    request, send_from_directory, url_for,
+    request, send_file, send_from_directory, url_for,
 )
 from flask_login import current_user, login_required
 
@@ -554,8 +555,24 @@ def submit_abstract(slug):
         audit.record("abstract.submitted" if not is_draft else "abstract.draft",
                      target_kind="abstract", target_id=a.id,
                      summary=f"{current_user.email} → {c.slug}: {title}")
-        flash("Abstract submitted. You'll be notified after review." if not is_draft
-              else "Draft saved.", "success")
+
+        # A receipt, not a decision — and only on an actual submission, so
+        # saving a draft five times does not send five emails.
+        receipted = False
+        if not is_draft and c.abstract_receipt_email:
+            from ...services.abstract_latex import send_abstract_receipt
+            receipted = send_abstract_receipt(
+                a, uploads_root=Path(current_app.config["UPLOAD_FOLDER"]))
+
+        if is_draft:
+            flash("Draft saved.", "success")
+        elif receipted:
+            flash("Abstract submitted — a confirmation with a PDF copy is on "
+                  "its way to your inbox. You'll be notified again after "
+                  "review.", "success")
+        else:
+            flash("Abstract submitted. You'll be notified after review.",
+                  "success")
         return redirect(url_for("member.dashboard"))
 
     # GET — pre-fill form for editing
@@ -704,6 +721,34 @@ def abstract_figure(aid):
     folder = Path(current_app.config["UPLOAD_FOLDER"]) / "abstracts"
     name = a.figure_filename.split("/", 1)[-1]
     return send_from_directory(folder, name)
+
+
+@member_bp.route("/abstracts/<int:aid>/pdf")
+@login_required
+def abstract_pdf(aid):
+    """The author's own abstract, as the booklet will print it.
+
+    Same access rule as the figure download: the author, or anyone who
+    reviews abstracts.
+    """
+    from ...services.abstract_latex import (abstract_pdf_filename,
+                                            render_abstract_pdf)
+    from ...services.documents import RenderError
+
+    a = Abstract.query.get_or_404(aid)
+    if a.user_id != current_user.id and not current_user.has_permission("abs.review"):
+        abort(403)
+    try:
+        pdf = render_abstract_pdf(
+            a, uploads_root=Path(current_app.config["UPLOAD_FOLDER"]))
+    except RenderError as e:
+        current_app.logger.warning("Abstract PDF failed for %s: %s", aid, e)
+        flash("That abstract could not be rendered just now. Please try "
+              "again shortly, or contact us if it keeps happening.", "error")
+        return redirect(url_for("member.dashboard"))
+    return send_file(BytesIO(pdf), mimetype="application/pdf",
+                     as_attachment=True,
+                     download_name=abstract_pdf_filename(a))
 
 
 # ---------------------------------------------------------------------------

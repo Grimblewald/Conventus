@@ -24,6 +24,8 @@ from ...services.slugs import slugify
 from ...services.uploads import (
     UploadError, save_image, save_pdf, save_figure, remove_upload,
 )
+from ...services.abstract_latex import (abstract_fragment, booklet_preamble,
+                                        convert_for_latex)
 from ...services.citations import fetch_metadata, format_reference_compact, normalize_doi
 
 
@@ -162,6 +164,7 @@ def conference_save(cid):
             _unfeature_others(c.id)
         c.is_draft = bool(request.form.get("is_draft"))
         c.is_accepting_abstracts = bool(request.form.get("is_accepting_abstracts"))
+        c.abstract_receipt_email = bool(request.form.get("abstract_receipt_email"))
         c.is_accepting_registrations = bool(request.form.get("is_accepting_registrations"))
         c.external_registration_url = (request.form.get("external_registration_url") or "").strip() or None
         c.external_abstract_url = (request.form.get("external_abstract_url") or "").strip() or None
@@ -918,6 +921,35 @@ def abstract_new():
                            statuses=ALL_STATUSES, is_new=True)
 
 
+@admin_bp.route("/abstracts/<int:aid>/pdf")
+@requires_permission("abs.review", "abs.edit")
+def abstract_pdf(aid):
+    """One abstract as the booklet will print it.
+
+    The single-abstract counterpart to the booklet compile — the quickest way
+    to check that a submission's formatting survives the render without
+    building the whole booklet to find out.
+    """
+    from io import BytesIO
+
+    from ...services.abstract_latex import (abstract_pdf_filename,
+                                            render_abstract_pdf)
+    from ...services.documents import RenderError
+
+    a = Abstract.query.get_or_404(aid)
+    try:
+        pdf = render_abstract_pdf(
+            a, uploads_root=Path(current_app.config["UPLOAD_FOLDER"]))
+    except RenderError as e:
+        flash("PDF rendering failed. See details below.", "error")
+        from markupsafe import escape
+        return ("<pre>" + str(escape((e.log or str(e))[:5000])) + "</pre>", 200,
+                {"Content-Type": "text/html"})
+    return send_file(BytesIO(pdf), mimetype="application/pdf",
+                     as_attachment=True,
+                     download_name=abstract_pdf_filename(a))
+
+
 @admin_bp.route("/abstracts/<int:aid>/edit", methods=["GET", "POST"])
 @requires_permission("abs.edit")
 def abstract_edit(aid):
@@ -1386,38 +1418,6 @@ def _unfeature_others(exclude_id: int | None = None) -> None:
 # Compile abstract booklet (LaTeX source zip)
 # ---------------------------------------------------------------------------
 
-_KNOWN_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff"}
-
-
-def _convert_for_latex(src: Path, dst: Path) -> Path:
-    """Ensure *src* is a LaTeX-compatible image, writing to *dst* as needed.
-
-    The booklet compiles with tectonic (XeTeX), which — like pdfLaTeX before
-    it — reads PNG, JPG, and PDF natively.  WEBP and TIFF are *not* supported,
-    so we transcode them to PNG.  If the source is already compatible we just
-    copy the bytes.  Returns the destination path (may differ from *dst* if the
-    suffix was changed).
-    """
-    from PIL import Image
-
-    ext = src.suffix.lower()
-    if ext in {".png", ".jpg", ".jpeg"}:
-        dst.write_bytes(src.read_bytes())
-        return dst
-    if ext == ".pdf":
-        dst.write_bytes(src.read_bytes())
-        return dst
-    try:
-        img = Image.open(src)
-        img = img.convert("RGB")
-        png_dst = dst.with_suffix(".png")
-        img.save(png_dst, "PNG", optimize=True)
-        return png_dst
-    except Exception:
-        dst.write_bytes(src.read_bytes())
-        return dst
-
-
 @admin_bp.route("/conferences/<int:cid>/compile-booklet", methods=["POST"])
 @requires_permission("abs.compile_booklet")
 def conference_compile_booklet(cid):
@@ -1481,7 +1481,7 @@ def conference_compile_booklet(cid):
             if not img_src.exists():
                 return None
             dst = src / f"{label}{img_src.suffix}"
-            result = _convert_for_latex(img_src, dst)
+            result = convert_for_latex(img_src, dst)
             return result.name
 
         header_rel = _copy_booklet_image("booklet_header_filename", "header")
@@ -1494,7 +1494,7 @@ def conference_compile_booklet(cid):
             sub = src / f"abstract_{label}"
             sub.mkdir(parents=True, exist_ok=True)
 
-            frag = _abstract_fragment(label, a, has_header=header_rel is not None,
+            frag = abstract_fragment(label, a, has_header=header_rel is not None,
                                       has_background=bg_rel is not None)
             (sub / f"abstract_{label}.tex").write_text(frag, encoding="utf-8")
             inputs.append(f"\\input{{abstract_{label}/abstract_{label}.tex}}")
@@ -1503,15 +1503,15 @@ def conference_compile_booklet(cid):
                 bare = a.figure_filename.split("/", 1)[-1]
                 fig_src = uploads_root / "abstracts" / bare
                 if fig_src.exists():
-                    _convert_for_latex(fig_src, sub / f"figure{fig_src.suffix}")
+                    convert_for_latex(fig_src, sub / f"figure{fig_src.suffix}")
 
             if a.profile_picture_filename:
                 bare = a.profile_picture_filename.split("/", 1)[-1]
                 pic_src = uploads_root / "abstracts" / bare
                 if pic_src.exists():
-                    _convert_for_latex(pic_src, sub / f"profile{pic_src.suffix}")
+                    convert_for_latex(pic_src, sub / f"profile{pic_src.suffix}")
 
-        preamble = _booklet_preamble(c, inputs, header_rel, footer_rel, bg_rel)
+        preamble = booklet_preamble(c, inputs, header_rel, footer_rel, bg_rel)
         (src / "booklet.tex").write_text(preamble, encoding="utf-8")
 
         if action == "pdf":
@@ -1561,257 +1561,3 @@ def _compile_pdf(src: Path, c: Conference, cache_file: Path):
     cache_file.write_bytes(pdf_bytes)
     return send_file(cache_file, as_attachment=True,
                      download_name=f"booklet-{c.slug}.pdf")
-
-
-# ---------------------------------------------------------------------------
-# LaTeX template helpers
-# ---------------------------------------------------------------------------
-
-# The LaTeX text-mode escape lives with the document renderer now (single home
-# for the escaping table); the booklet export reuses it via this import.
-from ...services.documents import latex_escape as _latex_escape
-
-
-def _booklet_preamble(conference, inputs: list[str],
-                      header_rel: str | None,
-                      footer_rel: str | None,
-                      bg_rel: str | None) -> str:
-    title_esc = conference.title.replace("&", "\\&").replace("#", "\\#")
-    date_esc = conference.date_range
-
-    pkgs = [
-        "\\documentclass[11pt,a4paper]{article}",
-        "\\usepackage[margin=25.4mm,headheight=14pt,footskip=18pt]{geometry}",
-        "\\usepackage{helvet}",
-        "\\renewcommand{\\familydefault}{\\sfdefault}",
-        "\\usepackage{setspace}",
-        "\\setstretch{1.15}",
-        "\\usepackage{graphicx}",
-        "\\usepackage{hyperref}",
-        "\\usepackage{parskip}",
-        "\\usepackage{fancyhdr}",
-    ]
-    if bg_rel:
-        pkgs.append("\\usepackage[pages=all]{background}")
-
-    pkgs.append("")
-    pkgs.append("\\pagestyle{fancy}")
-    pkgs.append("\\fancyhf{}")
-    pkgs.append("\\renewcommand{\\headrulewidth}{0.4pt}")
-
-    if header_rel:
-        pkgs.append(
-            "\\fancyhead[L]{\\includegraphics[height=1.3cm,keepaspectratio]"
-            f"{{{header_rel}}}}}"
-        )
-    else:
-        pkgs.append(f"\\fancyhead[L]{{\\small\\itshape {title_esc}}}")
-    pkgs.append("\\fancyhead[R]{\\small\\thepage}")
-
-    if footer_rel:
-        pkgs.append(
-            "\\fancyfoot[R]{\\includegraphics[height=0.9cm,keepaspectratio]"
-            f"{{{footer_rel}}}}}"
-        )
-    else:
-        pkgs.append("\\fancyfoot[C]{}")
-
-    if bg_rel:
-        pkgs.append("\\backgroundsetup{")
-        pkgs.append(f"  contents={{\\includegraphics[width=\\paperwidth,height=\\paperheight]{{{bg_rel}}}}},")
-        pkgs.append("  opacity=0.06,")
-        pkgs.append("  scale=1,")
-        pkgs.append("}")
-
-    pkgs.append("")
-    pkgs.append(f"\\title{{{title_esc}}}")
-    pkgs.append("\\author{Abstract Booklet}")
-    pkgs.append(f"\\date{{{date_esc}}}")
-    pkgs.append("")
-    pkgs.append("\\begin{document}")
-    pkgs.append("\\thispagestyle{empty}")
-    if bg_rel:
-        pkgs.append("\\NoBgThispage")
-    pkgs.append("\\maketitle")
-    pkgs.append("\\tableofcontents")
-    pkgs.append("\\newpage")
-    pkgs.append("")
-    pkgs.extend(inputs)
-    pkgs.append("")
-    pkgs.append("\\end{document}")
-
-    return "\n".join(pkgs)
-
-
-def _abstract_fragment(label: str, abstract,
-                       has_header: bool = False,
-                       has_background: bool = False) -> str:
-    """Return LaTeX fragment matching the abstract preview page layout.
-
-    Centred title (bold), centred authors with superscript affiliations
-    and presenting author underlined, centred italic affiliations,
-    career-stage / presentation-preference meta, justified body,
-    figure filling remaining space, and numbered DOI references.
-    """
-    folder = f"abstract_{label}"
-    title = abstract.title.replace("&", "\\&").replace("#", "\\#").replace("_", "\\_")
-
-    body = abstract.body
-    _BSL = "\x00BSL\x00"
-    body = body.replace("\\", _BSL)
-    body = body.replace("&", "\\&").replace("#", "\\#")
-    body = body.replace("$", "\\$").replace("%", "\\%")
-    body = body.replace("{", "\\{").replace("}", "\\}")
-    body = body.replace("~", "\\textasciitilde{}").replace("^", "\\^{}")
-    body = body.replace(_BSL, "\\textbackslash{}")
-    body = body.replace("\r\n", "\n")
-    body = body.replace("\n\n", "\n\n\\medskip\n\n")
-
-    def _out_ext(filename: str | None) -> str:
-        if not filename:
-            return ""
-        ext = Path(filename).suffix.lower()
-        if ext in _KNOWN_IMAGE_EXTS:
-            return ".png" if ext in {".webp", ".tif", ".tiff"} else ext
-        return ext
-
-    presenting_idx = abstract.presenting_author_index or 0
-    author_line, affil_line = _parse_authors(abstract.authors, presenting_idx)
-
-    lines: list[str] = []
-
-    # Build TOC text: title + first author et al.
-    toc_text = title
-    first_author = ""
-    if abstract.authors:
-        first_line = abstract.authors.strip().split("\n")[0]
-        first_name = first_line.split("|")[0].strip()
-        if first_name:
-            first_author = first_name.replace("&", "\\&").replace("#", "\\#").replace("_", "\\_")
-    if first_author:
-        total = len([ln for ln in abstract.authors.strip().split("\n") if ln.strip()])
-        if total > 1:
-            toc_text = f"{title} --- {first_author} \\textit{{et al.}}"
-        else:
-            toc_text = f"{title} --- {first_author}"
-    lines.append(f"\\addcontentsline{{toc}}{{section}}{{{toc_text}}}")
-
-    if has_background:
-        lines.append("\\BgThispage")
-
-    lines.append("\\begin{center}")
-    lines.append(f"  {{\\LARGE\\bfseries {title}\\par}}")
-    lines.append("\\end{center}")
-
-    if author_line:
-        lines.append("\\begin{center}")
-        lines.append(f"  {{\\large {author_line}\\par}}")
-        lines.append("\\end{center}")
-
-    if affil_line:
-        lines.append("\\begin{center}")
-        lines.append(f"  {{\\large\\itshape {affil_line}\\par}}")
-        lines.append("\\end{center}")
-
-    cd = abstract.custom_data or {}
-    career = (cd.get("career-stage") or "").strip()
-    pres = (cd.get("presentation-preference") or "").strip()
-    meta_bits: list[str] = []
-    if career:
-        meta_bits.append(career)
-    if pres:
-        meta_bits.append(pres)
-    if meta_bits:
-        lines.append("\\begin{center}")
-        lines.append(f"  {{\\small\\textit{{{'  \\textperiodcentered{}  '.join(meta_bits)}}}\\par}}")
-        lines.append("\\end{center}")
-
-    lines.append("")
-    lines.append(body)
-
-    # References (compact, before figure, small font)
-    refs = abstract.references or []
-    if refs:
-        lines.append("")
-        lines.append("\\textbf{\\small References}")
-        lines.append("\\begin{enumerate}")
-        lines.append("\\small")
-        for ref in refs:
-            meta = fetch_metadata(ref["doi"])
-            if meta:
-                cite = _latex_escape(format_reference_compact(meta))
-            else:
-                cite = ref["doi"].replace("_", "\\_")
-            doi_esc = ref["doi"].replace("_", "\\_")
-            lines.append(f"  \\item \\href{{https://doi.org/{doi_esc}}}{{{cite}}}")
-        lines.append("\\end{enumerate}")
-
-    if abstract.figure_filename:
-        out = _out_ext(abstract.figure_filename)
-        lines.append("")
-        lines.append("\\vspace*{\\fill}")
-        lines.append("\\begin{center}")
-        lines.append(
-            "\\includegraphics[\n"
-            "    width=\\textwidth,\n"
-            "    height=\\dimexpr\\textheight-\\pagetotal-4ex\\relax,\n"
-            "    keepaspectratio\n"
-            f"  ]{{{folder}/figure{out}}}"
-        )
-        lines.append("\\end{center}")
-
-    lines.append("")
-    lines.append("\\newpage")
-    return "\n".join(lines)
-
-
-def _parse_authors(raw: str, presenting_idx: int = 0) -> tuple[str, str]:
-    """Parse pipe-delimited author rows into LaTeX-formatted lines.
-
-    Returns ``(author_line, affil_line)``.  Author names carry
-    ``\\textsuperscript{…}`` affiliation markers.  The presenting author
-    (by index) is wrapped in ``\\underline{…}``.
-    """
-    if not raw or not raw.strip():
-        return ("", "")
-
-    authors: list[tuple[str, str, str]] = []
-    affil_map: dict[str, str] = {}
-    seen_affils: set[str] = set()
-
-    for line in raw.strip().split("\n"):
-        line = line.strip()
-        if not line:
-            continue
-        parts = line.split("|")
-        name = parts[0].strip() if len(parts) > 0 else ""
-        idx = parts[1].strip() if len(parts) > 1 else ""
-        affil = parts[2].strip() if len(parts) > 2 else ""
-        if name:
-            authors.append((name, idx, affil))
-            if idx and affil and affil not in seen_affils:
-                seen_affils.add(affil)
-                affil_map[idx] = affil
-
-    if not authors:
-        return ("", "")
-
-    author_names: list[str] = []
-    for i, (name, idx, _affil) in enumerate(authors):
-        name_esc = name.replace("&", "\\&").replace("#", "\\#").replace("_", "\\_")
-        if idx:
-            tag = f"{name_esc}\\textsuperscript{{{idx}}}"
-        else:
-            tag = name_esc
-        if i == presenting_idx:
-            tag = f"\\underline{{{tag}}}"
-        author_names.append(tag)
-    author_line = ", ".join(author_names)
-
-    affil_parts: list[str] = []
-    for idx in sorted(affil_map.keys(), key=int):
-        affil_esc = affil_map[idx].replace("&", "\\&").replace("#", "\\#").replace("_", "\\_")
-        affil_parts.append(f"\\textsuperscript{{{idx}}}{affil_esc}")
-    affil_line = "\\quad ".join(affil_parts)
-
-    return (author_line, affil_line)

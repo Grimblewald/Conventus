@@ -1,0 +1,25 @@
+{#
+  The one link-target control, shared by the navigation and footer editors.
+
+  A link points at a built-in page, a custom page, or somewhere off-site, and
+  those used to be two different stories: the dropdown covered the first two
+  and an external URL could only arrive by editing the database. The dropdown
+  now carries an "External link" option that reveals a URL box beside it, and
+  `targets.build_target` reads the pair back on the server.
+
+  `name` is the select's field name; the URL box is always `<name>_url`, which
+  is the contract the routes rely on.
+#}
+{% macro target_picker(name, current, choices) %}
+  {% set choice, url_value = current | split_target %}
+  <div class="target-picker" data-target-picker>
+    <select class="select" name="{{ name }}" data-target-select>
+      {% for value, label in choices %}
+        <option value="{{ value }}" {% if choice == value %}selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <input class="input" type="text" name="{{ name }}_url" value="{{ url_value }}"
+           placeholder="https://example.org or mailto:someone@example.org"
+           data-target-url {% if choice != external_choice %}hidden{% endif %}>
+  </div>
+{% endmacro %}

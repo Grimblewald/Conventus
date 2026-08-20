@@ -48,6 +48,20 @@
   codebase; tectonic is the one toolchain.
 
 ### Added
+- **External links in the navigation and footer.** The target picker offered
+  built-in pages and custom pages only, so a link to anywhere off-site could
+  not be created from the admin at all — the `url:` scheme the renderer
+  already understood had no way in. Both editors now share one control: pick
+  "External link" and a URL box appears. Bare domains are read as https,
+  `mailto:` works, and anything that is not http, https or mailto is refused
+  with a reason rather than written as a dead link.
+- **Removing footer columns and links.** The footer editor had no delete
+  control of any kind; a column, once added, was permanent. Both are now
+  removable from the editor, and deleting a column takes its links with it.
+  Navigation's per-row Delete button worked on the first row whatever you
+  clicked — the id travelled in the form, which posts one per row — so it now
+  travels in the URL instead.
+
 - **Speaker biographies.** An abstract can carry an optional biography, set
   only by staff who can edit abstracts — speakers cannot write their own from
   the submission form. It appears beside the presenter's portrait on the public

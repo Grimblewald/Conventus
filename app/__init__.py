@@ -359,6 +359,13 @@ def _register_template_globals(app: Flask) -> None:
     app.add_template_filter(target_url, "target_url")
     app.add_template_filter(format_amount, "format_amount")
 
+    # The link-target picker's two halves: `split_target` turns a stored
+    # target into (dropdown value, URL box value), and the sentinel tells the
+    # template which dropdown value means "external".
+    from .services.targets import EXTERNAL_CHOICE, split_target
+    app.add_template_filter(split_target, "split_target")
+    app.jinja_env.globals["external_choice"] = EXTERNAL_CHOICE
+
     from .services.payments import payments_open_to_members
     app.add_template_global(payments_open_to_members, "payments_open_to_members")
 

@@ -1,4 +1,5 @@
 {% extends "admin/_base.html" %}
+{% from "admin/_target_picker.html" import target_picker %}
 {% block title %}Footer · Admin{% endblock %}
 {% block admin %}
 <div class="section-head"><div><div class="eyebrow">Content</div><h2>Footer</h2></div></div>
@@ -21,29 +22,37 @@
 
       <div style="overflow-x:auto;">
       <table class="table">
-        <thead><tr><th>Order</th><th>Label</th><th>Target</th><th>New tab</th></tr></thead>
+        <thead><tr><th>Order</th><th>Label</th><th>Target</th><th>New tab</th><th></th></tr></thead>
         <tbody>
           {% for ln in col.links %}
             <tr>
               <td><input class="input" name="link_order_{{ ln.id }}" value="{{ ln.display_order }}" style="width:64px;"></td>
               <td><input class="input" name="link_label_{{ ln.id }}" value="{{ ln.label }}"></td>
-              <td>
-                <select class="select" name="link_target_{{ ln.id }}">
-                  {% for v, lbl in target_choices %}
-                    <option value="{{ v }}" {% if ln.target == v %}selected{% endif %}>{{ lbl }}</option>
-                  {% endfor %}
-                  {% if ln.target.startswith('url:') %}
-                    <option value="{{ ln.target }}" selected>External — {{ ln.target[4:] }}</option>
-                  {% endif %}
-                </select>
-              </td>
+              <td>{{ target_picker("link_target_" ~ ln.id, ln.target, target_choices) }}</td>
               <td><input type="checkbox" name="link_new_tab_{{ ln.id }}" {% if ln.open_in_new_tab %}checked{% endif %}></td>
+              <td>
+                {# Ids travel in the URL — this form posts every column's and
+                   every link's fields at once, so a form-encoded id could not
+                   say which one was meant. #}
+                <button class="btn btn-quiet btn-sm" type="submit" formnovalidate
+                        formaction="{{ url_for('admin.footer_link_delete', link_id=ln.id) }}">Delete</button>
+              </td>
             </tr>
+          {% else %}
+            <tr><td colspan="5" class="muted">No links in this column yet.</td></tr>
           {% endfor %}
         </tbody>
       </table>
       </div>
+
+      <button class="btn btn-quiet btn-sm" type="submit" formnovalidate
+              style="margin-top:10px;"
+              formaction="{{ url_for('admin.footer_column_delete', column_id=col.id) }}">
+        Delete column{% if col.links %} and its {{ col.links|length }} link(s){% endif %}
+      </button>
     </div>
+  {% else %}
+    <p class="muted">No footer columns yet — add one below.</p>
   {% endfor %}
   <button class="btn btn-primary" type="submit">Save footer</button>
 </form>
@@ -66,10 +75,13 @@
       </select></div>
     <div class="field"><label>Label</label><input class="input" name="label" required></div>
     <div class="field"><label>Target</label>
-      <select class="select" name="target">
-        {% for v, lbl in target_choices %}<option value="{{ v }}">{{ lbl }}</option>{% endfor %}
-      </select></div>
+      {{ target_picker("target", "home", target_choices) }}
+    </div>
     <button class="btn btn-primary btn-sm" type="submit">Add link</button>
   </form>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ static_url('js/admin/target-picker.js') }}"></script>
 {% endblock %}

@@ -7,7 +7,7 @@ from . import admin_bp
 from ...extensions import db
 from ...models import NavItem, Page
 from ...security import requires_permission, audit
-from ...services.targets import label_choices
+from ...services.targets import build_target, label_choices
 
 
 @admin_bp.route("/nav", methods=["GET", "POST"])
@@ -16,9 +16,15 @@ def nav():
     if request.method == "POST":
         action = request.form.get("action")
         if action == "add":
+            try:
+                target = build_target(request.form.get("target"),
+                                      request.form.get("target_url"))
+            except ValueError as e:
+                flash(str(e), "error")
+                return redirect(url_for("admin.nav"))
             n = NavItem(
                 label=(request.form.get("label") or "").strip() or "Item",
-                target=(request.form.get("target") or "home").strip(),
+                target=target,
                 display_order=(NavItem.query.count() + 1) * 10,
                 open_in_new_tab=bool(request.form.get("open_in_new_tab")),
             )
@@ -28,6 +34,7 @@ def nav():
                          summary=f"Added nav item “{n.label}”")
             flash("Nav item added.", "success")
         elif action == "save":
+            errors: list[str] = []
             ids = request.form.getlist("id")
             for raw in ids:
                 try:
@@ -37,7 +44,15 @@ def nav():
                 if not item:
                     continue
                 item.label = (request.form.get(f"label_{raw}") or item.label).strip()
-                item.target = (request.form.get(f"target_{raw}") or item.target).strip()
+                try:
+                    item.target = build_target(
+                        request.form.get(f"target_{raw}"),
+                        request.form.get(f"target_url_{raw}"),
+                        fallback=item.target)
+                except ValueError as e:
+                    # One bad URL must not silently drop the other edits, nor
+                    # be written as a broken link. Keep the old target, say so.
+                    errors.append(f"{item.label}: {e}")
                 item.visible = bool(request.form.get(f"visible_{raw}"))
                 item.open_in_new_tab = bool(request.form.get(f"new_tab_{raw}"))
                 try:
@@ -47,20 +62,11 @@ def nav():
             db.session.commit()
             audit.record("nav.updated", target_kind="nav_item",
                          summary="Saved navigation items")
-            flash("Navigation saved.", "success")
-        elif action == "delete":
-            try:
-                n = NavItem.query.get(int(request.form.get("id", "")))
-                if n:
-                    label = n.label
-                    db.session.delete(n)
-                    db.session.commit()
-                    audit.record("nav.deleted", target_kind="nav_item",
-                                 target_id=request.form.get("id"),
-                                 summary=f"Deleted “{label}”")
-                    flash("Removed.", "success")
-            except (TypeError, ValueError):
-                pass
+            for err in errors:
+                flash(err, "error")
+            flash("Navigation saved." if not errors
+                  else "Navigation saved, except the links noted above.",
+                  "success" if not errors else "warning")
         return redirect(url_for("admin.nav"))
 
     items = (NavItem.query
@@ -71,3 +77,16 @@ def nav():
              .order_by(Page.title).all())
     targets = label_choices(pages)
     return render_template("admin/nav.html", items=items, target_choices=targets)
+
+
+@admin_bp.route("/nav/<int:item_id>/delete", methods=["POST"])
+@requires_permission("nav.edit")
+def nav_delete(item_id: int):
+    item = NavItem.query.get_or_404(item_id)
+    label = item.label
+    db.session.delete(item)
+    db.session.commit()
+    audit.record("nav.deleted", target_kind="nav_item", target_id=item_id,
+                 summary=f"Deleted “{label}”")
+    flash(f"Removed “{label}”.", "success")
+    return redirect(url_for("admin.nav"))

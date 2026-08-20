@@ -1,4 +1,5 @@
 {% extends "admin/_base.html" %}
+{% from "admin/_target_picker.html" import target_picker %}
 {% block title %}Navigation · Admin{% endblock %}
 {% block admin %}
 <div class="section-head"><div><div class="eyebrow">Content</div><h2>Top-level navigation</h2></div></div>
@@ -14,22 +15,14 @@
         <tr>
           <td><input type="hidden" name="id" value="{{ n.id }}"><input class="input" name="order_{{ n.id }}" value="{{ n.display_order }}" style="width:64px;"></td>
           <td><input class="input" name="label_{{ n.id }}" value="{{ n.label }}"></td>
-          <td>
-            <select class="select" name="target_{{ n.id }}">
-              {% for v, lbl in target_choices %}
-                <option value="{{ v }}" {% if n.target == v %}selected{% endif %}>{{ lbl }}</option>
-              {% endfor %}
-              {% if n.target.startswith('url:') %}
-                <option value="{{ n.target }}" selected>External — {{ n.target[4:] }}</option>
-              {% endif %}
-            </select>
-          </td>
+          <td>{{ target_picker("target_" ~ n.id, n.target, target_choices) }}</td>
           <td><input type="checkbox" name="visible_{{ n.id }}" {% if n.visible %}checked{% endif %}></td>
           <td><input type="checkbox" name="new_tab_{{ n.id }}" {% if n.open_in_new_tab %}checked{% endif %}></td>
           <td>
-            <button class="btn btn-quiet btn-sm" type="submit" name="action" value="delete" formaction="{{ url_for('admin.nav') }}" formnovalidate
-              data-nav-delete>Delete</button>
-            {# Simpler: per-row delete form #}
+            {# The id travels in the URL: this form posts one `id` field per
+               row, so a form-encoded id could only ever name the first. #}
+            <button class="btn btn-quiet btn-sm" type="submit" formnovalidate
+                    formaction="{{ url_for('admin.nav_delete', item_id=n.id) }}">Delete</button>
           </td>
         </tr>
       {% endfor %}
@@ -47,9 +40,7 @@
     <div class="field"><label for="new_label">Label</label>
       <input class="input" id="new_label" name="label" required></div>
     <div class="field"><label for="new_target">Target</label>
-      <select class="select" id="new_target" name="target">
-        {% for v, lbl in target_choices %}<option value="{{ v }}">{{ lbl }}</option>{% endfor %}
-      </select>
+      {{ target_picker("target", "home", target_choices) }}
     </div>
   </div>
   <label style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
@@ -57,20 +48,8 @@
   </label>
   <button class="btn btn-primary btn-sm" type="submit">Add</button>
 </form>
-
-<h3 style="margin-top:36px;">Delete an item</h3>
-<form method="post" class="form" style="max-width:480px;">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <input type="hidden" name="action" value="delete">
-  <div class="field">
-    <select class="select" name="id">
-      {% for n in items %}<option value="{{ n.id }}">{{ n.label }} ({{ n.target }})</option>{% endfor %}
-    </select>
-  </div>
-  <button class="btn btn-quiet btn-sm" type="submit">Remove selected</button>
-</form>
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ static_url('js/admin/nav.js') }}"></script>
+<script src="{{ static_url('js/admin/target-picker.js') }}"></script>
 {% endblock %}

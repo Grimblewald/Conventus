@@ -57,12 +57,14 @@
   dimensions. Image inputs also check dimensions in the browser before the
   upload starts.
 - **The error page claimed an administrator had been notified. Nobody was.**
-  The handler rendered a template and did nothing else. Unhandled errors now
-  email the site's admins with the time, the request, the user, the traceback
-  and the surrounding server log — kept in memory, since logs go to stdout and
-  cannot be read back after the fact. Repeats of the same failure are
-  suppressed for fifteen minutes so a crash in a hot path cannot bury the
-  inbox. The page only makes the claim when the email actually went.
+  The handler rendered a template and did nothing else. Unhandled errors that
+  send a user to the error page now email the site's admins with the time, the
+  request, the user and the traceback — and nothing else, since surrounding
+  log lines are the likeliest place for an unrelated member's details to
+  appear. Repeats of the same failure are suppressed for fifteen minutes so a
+  crash in a hot path cannot bury the inbox. The page makes the claim only
+  when the email actually went, and the report is sent only from the handler
+  that makes it.
 
 ### Fixed
 - **Previewing an abstract left it unsubmitted, with no way forward.** Preview

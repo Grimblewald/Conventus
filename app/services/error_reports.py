@@ -3,63 +3,31 @@
 The 500 page has always said "the site administrator has been notified". That
 was untrue: the handler rendered a template and nothing else, so every crash a
 member hit was invisible unless someone happened to be reading the process
-output. This module makes the sentence true.
+output. This module makes the sentence true — and is called from exactly one
+place, the 500 handler, so the promise is made only where it is kept.
 
-Server logs go to stdout under gunicorn, so there is no file to reach back
-into after the fact. Instead a ring buffer keeps the most recent records in
-memory, and a report carries the slice around the failure — which is what
-somebody reading the email actually needs, along with the traceback and enough
-about the request to reproduce it.
+A report carries the traceback and enough about the request to reproduce it,
+and deliberately nothing more. Surrounding log lines would be useful and are
+also the most likely thing to contain another member's email or reference, so
+they are neither sent nor retained: the traceback says where it broke, and the
+request says what was being done at the time.
 """
 from __future__ import annotations
 
 import logging
 import threading
 import traceback
-from collections import deque
 from datetime import datetime, timedelta
 
 log = logging.getLogger(__name__)
-
-# Enough to cover the request that failed and a little of what led to it.
-_BUFFER_SIZE = 300
 
 # One report per distinct failure per interval. A crash in a hot path would
 # otherwise send a message per request and bury the inbox exactly when it is
 # most needed.
 _MIN_INTERVAL = timedelta(minutes=15)
 
-_buffer: deque[str] = deque(maxlen=_BUFFER_SIZE)
-_buffer_lock = threading.Lock()
 _last_sent: dict[str, datetime] = {}
 _sent_lock = threading.Lock()
-
-
-class RingBufferHandler(logging.Handler):
-    """Keeps the most recent log lines in memory for crash reports."""
-
-    def emit(self, record: logging.LogRecord) -> None:
-        try:
-            line = self.format(record)
-        except Exception:
-            return
-        with _buffer_lock:
-            _buffer.append(line)
-
-
-def install(app) -> None:
-    """Attach the ring buffer to the root logger."""
-    handler = RingBufferHandler()
-    handler.setFormatter(logging.Formatter(
-        "%(asctime)s %(levelname)s [%(name)s] %(message)s"))
-    handler.setLevel(logging.INFO)
-    logging.getLogger().addHandler(handler)
-    app.extensions["error_report_buffer"] = handler
-
-
-def recent_log_lines(limit: int = 60) -> list[str]:
-    with _buffer_lock:
-        return list(_buffer)[-limit:]
 
 
 def _signature(exc: BaseException) -> str:
@@ -91,6 +59,11 @@ def report_exception(exc: BaseException) -> bool:
     "the administrator has been notified" only when that is true. Never
     raises: a failure in here must not replace the error the user already
     has with a second one.
+
+    Call this only from a handler that shows the user that promise. Reporting
+    from anywhere else would put the two out of step in the direction that
+    matters least — silent mail — while leaving the page free to claim
+    something nobody checked.
     """
     try:
         from flask import current_app, has_request_context, request
@@ -137,10 +110,6 @@ def report_exception(exc: BaseException) -> bool:
                   "".join(traceback.format_exception(
                       type(exc), exc, exc.__traceback__))[-6000:]]
 
-        recent = recent_log_lines()
-        if recent:
-            lines += ["", f"Server log — last {len(recent)} lines", "-" * 40]
-            lines += recent
         lines += ["",
                   f"Further reports of this same failure are suppressed for "
                   f"{int(_MIN_INTERVAL.total_seconds() // 60)} minutes."]

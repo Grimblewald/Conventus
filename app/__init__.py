@@ -149,11 +149,6 @@ def _configure_logging(app: Flask) -> None:
     if app.debug:
         logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
-    # Logs go to stdout under gunicorn, so there is nothing to read back after
-    # a crash. Keep the recent lines in memory for the error report to carry.
-    from .services.error_reports import install as install_error_buffer
-    install_error_buffer(app)
-
 
 def _connect_mailer(app: Flask) -> None:
     """Pre-warm the persistent SMTP connection (no-op in console mode)."""

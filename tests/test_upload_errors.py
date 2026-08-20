@@ -103,22 +103,26 @@ class TestErrorReports:
         assert "Time (UTC)" in body
         assert "Traceback" in body
 
-    def test_the_report_carries_recent_log_lines(self, seeded, app, monkeypatch):
+    def test_the_report_carries_no_log_lines(self, seeded, app, monkeypatch):
+        """Traceback and request only. Surrounding log lines are the most
+        likely place for another member's details to appear, so they are
+        neither sent nor kept."""
         import logging
         sent = []
         monkeypatch.setattr("app.services.mail.send_mail",
                             lambda **kw: sent.append(kw) or True)
         from app.services import error_reports
         monkeypatch.setattr(error_reports, "_last_sent", {})
-        error_reports.install(app)
 
-        logging.getLogger("test.marker").error("a distinctive log line")
+        logging.getLogger("test.marker").error("member-a@example.org did a thing")
         with app.app_context():
             try:
                 raise RuntimeError("boom")
             except RuntimeError as e:
                 error_reports.report_exception(e)
-        assert "a distinctive log line" in sent[0]["body"]
+        assert "member-a@example.org" not in sent[0]["body"]
+        assert "Server log" not in sent[0]["body"]
+        assert "RuntimeError: boom" in sent[0]["body"]
 
     def test_a_repeated_failure_is_not_sent_twice(self, seeded, app, monkeypatch):
         """A crash in a hot path must not bury the inbox."""
@@ -162,3 +166,13 @@ class TestErrorReports:
         assert "administrator has been notified" in flatten(notified)
         assert "has been notified" not in flatten(silent)
         assert "Contact us" in silent
+
+    def test_only_the_500_handler_reports(self, seeded, client, monkeypatch):
+        """The promise appears on one page, so the report fires from one place.
+        A 404 or a 429 tells the user nothing about notification and must not
+        quietly email anybody either."""
+        calls = []
+        monkeypatch.setattr("app.services.error_reports.report_exception",
+                            lambda e: calls.append(e) or True)
+        assert client.get("/no-such-page-at-all").status_code == 404
+        assert calls == []

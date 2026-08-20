@@ -47,6 +47,16 @@
   its working directory, and caps its memory. `pdflatex` is gone from the
   codebase; tectonic is the one toolchain.
 
+### Fixed
+- **Previewing an abstract left it unsubmitted, with no way forward.** Preview
+  saves the abstract as a draft, and the preview page then offered only Edit
+  and a primary-styled "Dashboard" — so an author who previewed their work,
+  the careful thing to do, could reasonably believe they had finished. The
+  page now says plainly that the abstract has not been submitted, and offers
+  **Continue editing**, **Keep as draft**, and **Submit abstract**. Submitting
+  from the preview runs the same validation the form does, against the stored
+  values, so nothing can get in this way that the form would refuse.
+
 ### Added
 - **Unsubmitted abstracts are visible to admins.** The abstract list gains a
   **Draft** filter, so an author who is stuck can be found and their draft

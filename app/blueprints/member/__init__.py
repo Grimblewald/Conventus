@@ -349,6 +349,40 @@ def _validate_reference(key: int, doi: str, body: str) -> list[str]:
     return errors
 
 
+def submission_errors(*, title: str, authors: str, body: str,
+                      references: list[dict], schema, form_data) -> list[str]:
+    """Everything that must hold before an abstract counts as submitted.
+
+    One function, because there are now two ways to submit — the form, and the
+    Submit button on the preview page — and two copies of these rules would
+    drift into one of them accepting what the other refuses.
+
+    `form_data` is whatever the custom-field schema should be validated
+    against: the posted form when submitting from the form, the stored
+    `custom_data` when submitting a draft that was already saved.
+    """
+    errors: list[str] = []
+    if not (title and authors and body):
+        errors.append("Title, authors and abstract body are required.")
+    if len(title.split()) > 15:
+        errors.append(f"Title is {len(title.split())} words — the limit is 15.")
+    if len(body.split()) > 320:
+        errors.append(f"Abstract body is {len(body.split())} words — "
+                      f"the limit is 300 (soft cap 320).")
+    if schema:
+        errors.extend(validate_form(schema, form_data))
+
+    ref_keys = {r["key"] for r in references}
+    for ref in references:
+        errors.extend(_validate_reference(ref["key"], ref["doi"], body))
+    for marker in re.findall(r"\[(\d+)\]", body):
+        n = int(marker)
+        if n not in ref_keys:
+            errors.append(f"Citation [\u200B{n}\u200B] appears in text but "
+                          f"has no matching reference.")
+    return errors
+
+
 @member_bp.route("/conferences/<slug>/abstract", methods=["GET", "POST"])
 @login_required
 def submit_abstract(slug):
@@ -442,29 +476,10 @@ def submit_abstract(slug):
         errors: list[str] = list(errors_early)
 
         if not is_draft:
-            # Full validation for submit
-            if not (title and authors and body):
-                errors.append("Title, authors and abstract body are required.")
-            if len(title.split()) > 15:
-                errors.append(f"Title is {len(title.split())} words — the limit is 15.")
-            if len(body.split()) > 320:
-                errors.append(f"Abstract body is {len(body.split())} words — the limit is 300 (soft cap 320).")
-
-            if abstract_schema:
-                form_errors = validate_form(abstract_schema, request.form)
-                errors.extend(form_errors)
-
-            # Reference validation
-            ref_errors: list[str] = []
-            for ref in references:
-                ref_errors.extend(_validate_reference(ref["key"], ref["doi"], body))
-            body_markers = re.findall(r"\[(\d+)\]", body)
-            for m in body_markers:
-                n = int(m)
-                if n not in ref_keys:
-                    ref_errors.append(
-                        f"Citation [\u200B{n}\u200B] appears in text but has no matching reference.")
-            errors.extend(ref_errors)
+            errors.extend(submission_errors(
+                title=title, authors=authors, body=body,
+                references=references, schema=abstract_schema,
+                form_data=request.form))
 
         elif not (title and authors):
             errors.append("Title and at least one author are required even for drafts.")
@@ -636,7 +651,66 @@ def preview_abstract(aid):
             })
 
     return render_template("member/preview_abstract.html",
-                           a=a, refs_with_meta=refs_with_meta)
+                           a=a, refs_with_meta=refs_with_meta,
+                           can_submit=a.status in ("draft", "revise"))
+
+
+@member_bp.route("/abstracts/<int:aid>/submit", methods=["POST"])
+@login_required
+def submit_previewed_abstract(aid):
+    """Submit an abstract that is sitting as a draft.
+
+    Preview saves the abstract as a draft and then offered no way forward:
+    the page's most prominent control was "Dashboard", so an author who
+    previewed their work — the careful thing to do — could reasonably believe
+    they had finished while their abstract stayed unsubmitted. This is the
+    missing step.
+
+    Validation is the same function the form uses, against the stored values,
+    so nothing can be submitted here that the form would have refused.
+    """
+    a = (Abstract.query
+         .filter_by(id=aid, user_id=current_user.id)
+         .filter(Abstract.deleted_at.is_(None))
+         .first_or_404())
+    c = a.conference
+    if c is None or c.is_draft:
+        abort(404)
+    if a.status not in ("draft", "revise"):
+        flash("That abstract has already been submitted.", "success")
+        return redirect(url_for("member.dashboard"))
+    if not c.accepts_abstracts:
+        flash("Abstract submission has closed for this conference.", "error")
+        return redirect(url_for("member.dashboard"))
+
+    errors = submission_errors(
+        title=a.title or "", authors=a.authors or "", body=a.body or "",
+        references=a.references or [], schema=c.abstract_form_schema,
+        form_data=a.custom_data or {})
+    if errors:
+        audit.record("abstract.submit_failed", target_kind="abstract",
+                     target_id=a.id,
+                     summary=(f"{current_user.email} → {c.slug} (from preview): "
+                              + "; ".join(errors))[:400])
+        for err in errors:
+            flash(err, "error")
+        # Back to the form, which is where the problems can be fixed.
+        return redirect(url_for("member.submit_abstract", slug=c.slug, edit=a.id))
+
+    a.status = "submitted"
+    db.session.commit()
+    audit.record("abstract.submitted", target_kind="abstract", target_id=a.id,
+                 summary=f"{current_user.email} → {c.slug}: {a.title}")
+
+    receipted = False
+    if c.abstract_receipt_email:
+        from ...services.abstract_latex import send_abstract_receipt
+        receipted = send_abstract_receipt(
+            a, uploads_root=Path(current_app.config["UPLOAD_FOLDER"]))
+    flash("Abstract submitted." + (" A confirmation with a PDF copy is on its "
+                                   "way to your inbox." if receipted else "")
+          + " You'll be notified after review.", "success")
+    return redirect(url_for("member.dashboard"))
 
 
 # ---------------------------------------------------------------------------

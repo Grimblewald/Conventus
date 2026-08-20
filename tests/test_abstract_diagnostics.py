@@ -106,3 +106,66 @@ class TestDraftsAreVisibleToAdmins:
         resp = admin_client.get(f"/admin/abstracts/{draft_id}")
         assert resp.status_code == 200
         assert b"Half finished." in resp.data
+
+
+class TestSubmitFromPreview:
+    """Preview used to be a dead end that quietly left the abstract a draft."""
+
+    def _draft_via_preview(self, client, slug):
+        return client.post(f"/conferences/{slug}/abstract", data={
+            "title": "Previewed abstract", "authors": "Jane Doe|1|Uni",
+            "body": "A body with nothing wrong with it.",
+            "presenting_author_index": "0", "action": "preview",
+        }, follow_redirects=True)
+
+    def test_preview_offers_a_way_to_submit(self, seeded, member_client, app,
+                                            conference):
+        resp = self._draft_via_preview(member_client, conference)
+        assert b"has not been submitted yet" in resp.data
+        assert b"Submit abstract" in resp.data
+        assert b"Keep as draft" in resp.data
+        assert b"Continue editing" in resp.data
+        with app.app_context():
+            a = (Abstract.query.filter_by(title="Previewed abstract")
+                 .order_by(Abstract.id.desc()).first())
+            assert a.status == "draft"
+
+    def test_submitting_from_preview_works(self, seeded, member_client, app,
+                                           conference):
+        self._draft_via_preview(member_client, conference)
+        with app.app_context():
+            aid = (Abstract.query.filter_by(title="Previewed abstract")
+                   .order_by(Abstract.id.desc()).first().id)
+        resp = member_client.post(f"/abstracts/{aid}/submit",
+                                  follow_redirects=True)
+        assert resp.status_code == 200
+        with app.app_context():
+            assert Abstract.query.get(aid).status == "submitted"
+            assert AuditLog.query.filter_by(action="abstract.submitted").count()
+
+    def test_preview_submit_applies_the_same_rules_as_the_form(
+            self, seeded, member_client, app, conference):
+        """Otherwise preview becomes a way around the limits the form applies."""
+        member_client.post(f"/conferences/{conference}/abstract", data={
+            "title": "Overlong draft", "authors": "Jane Doe|1|Uni",
+            "body": "word " * 400, "presenting_author_index": "0",
+            "action": "draft",
+        }, follow_redirects=True)
+        with app.app_context():
+            aid = (Abstract.query.filter_by(title="Overlong draft")
+                   .order_by(Abstract.id.desc()).first().id)
+        resp = member_client.post(f"/abstracts/{aid}/submit",
+                                  follow_redirects=True)
+        assert b"limit is 300" in resp.data
+        with app.app_context():
+            assert Abstract.query.get(aid).status == "draft"
+
+    def test_another_member_cannot_submit_it(self, seeded, member_client, app,
+                                             conference, client):
+        self._draft_via_preview(member_client, conference)
+        with app.app_context():
+            aid = (Abstract.query.filter_by(title="Previewed abstract")
+                   .order_by(Abstract.id.desc()).first().id)
+        resp = client.post(f"/abstracts/{aid}/submit")   # not logged in
+        assert resp.status_code in (302, 401, 403, 404)
+

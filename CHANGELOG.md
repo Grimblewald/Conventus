@@ -59,6 +59,11 @@
   render never costs the email, only the attachment. Drafts send nothing.
 
 ### Fixed
+- **Every entry in the booklet's contents jumped to the same abstract.**
+  `\\addcontentsline` records a title and a page number but links to the most
+  recent anchor, and an abstract fragment issues no sectioning command — so
+  the whole booklet held one anchor and all of the contents entries pointed
+  at it. Each abstract now carries its own.
 - **Abstracts containing `_`, `%`, `$`, `~` or `^` broke the booklet.** Titles,
   author names and affiliations were escaped for `&`, `#` and `_` only, and
   the body for everything except `_` — so `TiO_2` in a body, or `50%` in a

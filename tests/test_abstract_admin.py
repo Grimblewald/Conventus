@@ -285,6 +285,54 @@ class TestBookletCompile:
         assert resp.status_code == 200, resp.data[:500]
         assert resp.data[:4] == b"%PDF"
 
+    def test_contents_entries_link_to_their_own_abstract(self, seeded,
+                                                        admin_client, app, db):
+        """Each contents entry must jump to its own abstract.
+
+        `\\addcontentsline` records a title and a page but links to the most
+        recent anchor, and an abstract fragment issues no sectioning command —
+        so without a `\\phantomsection` the booklet holds exactly one anchor
+        and every entry in the contents jumps to the same place. Asserted on
+        the compiled PDF's destinations, because the LaTeX source looks
+        entirely correct either way.
+        """
+        import re
+        import zlib
+        from datetime import date
+
+        with app.app_context():
+            c = Conference(slug="toc-links", title="Contents Test",
+                           start_date=date(2027, 4, 1), end_date=date(2027, 4, 3))
+            db.session.add(c)
+            db.session.flush()
+            for i in range(1, 4):
+                db.session.add(Abstract(
+                    conference_id=c.id, status="accepted",
+                    title=f"Abstract {i}", authors=f"Author {i}|1|Uni {i}",
+                    body="Body text. " * 60, presenting_author_index=0))
+            db.session.commit()
+            cid = c.id
+
+        resp = admin_client.post(
+            f"/admin/conferences/{cid}/compile-booklet",
+            data={"booklet_action": "pdf"})
+        assert resp.status_code == 200, resp.data[:400]
+
+        blob = [resp.data]
+        for m in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", resp.data, re.S):
+            try:
+                blob.append(zlib.decompress(m.group(1)))
+            except Exception:
+                pass
+        blob = b"\n".join(blob)
+
+        targets = re.findall(rb"/D\s*\[?\s*\(?(section\*\.\d+)", blob)
+        targets += re.findall(rb"/Dest\s*\((section\*\.\d+)\)", blob)
+        assert targets, "the contents entries are not linked at all"
+        assert len(set(targets)) >= 3, (
+            f"three abstracts share {len(set(targets))} link target(s): "
+            f"{sorted(set(t.decode() for t in targets))}")
+
     def test_missing_tectonic_is_reported_not_crashed(self, seeded, admin_client,
                                                       booklet_conference, app):
         import shutil

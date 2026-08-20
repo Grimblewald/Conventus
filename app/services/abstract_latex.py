@@ -186,6 +186,12 @@ def abstract_fragment(label: str, abstract,
             toc_text = f"{title} --- {first_author} \\textit{{et al.}}"
         else:
             toc_text = f"{title} --- {first_author}"
+    # \phantomsection first, or every contents entry links to the same place.
+    # \addcontentsline records a title and a page, but the hyperlink it makes
+    # points at the most recent anchor — and an abstract fragment issues no
+    # sectioning command, so without this there is exactly one anchor in the
+    # whole booklet and all of the entries jump to it.
+    lines.append("\\phantomsection")
     lines.append(f"\\addcontentsline{{toc}}{{section}}{{{toc_text}}}")
 
     if has_background:

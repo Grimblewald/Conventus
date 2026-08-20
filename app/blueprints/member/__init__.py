@@ -470,6 +470,17 @@ def submit_abstract(slug):
             errors.append("Title and at least one author are required even for drafts.")
 
         if errors:
+            # A failed submission used to leave no trace anywhere: the form
+            # simply came back with red text, nothing was written, and nothing
+            # was recorded. So an author reporting "it won't let me submit"
+            # could not be investigated at all — the audit log showed their
+            # login and then silence. Record the attempt and what stopped it.
+            audit.record(
+                "abstract.submit_failed",
+                target_kind="abstract",
+                target_id=draft.id if draft else None,
+                summary=(f"{current_user.email} → {c.slug}: "
+                         + "; ".join(errors))[:400])
             for err in errors:
                 flash(err, "error")
             return render_template("member/submit_abstract.html",

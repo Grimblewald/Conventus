@@ -10,11 +10,20 @@
 
 <div style="margin-bottom:14px;">
   <div style="display:flex; gap:8px; margin-bottom:10px;">
-    {% for s in ['submitted', 'accepted', 'rejected', 'revise', 'plenary', 'keynote', 'invited', 'all'] %}
+    {% for s in ['submitted', 'draft', 'accepted', 'rejected', 'revise', 'plenary', 'keynote', 'invited', 'all'] %}
       <a class="btn btn-{% if status == s %}primary{% else %}ghost{% endif %} btn-sm"
          href="{{ url_for('admin.abstracts', status=s, search=search, conference_id=conf_id) }}">{{ s|capitalize }}</a>
     {% endfor %}
   </div>
+  {% if status == 'draft' %}
+  <p class="muted" style="margin:-2px 0 10px;">
+    Drafts are unsubmitted — the author saved but never submitted, so these do
+    not appear in review and their authors are not waiting on a decision. A
+    draft that stalls here often means the author hit something they could not
+    get past; failed submissions are recorded in the audit log as
+    <code>abstract.submit_failed</code> with the reason.
+  </p>
+  {% endif %}
   <form method="get" style="display:flex; gap:8px; align-items:center;">
     <input type="hidden" name="status" value="{{ status }}">
     <input class="input" name="search" value="{{ search }}" placeholder="Search title, author name, or email…" style="max-width:320px;">

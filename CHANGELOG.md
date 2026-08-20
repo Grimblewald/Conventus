@@ -48,6 +48,17 @@
   codebase; tectonic is the one toolchain.
 
 ### Added
+- **Unsubmitted abstracts are visible to admins.** The abstract list gains a
+  **Draft** filter, so an author who is stuck can be found and their draft
+  read. Previously drafts appeared only under "All", with no way to isolate
+  them.
+- **Failed submissions are recorded.** A submission rejected by validation
+  used to write nothing anywhere: the author saw red text and the audit log
+  showed their login followed by silence, so "it won't let me submit" could
+  not be investigated. The attempt and the reason it failed are now logged as
+  `abstract.submit_failed`.
+
+### Added
 - **Abstract PDFs.** Any abstract can be downloaded as a PDF laid out exactly
   as the booklet will print it — from the admin abstract page, and from a
   presenter's own dashboard. It reuses the booklet's fragment builder rather

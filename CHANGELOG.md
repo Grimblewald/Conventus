@@ -48,6 +48,23 @@
   codebase; tectonic is the one toolchain.
 
 ### Fixed
+- **A large figure crashed the submission instead of being refused.** Pillow
+  raises `DecompressionBombError` for images past twice its pixel ceiling, and
+  that class is not an `OSError` — so it slipped straight past the handler
+  written to catch it and the upload became a 500. Both upload paths now catch
+  it and say what is actually wrong: the number of pixels, not the file size,
+  so nobody is sent off compressing a file that will fail again at the same
+  dimensions. Image inputs also check dimensions in the browser before the
+  upload starts.
+- **The error page claimed an administrator had been notified. Nobody was.**
+  The handler rendered a template and did nothing else. Unhandled errors now
+  email the site's admins with the time, the request, the user, the traceback
+  and the surrounding server log — kept in memory, since logs go to stdout and
+  cannot be read back after the fact. Repeats of the same failure are
+  suppressed for fifteen minutes so a crash in a hot path cannot bury the
+  inbox. The page only makes the claim when the email actually went.
+
+### Fixed
 - **Previewing an abstract left it unsubmitted, with no way forward.** Preview
   saves the abstract as a draft, and the preview page then offered only Edit
   and a primary-styled "Dashboard" — so an author who previewed their work,

@@ -24,6 +24,37 @@ FIGURE_EXTS = IMAGE_EXTS | {".tif", ".tiff"} | PDF_EXTS
 MAX_IMAGE_PIXELS = 24_000_000  # 24 megapixels
 Image.MAX_IMAGE_PIXELS = MAX_IMAGE_PIXELS
 
+# Pillow warns above MAX_IMAGE_PIXELS and raises above twice it, so an image
+# between the two is opened and caught by our own dimension check, while
+# anything past the hard limit fails inside `Image.open` instead.
+MAX_MEGAPIXELS = MAX_IMAGE_PIXELS // 1_000_000
+
+
+def _too_many_pixels_message(pixels: int | None = None) -> str:
+    """What to tell someone whose image is too big to decode.
+
+    "Image is too large" invites them to compress the file, which changes the
+    byte count and not the pixel count, so they try repeatedly and it fails
+    every time. Say which measure is at fault and what to do about it.
+    """
+    actual = f"That image is {pixels / 1_000_000:.0f} megapixels" if pixels \
+        else "That image has too many pixels"
+    return (
+        f"{actual} — the limit is {MAX_MEGAPIXELS} megapixels "
+        f"(about 6000 × 4000). This is about the image's dimensions, not its "
+        f"file size, so compressing it will not help: resize it to smaller "
+        f"dimensions and upload it again."
+    )
+
+
+def _bomb_pixels(exc: Exception) -> int | None:
+    """The pixel count out of Pillow's message, when it can be found."""
+    import re
+
+    m = re.search(r"\((\d+) pixels\)", str(exc))
+    return int(m.group(1)) if m else None
+
+
 
 class UploadError(ValueError):
     """Friendly error surfaced to the user via flash()."""
@@ -80,11 +111,15 @@ def save_image(
         # Re-open for actual ops — verify() consumes the file pointer.
         img = Image.open(BytesIO(raw))
         img = ImageOps.exif_transpose(img)
+    except Image.DecompressionBombError as e:
+        # NOT an OSError, so the clause below never caught it and the upload
+        # became a 500 with an unhelpful page.
+        raise UploadError(_too_many_pixels_message(_bomb_pixels(e))) from e
     except (UnidentifiedImageError, OSError) as e:
         raise UploadError("Could not read that image — is it corrupted?") from e
 
     if img.width * img.height > MAX_IMAGE_PIXELS:
-        raise UploadError("Image is too large (pixel count exceeds policy).")
+        raise UploadError(_too_many_pixels_message(img.width * img.height))
 
     if square_crop:
         side = min(img.width, img.height)
@@ -201,11 +236,15 @@ def save_fixed_png(
         img.verify()
         img = Image.open(BytesIO(raw))
         img = ImageOps.exif_transpose(img)
+    except Image.DecompressionBombError as e:
+        # NOT an OSError, so the clause below never caught it and the upload
+        # became a 500 with an unhelpful page.
+        raise UploadError(_too_many_pixels_message(_bomb_pixels(e))) from e
     except (UnidentifiedImageError, OSError) as e:
         raise UploadError("Could not read that image — is it corrupted?") from e
 
     if img.width * img.height > MAX_IMAGE_PIXELS:
-        raise UploadError("Image is too large (pixel count exceeds policy).")
+        raise UploadError(_too_many_pixels_message(img.width * img.height))
 
     if img.width > max_width:
         ratio = max_width / img.width

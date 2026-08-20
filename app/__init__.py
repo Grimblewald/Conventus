@@ -149,6 +149,11 @@ def _configure_logging(app: Flask) -> None:
     if app.debug:
         logging.getLogger("werkzeug").setLevel(logging.WARNING)
 
+    # Logs go to stdout under gunicorn, so there is nothing to read back after
+    # a crash. Keep the recent lines in memory for the error report to carry.
+    from .services.error_reports import install as install_error_buffer
+    install_error_buffer(app)
+
 
 def _connect_mailer(app: Flask) -> None:
     """Pre-warm the persistent SMTP connection (no-op in console mode)."""
@@ -366,6 +371,11 @@ def _register_template_globals(app: Flask) -> None:
     app.add_template_filter(split_target, "split_target")
     app.jinja_env.globals["external_choice"] = EXTERNAL_CHOICE
 
+    # The pixel ceiling the upload validator enforces, so a form can warn
+    # before the upload rather than after it. One source, one number.
+    from .services.uploads import MAX_MEGAPIXELS
+    app.jinja_env.globals["max_megapixels"] = MAX_MEGAPIXELS
+
     from .services.payments import payments_open_to_members
     app.add_template_global(payments_open_to_members, "payments_open_to_members")
 
@@ -470,5 +480,11 @@ def _register_error_handlers(app: Flask) -> None:
         return render_template("errors/429.html"), 429
 
     @app.errorhandler(500)
-    def server_error(_e):
-        return render_template("errors/500.html"), 500
+    def server_error(e):
+        # Flask hands the handler an InternalServerError wrapping whatever
+        # actually went wrong; the wrapper's traceback is not the useful one.
+        from .services.error_reports import report_exception
+
+        original = getattr(e, "original_exception", None) or e
+        notified = report_exception(original)
+        return render_template("errors/500.html", notified=notified), 500

@@ -145,12 +145,14 @@
 
       <div class="field">
         <label for="figure">Figure (optional — PNG, JPG, TIFF or PDF, max 8 MB)</label>
-        <input class="input" id="figure" name="figure" type="file" accept=".png,.jpg,.jpeg,.tif,.tiff,.pdf">
+        <input class="input" id="figure" name="figure" type="file" accept=".png,.jpg,.jpeg,.tif,.tiff,.pdf"
+               data-max-megapixels="{{ max_megapixels }}">
       </div>
 
       <div class="field">
         <label for="profile_picture">Profile picture (optional — PNG, JPG, or WebP, max 4 MB)</label>
-        <input class="input" id="profile_picture" name="profile_picture" type="file" accept=".png,.jpg,.jpeg,.webp">
+        <input class="input" id="profile_picture" name="profile_picture" type="file" accept=".png,.jpg,.jpeg,.webp"
+               data-max-megapixels="{{ max_megapixels }}">
         <div class="help">A headshot or photo for your presenter profile.</div>
       </div>
 
@@ -207,4 +209,5 @@
 {% block scripts %}
 <script src="{{ static_url('js/member/conditional.js') }}"></script>
 <script src="{{ static_url('js/member/abstract.js') }}"></script>
+<script src="{{ static_url('js/image-dimensions.js') }}"></script>
 {% endblock %}

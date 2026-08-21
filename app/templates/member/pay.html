@@ -13,7 +13,15 @@
     <div class="card" style="padding:24px;">
       <table class="table">
         <tr><th>Tier</th><td>{{ reg.tier_name }}</td></tr>
-        <tr><th>Amount</th><td>{{ site.currency_symbol }}{{ reg.amount | format_amount }} {{ site.currency_code }}</td></tr>
+        {# The balance, because that is what the checkout is minted for. Showing
+           the tier price here while charging the balance meant a part-paid
+           registration quoted one number and took another. #}
+        {% if reg.amount_due != reg.amount %}
+        <tr><th>Tier price</th><td>{{ site.currency_symbol }}{{ reg.amount | format_amount }} {{ site.currency_code }}</td></tr>
+        <tr><th>Amount due now</th><td><strong>{{ site.currency_symbol }}{{ reg.amount_due | format_amount }} {{ site.currency_code }}</strong></td></tr>
+        {% else %}
+        <tr><th>Amount</th><td>{{ site.currency_symbol }}{{ reg.amount_due | format_amount }} {{ site.currency_code }}</td></tr>
+        {% endif %}
         <tr><th>Status</th><td><span class="status" data-v="{{ reg.status }}">{{ reg.status }}</span></td></tr>
         <tr><th>Date</th><td>{{ reg.created_at.strftime('%-d %B %Y') }}</td></tr>
       </table>

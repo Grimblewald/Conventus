@@ -217,3 +217,170 @@ class TestAmountParsing:
     def test_accepts_ordinary_amounts(self, good, cents):
         from app.services.jinja_filters import parse_cents
         assert parse_cents(good) == cents
+
+
+class TestThePriceIsStruckOnce:
+    """What someone was charged is a fact about their registration, not
+    something to re-derive from today's date on every save."""
+
+    def _conference(self, app, *, early_bird_gone):
+        """A conference with a $300 early-bird rate and a $450 standard one."""
+        import secrets
+        tag = secrets.token_hex(4)
+        deadline = (date.today() - timedelta(days=1) if early_bird_gone
+                    else date.today() + timedelta(days=30))
+        with app.app_context():
+            c = Conference(slug=f"eb-{tag}", title="Early Bird 2027",
+                           start_date=date(2027, 5, 1), end_date=date(2027, 5, 3),
+                           is_accepting_registrations=True,
+                           early_bird_deadline=deadline)
+            db.session.add(c)
+            db.session.flush()
+            db.session.add(PriceTier(conference_id=c.id, name="Standard",
+                                     amount=45000, early_bird_amount=30000))
+            db.session.commit()
+            return c.slug
+
+    def _register(self, client, slug, **extra):
+        data = {"tier": "Standard", "dietary": "", "accessibility": ""}
+        data.update(extra)
+        return client.post(f"/conferences/{slug}/register", data=data,
+                           follow_redirects=True)
+
+    def test_editing_after_the_early_bird_lapses_does_not_rebill(
+            self, seeded, member_client, app, monkeypatch):
+        """The bug: a member who paid the early-bird rate and later corrected a
+        dietary note was silently re-priced at the full rate and billed the
+        difference — for a registration they had paid in full."""
+        slug = self._conference(app, early_bird_gone=False)
+        self._register(member_client, slug)
+
+        with app.app_context():
+            reg = Registration.query.filter_by(tier_name="Standard").order_by(
+                Registration.id.desc()).first()
+            rid = reg.id
+            assert reg.amount == 30000, "should be struck at the early-bird rate"
+            from app.models import record_payment_event
+            record_payment_event(transaction_id="PAY-EB",
+                                 merchant_reference=f"reg_{rid}",
+                                 registration_id=rid,
+                                 event_type="payment.captured", amount=30000,
+                                 note="paid in full")
+            assert Registration.query.get(rid).amount_outstanding == 0
+            conf_id = reg.conference_id
+
+        # The early-bird deadline passes, then the member edits a dietary note.
+        with app.app_context():
+            c = Conference.query.get(conf_id)
+            c.early_bird_deadline = date.today() - timedelta(days=1)
+            db.session.commit()
+        self._register(member_client, slug, dietary="No shellfish")
+
+        with app.app_context():
+            reg = Registration.query.get(rid)
+            assert reg.dietary == "No shellfish", "the edit must still land"
+            assert reg.amount == 30000, "the struck price must not move"
+            assert reg.amount_outstanding == 0, "nothing further may be owed"
+            charges = PaymentEvent.query.filter_by(
+                registration_id=rid,
+                event_type="registration.payment_due").count()
+            assert charges == 1, "the edit must not add a second charge line"
+
+    def test_changing_tier_still_reprices_at_todays_rate(self, seeded,
+                                                         member_client, app):
+        """Holding the price must not freeze it against a real tier change."""
+        slug = self._conference(app, early_bird_gone=True)
+        with app.app_context():
+            c = Conference.query.filter_by(slug=slug).first()
+            db.session.add(PriceTier(conference_id=c.id, name="Student",
+                                     amount=15000))
+            db.session.commit()
+
+        self._register(member_client, slug, tier="Student")
+        with app.app_context():
+            reg = Registration.query.filter_by(tier_name="Student").order_by(
+                Registration.id.desc()).first()
+            rid, = (reg.id,)
+            assert reg.amount == 15000
+
+        self._register(member_client, slug, tier="Standard")
+        with app.app_context():
+            reg = Registration.query.get(rid)
+            assert reg.tier_name == "Standard"
+            assert reg.amount == 45000, "early bird has lapsed — full rate"
+            assert reg.amount_outstanding == 45000
+
+
+class TestManualReversal:
+    """A refund restores what was received, not what was outstanding."""
+
+    def test_marking_a_paid_registration_refunded_records_the_money_back(
+            self, seeded, admin_client, app):
+        """The bug: a paid registration owes nothing, so recording the refund
+        against the balance recorded a refund of zero — the society handed the
+        money back and its ledger went on saying it had kept it."""
+        rid, _ = _registration(app, amount=40000)
+        with app.app_context():
+            from app.models import record_payment_event
+            record_payment_event(transaction_id="PAY-9",
+                                 merchant_reference=f"reg_{rid}",
+                                 registration_id=rid,
+                                 event_type="payment.captured", amount=40000,
+                                 note="paid")
+            reg = Registration.query.get(rid)
+            reg.status = "paid"
+            db.session.commit()
+            assert reg.amount_outstanding == 0
+
+        admin_client.post(f"/admin/registrations/{rid}/status",
+                          data={"status": "refunded"}, follow_redirects=True)
+
+        with app.app_context():
+            evt = (PaymentEvent.query
+                   .filter_by(registration_id=rid, event_type="manual.refunded")
+                   .first())
+            assert evt is not None, "the reversal must reach the ledger"
+            assert evt.amount == 40000, "it must carry what was received"
+            reg = Registration.query.get(rid)
+            assert reg.amount_outstanding == 40000, (
+                "the money is back on the books, not forgiven")
+
+
+class TestCancelledThenPaid:
+    """Backing out of the gateway and trying again is ordinary.
+
+    The bug: the capture fell through to the double-payment branch, so a fully
+    paid registration went on reading `cancelled`, the pay link refused it, and
+    admins were emailed about a duplicate that never existed.
+    """
+
+    def test_a_capture_settles_a_cancelled_registration(self, seeded, client,
+                                                        monkeypatch, app):
+        from app.services.gateways import WebhookResult
+
+        rid, _ = _registration(app, amount=40000, status="cancelled")
+        with app.app_context():
+            reg = Registration.query.get(rid)
+            reg.transaction_id = "PAY-ABANDONED"
+            db.session.commit()
+
+        class _Gateway:
+            def verify_webhook(self, body, headers):
+                return WebhookResult(
+                    success=True, registration_id=rid,
+                    transaction_id="PAY-SECOND-TRY",
+                    event_type="payment.captured",
+                    merchant_reference=f"reg_{rid}", amount=40000)
+
+        monkeypatch.setattr("app.services.payments._active_gateway",
+                            lambda: _Gateway())
+        resp = client.post("/payments/webhook", data=b"{}",
+                           content_type="application/json")
+        assert resp.status_code == 200
+
+        with app.app_context():
+            reg = Registration.query.get(rid)
+            assert reg.status == "paid", (
+                "a successful capture must settle a cancelled attempt")
+            assert reg.amount_outstanding == 0
+            assert reg.transaction_id == "PAY-SECOND-TRY"

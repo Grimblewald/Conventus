@@ -169,3 +169,86 @@ class TestSubmitFromPreview:
         resp = client.post(f"/abstracts/{aid}/submit")   # not logged in
         assert resp.status_code in (302, 401, 403, 404)
 
+
+@pytest.fixture
+def capped(app):
+    """A conference that allows exactly one abstract per author."""
+    import secrets
+    tag = secrets.token_hex(4)
+    with app.app_context():
+        c = Conference(slug=f"capped-{tag}", title="One Each",
+                       start_date=date(2027, 6, 1), end_date=date(2027, 6, 3),
+                       max_abstracts_per_user=1)
+        db.session.add(c)
+        db.session.commit()
+        return c.slug
+
+
+class TestPerUserLimitSurvivesTheDraftRoute:
+    """Drafts don't count towards the cap, so the cap has to be applied where
+    a draft turns into a submission — on every route that can do that."""
+
+    def _draft(self, client, slug, title, action="draft"):
+        return client.post(f"/conferences/{slug}/abstract", data={
+            "title": title, "authors": "Jane Doe|1|Uni",
+            "body": "A body with nothing wrong with it.",
+            "presenting_author_index": "0", "action": action,
+        }, follow_redirects=True)
+
+    def _ids(self, app, *titles):
+        with app.app_context():
+            return [Abstract.query.filter_by(title=t)
+                    .order_by(Abstract.id.desc()).first().id for t in titles]
+
+    def test_preview_submit_cannot_exceed_the_limit(self, seeded, member_client,
+                                                    app, capped):
+        self._draft(member_client, capped, "First one", action="preview")
+        self._draft(member_client, capped, "Second one", action="preview")
+        first, second = self._ids(app, "First one", "Second one")
+
+        member_client.post(f"/abstracts/{first}/submit", follow_redirects=True)
+        resp = member_client.post(f"/abstracts/{second}/submit",
+                                  follow_redirects=True)
+
+        assert b"reached the limit" in resp.data
+        with app.app_context():
+            assert Abstract.query.get(first).status == "submitted"
+            assert Abstract.query.get(second).status == "draft"
+
+    def test_editing_a_draft_cannot_exceed_the_limit(self, seeded, member_client,
+                                                     app, capped):
+        """The form's own check was skipped whenever edit_id was set, and the
+        dashboard's Edit link always sets it."""
+        self._draft(member_client, capped, "Form first")
+        self._draft(member_client, capped, "Form second")
+        first, second = self._ids(app, "Form first", "Form second")
+
+        member_client.post(f"/abstracts/{first}/submit", follow_redirects=True)
+        resp = member_client.post(f"/conferences/{capped}/abstract", data={
+            "title": "Form second", "authors": "Jane Doe|1|Uni",
+            "body": "A body with nothing wrong with it.",
+            "presenting_author_index": "0", "action": "submit",
+            "edit_id": str(second),
+        }, follow_redirects=True)
+
+        assert b"reached the limit" in resp.data
+        with app.app_context():
+            assert Abstract.query.get(second).status == "draft"
+
+    def test_an_abstract_sent_back_for_revision_can_be_resubmitted(
+            self, seeded, member_client, app, capped):
+        """It already occupies the author's one slot; it must not block itself."""
+        self._draft(member_client, capped, "Needs work", action="preview")
+        (aid,) = self._ids(app, "Needs work")
+        with app.app_context():
+            a = Abstract.query.get(aid)
+            a.status = "revise"
+            db.session.commit()
+
+        resp = member_client.post(f"/abstracts/{aid}/submit",
+                                  follow_redirects=True)
+
+        assert b"reached the limit" not in resp.data
+        with app.app_context():
+            assert Abstract.query.get(aid).status == "submitted"
+

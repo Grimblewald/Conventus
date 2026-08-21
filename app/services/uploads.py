@@ -85,16 +85,24 @@ def save_image(
     square_crop: bool = False,
     target_size: int | None = None,
     force_webp: bool = False,
+    allowed: Iterable[str] | None = None,
 ) -> str:
     """Validate, optionally crop, and save an uploaded image.
 
     Returns the relative filename within `upload_folder` (including subdir
     if provided). Raises `UploadError` on any validation failure — never
     saves a corrupt or oversized file.
+
+    *allowed* narrows or widens the accepted extensions for callers whose set
+    differs from a site image's. It exists because `save_figure` accepts TIFF
+    and this function did not, so a figure passed the caller's check and was
+    then refused here — with a message listing formats the form had never
+    offered. One caller, two disagreeing lists, and the author caught between
+    them at the moment they pressed Submit.
     """
     if not (fs and fs.filename):
         raise UploadError("No file was uploaded.")
-    ext = _checked_ext(fs, IMAGE_EXTS)
+    ext = _checked_ext(fs, IMAGE_EXTS if allowed is None else allowed)
 
     raw = fs.stream.read()
     if len(raw) > max_bytes:
@@ -143,11 +151,28 @@ def save_image(
     target_dir.mkdir(parents=True, exist_ok=True)
     out_path = target_dir / safe
 
+    # Normalise the colour mode before encoding. TIFFs — the format scientific
+    # figures actually arrive in — are routinely CMYK, 16-bit or paletted, and
+    # neither the WEBP nor the PNG encoder accepts all of those. Without this
+    # the encoder raises outside the guarded block above and the author gets a
+    # 500 instead of their figure.
+    if img.mode not in ("RGB", "RGBA", "L"):
+        img = img.convert("RGBA" if "A" in img.getbands() else "RGB")
+
     save_kwargs = {"optimize": True}
     if out_ext == ".webp":
         save_kwargs["quality"] = 88
         save_kwargs["method"] = 6
-    img.save(out_path, format="WEBP" if out_ext == ".webp" else "PNG", **save_kwargs)
+    try:
+        img.save(out_path, format="WEBP" if out_ext == ".webp" else "PNG",
+                 **save_kwargs)
+    except (OSError, ValueError) as e:
+        # An encoder refusing the image is still the author's problem to fix,
+        # so it has to arrive as a message rather than a 500 page.
+        out_path.unlink(missing_ok=True)
+        raise UploadError(
+            "That image could not be converted — please re-save it as a PNG "
+            "or JPEG and try again.") from e
 
     return f"{subdir}/{safe}" if subdir else safe
 
@@ -193,7 +218,9 @@ def save_figure(
     if ext in PDF_EXTS:
         return save_pdf(fs, upload_folder=upload_folder, subdir="abstracts",
                         prefix="fig", max_bytes=max_bytes)
-    # Image-typed figure
+    # Image-typed figure. The allowed set is passed through so the check here
+    # and the one inside agree — a figure is not a site image and the two sets
+    # differ by TIFF, which is the format microscopy comes in.
     fs.stream.seek(0)
     return save_image(
         fs,
@@ -202,6 +229,7 @@ def save_figure(
         prefix="fig",
         max_bytes=max_bytes,
         target_size=2400,
+        allowed=FIGURE_EXTS - PDF_EXTS,
     )
 
 

@@ -246,9 +246,22 @@ def register_conf(slug):
                                        schema=schema, sub_events=sub_events)
 
         reg = existing or Registration(user_id=current_user.id, conference_id=c.id)
+        # The price is struck when the tier is chosen and then left alone. It
+        # used to be re-derived on every save, which meant a member who paid
+        # the early-bird rate and later came back to correct a dietary note —
+        # after the early-bird deadline had passed — was silently re-priced at
+        # the full rate, billed the difference, and emailed a demand for money
+        # they could not pay. What someone was charged is a fact about their
+        # registration, not something to recompute from today's date.
+        tier_changed = existing is None or existing.tier_name != tier.name
+        if tier_changed:
+            reg.amount = (
+                tier.early_bird_amount
+                if tier.early_bird_amount and c.early_bird_deadline
+                and c.early_bird_deadline >= datetime.utcnow().date()
+                else tier.amount)
+        amount = reg.amount or 0
         reg.tier_name = tier.name
-        amount = tier.early_bird_amount if tier.early_bird_amount and c.early_bird_deadline and c.early_bird_deadline >= datetime.utcnow().date() else tier.amount
-        reg.amount = amount
         reg.dietary = (request.form.get("dietary") or "").strip()
         reg.accessibility = (request.form.get("accessibility") or "").strip()
         reg.custom_data = custom_data if custom_data else None
@@ -275,6 +288,12 @@ def register_conf(slug):
         # that is overwritten on every save. Recording the difference is what
         # makes an upgrade bill the difference rather than the whole fee, and a
         # downgrade credit it back rather than silently forgiving it.
+        #
+        # Called on every save rather than only when the tier changed, because
+        # it is the difference that is recorded: an unchanged price books a
+        # delta of zero and writes nothing. That keeps this the one place a
+        # registration with no charge lines at all — a row that predates them
+        # and escaped the backfill — still gets its baseline.
         reg.charge_to(amount, reason=(
             f"tier set to {tier.name}"
             + ("" if amount else " — no fee")))
@@ -383,6 +402,29 @@ def submission_errors(*, title: str, authors: str, body: str,
     return errors
 
 
+def _abstract_quota_reached(c, exclude_id=None):
+    """Has this user used up their abstract allowance for conference *c*?
+
+    Drafts are deliberately not counted — an author may keep as many works
+    in progress as they like — which means the cap only bites at the moment
+    a draft turns into a submission. Every route that performs that
+    transition has to ask, not just the one that creates a new abstract.
+
+    *exclude_id* leaves one abstract out of the count, so re-submitting an
+    abstract that is already counted (a "revise" going back in) doesn't
+    collide with itself.
+    """
+    if not c.max_abstracts_per_user:
+        return False
+    q = (Abstract.query
+         .filter_by(user_id=current_user.id, conference_id=c.id)
+         .filter(Abstract.deleted_at.is_(None))
+         .filter(Abstract.status != "draft"))
+    if exclude_id:
+        q = q.filter(Abstract.id != exclude_id)
+    return q.count() >= c.max_abstracts_per_user
+
+
 @member_bp.route("/conferences/<slug>/abstract", methods=["GET", "POST"])
 @login_required
 def submit_abstract(slug):
@@ -396,22 +438,17 @@ def submit_abstract(slug):
         flash("Abstract submission is not open for this conference.", "error")
         return redirect(url_for("public.conference_detail", slug=c.slug))
 
-    # Enforce per-user abstract limit (exclude drafts, skip when editing)
+    # Enforce per-user abstract limit. Starting a fresh abstract is refused
+    # outright; editing is allowed through, because saving a draft is always
+    # permitted — the limit is re-checked below, at the point the draft would
+    # actually become a submission.
     edit_id = request.args.get("edit", type=int) or request.form.get("edit_id", type=int)
-    if c.max_abstracts_per_user and not edit_id:
-        existing_count = (
-            Abstract.query
-            .filter_by(user_id=current_user.id, conference_id=c.id)
-            .filter(Abstract.deleted_at.is_(None))
-            .filter(Abstract.status != "draft")
-            .count()
+    if not edit_id and _abstract_quota_reached(c):
+        flash(
+            f"You've reached the limit of {c.max_abstracts_per_user} "
+            f"abstract(s) for this conference.", "error",
         )
-        if existing_count >= c.max_abstracts_per_user:
-            flash(
-                f"You've reached the limit of {c.max_abstracts_per_user} "
-                f"abstract(s) for this conference.", "error",
-            )
-            return redirect(url_for("public.conference_detail", slug=c.slug))
+        return redirect(url_for("public.conference_detail", slug=c.slug))
 
     tracks = c.tracks_list()
     abstract_schema = c.abstract_form_schema
@@ -498,6 +535,22 @@ def submit_abstract(slug):
                          + "; ".join(errors))[:400])
             for err in errors:
                 flash(err, "error")
+            return render_template("member/submit_abstract.html",
+                                   c=c, tracks=tracks, form=request.form,
+                                   abstract_schema=abstract_schema, draft=draft)
+
+        if not is_draft and _abstract_quota_reached(
+                c, exclude_id=draft.id if draft else None):
+            # Back to the form, not the dashboard. Every other refusal above
+            # re-renders with what was typed; redirecting here would discard
+            # a whole abstract because of a limit the author cannot see from
+            # the editor, which is the same silent loss the rest of this route
+            # was fixed to stop doing.
+            flash(
+                f"You've reached the limit of {c.max_abstracts_per_user} "
+                f"abstract(s) for this conference. Save this as a draft if "
+                f"you would like to keep it.", "error",
+            )
             return render_template("member/submit_abstract.html",
                                    c=c, tracks=tracks, form=request.form,
                                    abstract_schema=abstract_schema, draft=draft)
@@ -681,6 +734,13 @@ def submit_previewed_abstract(aid):
         return redirect(url_for("member.dashboard"))
     if not c.accepts_abstracts:
         flash("Abstract submission has closed for this conference.", "error")
+        return redirect(url_for("member.dashboard"))
+
+    if _abstract_quota_reached(c, exclude_id=a.id):
+        flash(
+            f"You've reached the limit of {c.max_abstracts_per_user} "
+            f"abstract(s) for this conference.", "error",
+        )
         return redirect(url_for("member.dashboard"))
 
     errors = submission_errors(

@@ -124,26 +124,7 @@
       });
 
       hidden.value = lines.join("\n");
-    refreshPresentingAuthorSelect();
-
-    // Populate existing references when editing a draft
-    var refsData = document.getElementById("references-data");
-    if (refsData && refContainer) {
-      try {
-        var existingRefs = JSON.parse(refsData.textContent);
-        if (Array.isArray(existingRefs) && existingRefs.length > 0) {
-          refContainer.innerHTML = "";
-          existingRefs.forEach(function (r) {
-            var clone = refTmpl.content.firstElementChild.cloneNode(true);
-            var doiInp = clone.querySelector("[data-ref-doi]");
-            if (doiInp) doiInp.value = r.doi || "";
-            refContainer.appendChild(clone);
-          });
-          reindexRefs();
-          validateReferences();
-        }
-      } catch (e) { /* ignore */ }
-    }
+      refreshPresentingAuthorSelect();
     }
 
     function bindRow(row) {
@@ -360,14 +341,39 @@
     if (addRefBtn) addRefBtn.addEventListener("click", addRefRow);
     if (bodyInput) bodyInput.addEventListener("input", validateReferences);
 
-    // Initialize existing refs from edit form if any
-    if (refContainer) {
-      var existingRefs = refContainer.querySelectorAll("[data-ref-doi]");
-      if (existingRefs.length > 0) {
-        existingRefs.forEach(function (inp) {
-          inp.addEventListener("input", validateReferences);
-        });
-      }
+    // Restore the references of a draft being edited.
+    //
+    // This has to run here, once, and never again. It used to sit inside
+    // serialize(), which had two consequences and both of them hurt. At the
+    // point serialize() first ran, `refContainer` was still undefined — it is
+    // assigned further down — so the guard was false and a draft's references
+    // were never restored at all. And every later serialize() — one per
+    // keystroke in an author name, plus one on submit — DID find it defined,
+    // and rebuilt the rows from the stored draft, discarding whatever the
+    // author had typed. An author who re-entered their DOIs and then touched
+    // a co-author's name lost them again; the copy that reached the server had
+    // none, so the body's [1] markers matched nothing and the submission was
+    // refused for a reason the form itself had caused.
+    //
+    // Rows go through addRefRow() rather than being cloned inline, so a
+    // restored row gets the same remove button and revalidation as one added
+    // by hand — the old inline clone bound neither.
+    var refsData = document.getElementById("references-data");
+    if (refsData && refContainer && refTmpl) {
+      try {
+        var savedRefs = JSON.parse(refsData.textContent);
+        if (Array.isArray(savedRefs) && savedRefs.length > 0) {
+          refContainer.innerHTML = "";
+          savedRefs.forEach(function (r) {
+            addRefRow();
+            var row = refContainer.lastElementChild;
+            var doiInp = row && row.querySelector("[data-ref-doi]");
+            if (doiInp) doiInp.value = r.doi || "";
+          });
+          reindexRefs();
+          validateReferences();
+        }
+      } catch (e) { /* a malformed payload must not break the form */ }
     }
   });
 })();

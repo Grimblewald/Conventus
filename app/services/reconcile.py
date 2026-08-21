@@ -44,12 +44,14 @@ def reconcile_payments() -> dict:
         return {"checked": 0, "changes": [], "errors": [],
                 "error": "No enabled payment gateway."}
 
-    # `failed` is included because a first attempt that failed says nothing
-    # about a second that succeeded — and if that second webhook was the one
-    # missed, this sweep is the only thing that would ever notice.
+    # `failed` and `cancelled` are included because a first attempt that did
+    # not go through says nothing about a second that did — and if that second
+    # webhook was the one missed, this sweep is the only thing that would ever
+    # notice. Settled states are deliberately absent: a registration that is
+    # already paid or refunded is not something to re-decide from here.
     candidates = (Registration.query
                   .filter(Registration.status.in_(("pending", "processing",
-                                                   "failed")),
+                                                   "failed", "cancelled")),
                           Registration.deleted_at.is_(None))
                   .all())
 
@@ -75,7 +77,8 @@ def reconcile_payments() -> dict:
             continue
 
         old_status = reg.status
-        if target == "paid" and reg.status in ("pending", "processing", "failed"):
+        if target == "paid" and reg.status in ("pending", "processing",
+                                               "failed", "cancelled"):
             reg.status = "paid"
         elif target == "refunded":
             reg.status = "refunded"

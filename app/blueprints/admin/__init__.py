@@ -175,24 +175,34 @@ def registration_status(reg_id):
         # from `payment.*` (gateway) and `reconcile.*` (gateway, after the
         # fact) so nobody later mistakes it for something Worldline confirmed.
         #
-        # Nothing overwrites this: reconcile_payments() only ever considers
-        # registrations still `pending` or `processing`, so a manually settled
-        # one is not a candidate and survives every subsequent run.
+        # Nothing overwrites this: reconcile_payments() never considers a
+        # registration that is already `paid` or `refunded`, so a manually
+        # settled one is not a candidate and survives every subsequent run.
         #
-        # The amount is the balance, not the sticker price. Crediting
+        # The amount depends on which way the money moved, and the two are not
+        # the same number. A settlement credits the balance: crediting
         # `reg.amount` would settle the whole fee again on a registration that
-        # was already part paid — and would credit it afresh every time the
+        # was already part paid, and would credit it afresh every time the
         # status was toggled back to paid, which a correction routinely does.
-        # Against the balance, the second toggle credits nothing, because
+        # Against the balance the second toggle credits nothing, because
         # nothing is owed.
+        #
+        # A reversal is the mirror of that, and the balance is exactly the
+        # wrong number for it: a paid registration owes nothing, so recording a
+        # refund against the balance recorded a refund of zero. The society
+        # handed the money back and its own ledger went on saying it had kept
+        # it. A reversal restores what was actually received.
         from ...models import record_payment_event
+        from ...models.payment_event import amount_received
         from ...services.invoice import _reg_merchant_reference
+        moved = (amount_received(reg.id) if new_status == "refunded"
+                 else reg.amount_due)
         record_payment_event(
             transaction_id=reg.transaction_id or "",
             merchant_reference=_reg_merchant_reference(reg),
             registration_id=reg.id,
             event_type=f"manual.{new_status}",
-            amount=reg.amount_due,
+            amount=moved,
             note=(f"{reg.reference}: {old_status} → {new_status}, "
                   f"set by {current_user.email}"),
         )

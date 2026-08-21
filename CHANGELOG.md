@@ -3,6 +3,56 @@
 ## [Unreleased]  **MIGRATION REQUIRED**
 
 ### Fixed
+- **Editing a registration re-priced it at today's rate.** The fee was derived
+  again on every save, so a member who paid the early-bird rate and later came
+  back to correct a dietary note — after the early-bird deadline had passed —
+  was silently moved to the full rate, billed the difference, and emailed a
+  demand for money they could not pay, since the payment link correctly
+  reported the registration as settled. The price is now struck when the tier
+  is chosen and left alone; a real tier change still re-prices at the current
+  rate. What someone was charged is a fact about their registration, not
+  something to recompute from the calendar.
+- **The payment page quoted the tier price and charged the balance.** The
+  checkout has always been minted for what is actually owed, so a part-paid
+  registration showed one number and took another. The page now leads with the
+  amount due, showing the tier price beside it when the two differ.
+- **A manual refund was recorded as zero.** The reversal was booked against the
+  outstanding balance, and a paid registration owes nothing — so the society
+  handed the money back and the ledger went on saying it had kept it. A
+  reversal now restores what was actually received; a settlement still credits
+  the balance, which is what stops a status toggled back and forth from
+  stacking credits.
+- **A payment that succeeded after a cancelled attempt left the registration
+  cancelled.** Backing out of the gateway and trying again is ordinary, but the
+  capture fell through to the duplicate-payment branch: the registration read
+  as cancelled while fully paid, the pay link refused it, and admins were
+  emailed about a double payment that had not happened. Reconciliation now
+  reaches these registrations too.
+- **A webhook that failed verification left no trace.** A bad signature or an
+  unparseable body produced a log line inside the gateway module and a 200 on
+  the way out — no ledger row, no audit entry. The one webhook most worth
+  knowing about is now recorded with its source.
+- **Editing a draft abstract destroyed its references.** The code that restores
+  saved references had come to sit inside the author-serialisation function, so
+  it ran at every keystroke in an author name and once more on submit, each
+  time rebuilding the rows from the stored draft and discarding what the author
+  had typed — and never restored them on load at all, because the container it
+  writes into is not assigned until later in the file. The copy that reached
+  the server carried no references, so the body's `[1]` markers matched nothing
+  and the submission was refused for a reason the form itself had caused.
+  Restored rows now also get the remove button and revalidation that rows added
+  by hand have always had.
+- **TIFF figures were advertised and refused.** The form offers PNG, JPG, TIFF
+  or PDF; the figure handler accepted TIFF and then passed it to an image
+  handler that did not, so the author was refused at the moment they pressed
+  Submit, by a message listing formats the form had never offered. TIFF — the
+  format microscopy arrives in — is now accepted, converted for the booklet,
+  and images whose colour mode no encoder will take are reported rather than
+  raising a 500.
+- **Reaching the abstract limit discarded the abstract.** The per-author limit
+  is checked where a draft becomes a submission, and that refusal redirected to
+  the dashboard, dropping the whole submission. It now returns the form with
+  the work in it and suggests saving a draft.
 - **A payment could be credited twice.** One capture can reach the ledger more
   than once — webhooks retry until they are acknowledged, and a single payment
   may arrive as both `payment.paid` and `payment.captured`. Every arrival

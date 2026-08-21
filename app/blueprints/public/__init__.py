@@ -446,7 +446,15 @@ def payment_webhook():
                     db.session.commit()
                     _notify_payment_attention(reg, result)
                 elif result.success:
-                    if reg.status in ("pending", "processing", "failed"):
+                    # `cancelled` belongs here beside `failed`: a payer who
+                    # backs out of the gateway and comes back to try again is
+                    # ordinary, and the second attempt succeeding says nothing
+                    # about the first having been abandoned. Without it the
+                    # capture fell through to the double-payment branch below,
+                    # which left a fully paid registration reading `cancelled`
+                    # and emailed admins about a duplicate that never existed.
+                    if reg.status in ("pending", "processing", "failed",
+                                      "cancelled"):
                         reg.status = "paid"
                         db.session.commit()
                         current_app.logger.info(
@@ -511,6 +519,20 @@ def payment_webhook():
                 amount=result.amount,
                 note=ledger_note,
             )
+        elif result.error:
+            # No event type and an error means the payload never got as far as
+            # being understood — a bad signature, an unparseable body. That is
+            # the one webhook you would most want to know about, and it used to
+            # leave nothing behind but a log line inside the gateway module:
+            # no ledger row, no audit entry, and a 200 on the way out. These
+            # should be rare enough that any volume at all is itself a signal.
+            from ...security import audit
+            audit.record("financial.webhook_rejected",
+                         target_kind="payment_gateway",
+                         target_id=request.remote_addr or "unknown",
+                         summary=f"Rejected webhook from "
+                                 f"{request.remote_addr or 'unknown'}: "
+                                 f"{result.error}"[:400])
         return {"status": "ok" if result.success else "ignored"}, 200
     except Exception:
         current_app.logger.exception("Webhook processing failed")

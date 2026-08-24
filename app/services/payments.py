@@ -131,6 +131,23 @@ def send_registration_confirmation(registration: Registration) -> bool:
     )
 
 
+def _due_date(conf) -> str:
+    """When the payer needs to have paid by.
+
+    The early-bird deadline while it stands, because that is the date the
+    quoted amount depends on; the registration deadline once it has passed.
+    """
+    from datetime import date
+
+    if conf is None:
+        return ""
+    today = date.today()
+    for deadline in (conf.early_bird_deadline, conf.registration_deadline):
+        if deadline and deadline >= today:
+            return deadline.strftime("%-d %B %Y")
+    return ""
+
+
 def send_payment_email(registration: Registration) -> bool:
     """Ask a member to pay, and record that we asked. Returns whether it sent.
 
@@ -153,12 +170,39 @@ def send_payment_email(registration: Registration) -> bool:
     pay_url = payment_url_for(registration)
     conf = registration.conference
     site = get_site_settings()
+    ident = get_financial_identity()
+    currency = (site.currency_code or "AUD").upper()
+    due = _due_date(conf)
+
     body = (
         f"Thank you for registering for {conf.title} ({conf.date_range}).\n\n"
-        f"Tier: {registration.tier_name}\n"
-        f"Amount: {registration.amount_due / 100:.2f} {(site.currency_code or 'AUD').upper()}\n"
-        f"Reference: {registration.reference}\n\n"
-        f"To complete your registration, please visit:\n{pay_url}\n\n"
+        f"Item:      {registration.tier_name}\n"
+        f"Amount:    {site.currency_symbol or ''}"
+        f"{registration.amount_due / 100:.2f} {currency}\n"
+        f"Reference: {registration.reference}\n"
+        + (f"Due:       {due}\n" if due else "")
+        + f"\nPay online:\n{pay_url}\n\n"
+    )
+
+    instructions = (ident.payment_instructions or "").strip()
+    if instructions:
+        # Printed as written, not introduced: the issuer's block carries its own
+        # wording, and a lead-in added here says the same thing a second time.
+        for name, value in (
+            ("sanitized_invoice_ref", sanitized_reference(registration.reference)),
+            ("payment_reference", registration.reference),
+            ("transaction_id", registration.transaction_id or registration.reference),
+            ("amount", f"{registration.amount_due / 100:.2f}"),
+            ("currency_code", currency),
+            ("currency_symbol", site.currency_symbol or ""),
+            ("site_name", site.site_name),
+            ("payment_link", pay_url),
+        ):
+            instructions = instructions.replace("{" + name + "}", str(value))
+        body += f"{instructions}\n\n"
+
+    body += (
+        f"Please quote {registration.reference} with your payment.\n\n"
         f"If you need an invoice as a PDF — for a grant, an employer or your "
         f"own records — you can download one from your dashboard, and a "
         f"receipt once your payment has gone through.\n\n"
@@ -168,22 +212,15 @@ def send_payment_email(registration: Registration) -> bool:
         f"as early as you can.\n"
     )
 
-    instructions = (get_financial_identity().payment_instructions or "").strip()
-    if instructions:
-        # The same variables the documents resolve, so an issuer writes their
-        # EFT block once and it reads correctly wherever it is quoted.
-        for name, value in (
-            ("sanitized_invoice_ref", sanitized_reference(registration.reference)),
-            ("payment_reference", registration.reference),
-            ("transaction_id", registration.transaction_id or registration.reference),
-            ("amount", f"{registration.amount_due / 100:.2f}"),
-            ("currency_code", (site.currency_code or "AUD").upper()),
-            ("currency_symbol", site.currency_symbol or ""),
-            ("site_name", site.site_name),
-            ("payment_link", pay_url),
-        ):
-            instructions = instructions.replace("{" + name + "}", str(value))
-        body += f"\nOr pay by bank transfer:\n{instructions}\n"
+    # Who is asking. Without it this is an anonymous request for a bank
+    # transfer, which is the shape of a scam — and the invoice it accompanies
+    # is issued by a named entity with an ABN.
+    body += "\n-- \n" + "\n".join(
+        line for line in (
+            ident.legal_name or site.site_name,
+            f"ABN {ident.abn}" if ident.abn else "",
+            ident.contact_email or "",
+        ) if line) + "\n"
 
     if not send_mail(to=registration.user.email,
                      subject=f"Payment for {conf.title}", body=body):

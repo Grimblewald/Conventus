@@ -540,7 +540,7 @@ class TestZeroFeeRegistration:
         assert "confirmed" in sent["subject"].lower()
         assert "No payment is required" in sent["body"]
         # The ask is absent — no amount due, no pay link.
-        assert "To complete your registration" not in sent["body"]
+        assert "Pay online:" not in sent["body"]
 
         with app.app_context():
             reg = Registration.query.order_by(Registration.id.desc()).first()
@@ -564,7 +564,7 @@ class TestZeroFeeRegistration:
                            follow_redirects=True)
 
         assert mailbox
-        assert "To complete your registration" in mailbox[-1]["body"]
+        assert "Pay online:" in mailbox[-1]["body"]
         with app.app_context():
             reg = Registration.query.order_by(Registration.id.desc()).first()
             assert reg.status == "pending"
@@ -742,7 +742,7 @@ class TestRegistrationTierChange:
             reg = Registration.query.get(rid)
             assert reg.amount == 11000
             assert reg.status == "pending", "fee waived by switching tiers"
-        assert "To complete your registration" in mailbox[-1]["body"]
+        assert "Pay online:" in mailbox[-1]["body"]
 
     def test_a_cancelled_registration_reopens_on_save(self, seeded, app,
                                                       member_client, mailbox,

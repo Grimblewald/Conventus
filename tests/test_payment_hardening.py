@@ -414,9 +414,9 @@ class TestResendPaymentEmail:
             data=data, follow_redirects=True)
 
     def _count(self, app, rid):
-        from app.models.payment_event import payment_email_counts
+        from app.models.payment_event import PAYMENT_EMAIL_EVENT, event_counts
         with app.app_context():
-            return payment_email_counts([rid]).get(rid, 0)
+            return event_counts([rid], PAYMENT_EMAIL_EVENT).get(rid, 0)
 
     def test_it_sends_and_counts_each_ask(self, seeded, admin_client, app,
                                           mailbox, portal_open):
@@ -626,3 +626,90 @@ class TestTransactionGrouping:
             evts = PaymentEvent.query.filter_by(registration_id=rid).all()
             reg = Registration.query.get(rid)
             assert _transaction_state(evts, reg) == "unpaid"
+
+
+class TestSendingAReceipt:
+    """A gateway capture sends its own receipt. A bank transfer has nobody to
+    send it, because nothing reports the money arriving but the treasurer."""
+
+    @pytest.fixture
+    def mailbox(self, monkeypatch):
+        box: list[dict] = []
+
+        def _record(**kw):
+            box.append(kw)
+            return True
+
+        monkeypatch.setattr("app.services.mail.send_mail", _record)
+        monkeypatch.setattr("app.services.invoice.send_mail", _record)
+        return box
+
+    def _settled_by_transfer(self, app, amount=40000):
+        """Paid into the bank and recorded by hand, as the treasurer would."""
+        from app.models import record_payment_event
+        rid, _ = _registration(app, amount=amount)
+        with app.app_context():
+            record_payment_event(registration_id=rid,
+                                 merchant_reference=f"reg_{rid}",
+                                 event_type="manual.paid", amount=amount)
+            reg = Registration.query.get(rid)
+            reg.status = "paid"
+            db.session.commit()
+        return rid
+
+    def test_recording_the_payment_sends_nothing_by_itself(self, seeded,
+                                                           admin_client, app,
+                                                           mailbox):
+        """Correcting a status must not put an email in front of a registrant."""
+        rid, _ = _registration(app, amount=40000)
+        admin_client.post(f"/admin/registrations/{rid}/status",
+                          data={"status": "paid"}, follow_redirects=True)
+        assert mailbox == []
+
+    def test_the_button_sends_it(self, seeded, admin_client, app, mailbox):
+        rid = self._settled_by_transfer(app)
+        resp = admin_client.post(f"/admin/registrations/{rid}/send-receipt",
+                                 follow_redirects=True)
+        assert b"Receipt sent to" in resp.data
+        assert len(mailbox) == 1
+        assert mailbox[0].get("attachments"), "the PDF should be attached"
+
+    def test_it_quotes_what_was_received(self, seeded, admin_client, app,
+                                         mailbox):
+        """Not the tier price, which differs on a part-paid registration."""
+        rid, _ = _registration(app, amount=50000)
+        with app.app_context():
+            from app.models import record_payment_event
+            record_payment_event(registration_id=rid,
+                                 merchant_reference=f"reg_{rid}",
+                                 event_type="manual.paid", amount=20000)
+            reg = Registration.query.get(rid)
+            reg.status = "paid"
+            db.session.commit()
+
+        admin_client.post(f"/admin/registrations/{rid}/send-receipt",
+                          follow_redirects=True)
+        body = mailbox[-1]["body"]
+        assert "200.00" in body and "500.00" not in body
+
+    def test_an_unpaid_registration_has_no_receipt(self, seeded,
+                                                   admin_client, app, mailbox):
+        rid, _ = _registration(app, amount=40000)
+        resp = admin_client.post(f"/admin/registrations/{rid}/send-receipt",
+                                 follow_redirects=True)
+        assert b"once the payment has been recorded" in resp.data
+        assert mailbox == []
+
+    def test_it_needs_the_finance_permission(self, seeded, member_client,
+                                             app, mailbox):
+        rid = self._settled_by_transfer(app)
+        resp = member_client.post(f"/admin/registrations/{rid}/send-receipt")
+        assert resp.status_code in (302, 403, 404)
+        assert mailbox == []
+
+    def test_the_treasurer_can_download_it_first(self, seeded, admin_client,
+                                                 app):
+        rid = self._settled_by_transfer(app)
+        resp = admin_client.get(f"/admin/registrations/{rid}/receipt.pdf")
+        assert resp.status_code == 200
+        assert resp.mimetype == "application/pdf"

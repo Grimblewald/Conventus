@@ -8,7 +8,8 @@ from __future__ import annotations
 import secrets
 from datetime import datetime, timedelta
 
-from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
+from flask import (Blueprint, current_app, flash, redirect, render_template,
+                   request, send_file, url_for)
 from flask_login import current_user
 
 from ...extensions import db
@@ -142,8 +143,9 @@ def registrations():
         .order_by(Conference.start_date.desc())
         .all()
     )
-    from ...models.payment_event import payment_email_counts
+    from ...models.payment_event import PAYMENT_EMAIL_EVENT, event_counts
 
+    ids = [r.id for r in regs]
     return render_template(
         "admin/registrations.html",
         regs=regs,
@@ -151,7 +153,8 @@ def registrations():
         conference_id=conference_id,
         status_filter=status_filter,
         q=q,
-        email_counts=payment_email_counts([r.id for r in regs]),
+        email_counts=event_counts(ids, PAYMENT_EMAIL_EVENT),
+        receipt_counts=event_counts(ids, "document.sent"),
     )
 
 
@@ -200,6 +203,75 @@ def registration_resend_payment_email(reg_id):
             "until you open them; the bank transfer details still apply."
             if closed else ""), "success")
     return redirect(back)
+
+
+def _receipt_blocked(reg) -> str:
+    """Why this registration has no receipt to send, or "" if it has."""
+    if reg.deleted_at is not None:
+        return "That registration has been deleted."
+    if reg.user is None or not reg.user.email:
+        return "That registration has no email address to send to."
+    if reg.status not in ("paid", "refunded"):
+        return (f"This registration is {reg.status}. A receipt is available "
+                f"once the payment has been recorded.")
+    return ""
+
+
+@admin_bp.route("/registrations/<int:reg_id>/send-receipt", methods=["POST"])
+@requires_permission("financial.manage")
+def registration_send_receipt(reg_id):
+    """Email this registration's receipt.
+
+    A gateway capture sends one by itself; a bank transfer does not, because
+    nothing tells us it arrived except the treasurer saying so. Sending is a
+    separate act from recording the payment, so correcting a status does not
+    put an email in front of a registrant.
+    """
+    from ...models.payment_event import amount_received
+    from ...services.invoice import send_invoice_email
+
+    reg = Registration.query.get_or_404(reg_id)
+    back = request.form.get("next") or url_for("admin.registrations")
+    blocked = _receipt_blocked(reg)
+    if blocked:
+        flash(blocked, "error")
+        return redirect(back)
+
+    # What was received, not the tier price: the two differ on a registration
+    # part paid or upgraded, and the receipt is a record of money that arrived.
+    send_invoice_email(reg, amount_cents=amount_received(reg.id))
+    from ...security import audit as audit_log
+    kind = "adjustment note" if reg.status == "refunded" else "receipt"
+    audit_log.record(
+        "financial.receipt_sent", target_kind="registration", target_id=reg.id,
+        summary=f"{current_user.email} sent {reg.reference} {kind} to "
+                f"{reg.user.email}")
+    flash(f"{kind.capitalize()} sent to {reg.user.email}.", "success")
+    return redirect(back)
+
+
+@admin_bp.route("/registrations/<int:reg_id>/receipt.pdf")
+@requires_permission("financial.manage")
+def registration_receipt_pdf(reg_id):
+    """The receipt as a PDF, for checking before sending or forwarding by hand."""
+    from io import BytesIO
+
+    from ...services.documents import RenderError
+    from ...services.invoice import _safe_ref, registration_document
+
+    reg = Registration.query.get_or_404(reg_id)
+    blocked = _receipt_blocked(reg)
+    if blocked:
+        flash(blocked, "error")
+        return redirect(url_for("admin.registration_detail", reg_id=reg.id))
+    try:
+        pdf = registration_document(reg, "receipt")
+    except RenderError as e:
+        flash(f"The receipt could not be produced: {e}", "error")
+        return redirect(url_for("admin.registration_detail", reg_id=reg.id))
+    return send_file(BytesIO(pdf), mimetype="application/pdf",
+                     as_attachment=True,
+                     download_name=f"receipt-{_safe_ref(reg.reference)}.pdf")
 
 
 @admin_bp.route("/registrations/<int:reg_id>/status", methods=["POST"])
@@ -267,13 +339,14 @@ def registration_detail(reg_id):
     conference = reg.conference
     schema = conference.registration_form_schema if conference else None
     sub_events_list = conference.sub_events if conference else []
-    from ...models.payment_event import payment_email_counts
+    from ...models.payment_event import PAYMENT_EMAIL_EVENT, event_counts
 
     return render_template(
         "admin/registration_detail.html",
         reg=reg, conference=conference,
         schema=schema, sub_events_list=sub_events_list,
-        emails_sent=payment_email_counts([reg.id]).get(reg.id, 0),
+        emails_sent=event_counts([reg.id], PAYMENT_EMAIL_EVENT).get(reg.id, 0),
+        receipts_sent=event_counts([reg.id], "document.sent").get(reg.id, 0),
     )
 
 

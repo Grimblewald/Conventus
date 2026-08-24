@@ -39,8 +39,30 @@
   {% if can('financial.manage') %}
   <div class="card">
     <h4 style="margin-top:0;">Payment email</h4>
-    {% if reg.status in ('paid', 'refunded', 'cancelled') %}
-      <p class="muted">This registration is {{ reg.status }} — there is nothing to ask for.</p>
+    {% if reg.status in ('paid', 'refunded') %}
+      {% set kind = 'adjustment note' if reg.status == 'refunded' else 'receipt' %}
+      <p class="muted">
+        {% if receipts_sent %}
+          Sent {{ receipts_sent }} time{{ 's' if receipts_sent != 1 }}.
+        {% else %}
+          No {{ kind }} has been sent. A card payment sends its own; a bank
+          transfer does not, because nothing reports it but you.
+        {% endif %}
+      </p>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <form method="post"
+              action="{{ url_for('admin.registration_send_receipt', reg_id=reg.id) }}"
+              data-confirm="Email the {{ kind }} for {{ reg.reference }} to {{ reg.user.email }}?">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="next" value="{{ url_for('admin.registration_detail', reg_id=reg.id) }}">
+          <button class="btn btn-primary btn-sm" type="submit">
+            {% if receipts_sent %}Send again{% else %}Send {{ kind }}{% endif %}</button>
+        </form>
+        <a class="btn btn-quiet btn-sm"
+           href="{{ url_for('admin.registration_receipt_pdf', reg_id=reg.id) }}">Download PDF</a>
+      </div>
+    {% elif reg.status == 'cancelled' %}
+      <p class="muted">This registration is cancelled — there is nothing to ask for.</p>
     {% elif reg.amount_due <= 0 %}
       <p class="muted">Nothing is outstanding on this registration.</p>
     {% else %}

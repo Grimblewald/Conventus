@@ -151,8 +151,8 @@ def amount_received(registration_id: int) -> int:
                 if t not in CHARGE_EVENTS)
 
 
-def payment_email_counts(registration_ids) -> dict[int, int]:
-    """How many payment emails each registration has been sent.
+def event_counts(registration_ids, event_type: str) -> dict[int, int]:
+    """How many *event_type* events each of these registrations has.
 
     One grouped query, so a list view asks once for the whole page.
     """
@@ -161,7 +161,7 @@ def payment_email_counts(registration_ids) -> dict[int, int]:
         return {}
     rows = (PaymentEvent.query
             .filter(PaymentEvent.registration_id.in_(ids),
-                    PaymentEvent.event_type == PAYMENT_EMAIL_EVENT)
+                    PaymentEvent.event_type == event_type)
             .with_entities(PaymentEvent.registration_id,
                            db.func.count(PaymentEvent.id))
             .group_by(PaymentEvent.registration_id)

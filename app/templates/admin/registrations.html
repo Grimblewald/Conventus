@@ -75,7 +75,19 @@
       </td>
       <td>{{ r.created_at.strftime('%-d %b %Y') }}</td>
       {% if can('financial.manage') %}<td>
-        {% if r.status in ('paid', 'refunded', 'cancelled') or r.amount_due <= 0 %}
+        {% if r.status in ('paid', 'refunded') %}
+          {# A gateway capture sends its own; a bank transfer has nobody to send it. #}
+          {% set sent = receipt_counts.get(r.id, 0) %}
+          <form method="post" style="display:inline;"
+                action="{{ url_for('admin.registration_send_receipt', reg_id=r.id) }}"
+                data-confirm="Email the {{ 'adjustment note' if r.status == 'refunded' else 'receipt' }} for {{ r.reference }} to {{ r.user.email if r.user else 'this member' }}?">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="next" value="{{ request.full_path }}">
+            <button class="btn btn-quiet btn-sm" type="submit" style="white-space:nowrap;">
+              {% if sent %}Resend receipt{% else %}Send receipt{% endif %}</button>
+          </form>
+          {% if sent %}<span class="muted" title="{{ sent }} sent">×{{ sent }}</span>{% endif %}
+        {% elif r.status == 'cancelled' or r.amount_due <= 0 %}
           <span class="muted">—</span>
         {% else %}
         <form method="post" style="display:inline;"

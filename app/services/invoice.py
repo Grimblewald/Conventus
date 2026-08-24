@@ -78,18 +78,25 @@ def _business_vars(amount_cents: int, gst: bool | None = None) -> dict:
 # refund, with the §7 failure handling around the render.
 # ---------------------------------------------------------------------------
 
-def send_invoice_email(reg: Registration) -> bool:
+def send_invoice_email(reg: Registration, amount_cents: int | None = None) -> bool:
     """Auto document for a settled registration: a receipt when paid, an
     adjustment note when refunded (plan §2 mapping). Renders the matching PDF
     and emails that kind's cover with it attached; on a compile failure the
-    payment is already final, so §7 keeps the webhook safe."""
+    payment is already final, so §7 keeps the webhook safe.
+
+    *amount_cents* states what the document is for. The webhook sends this
+    before the capture reaches the ledger, so it cannot be derived here and
+    defaults to the tier price; a caller settling afterwards knows what was
+    received and should say so.
+    """
     kind = "adjustment" if reg.status == "refunded" else "receipt"
-    vars_ = _registration_vars(reg, kind)
+    vars_ = _registration_vars(reg, kind, amount_cents=amount_cents)
     log.info("Sending %s to %s for reg %d", kind, vars_["user_email"], reg.id)
     return _send_auto_document(
         kind, vars_, to=vars_["user_email"], reg=reg,
         merchant_reference=_reg_merchant_reference(reg),
-        transaction_id=reg.transaction_id or "", amount_cents=reg.amount)
+        transaction_id=reg.transaction_id or "",
+        amount_cents=reg.amount if amount_cents is None else amount_cents)
 
 
 def send_manual_invoice_receipt(reference: str, *, amount_cents: int | None = None,

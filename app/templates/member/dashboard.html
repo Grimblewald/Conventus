@@ -76,7 +76,15 @@
               {# The booklet's own rendering, so formatting can be checked
                  while there is still time to change it. #}
               <a class="btn btn-quiet btn-sm" href="{{ url_for('member.abstract_pdf', aid=a.id) }}">PDF</a>
-              {% if a.status in ('submitted', 'accepted') %}
+              {% if a.status == 'draft' %}
+                {# Never sent anywhere and nobody has read it, so no emailed code. #}
+                <form method="post" action="{{ url_for('member.delete_draft_abstract', aid=a.id) }}"
+                      data-confirm="Discard this draft? This cannot be undone."
+                      style="display:inline; margin-left:4px;">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="btn btn-quiet btn-sm" type="submit">Discard</button>
+                </form>
+              {% elif a.status in ('submitted', 'accepted') %}
                 <form method="post" action="{{ url_for('member.delete_abstract_request', aid=a.id) }}"
                       data-confirm="Request a confirmation code to delete this abstract?"
                       style="display:inline; margin-left:4px;">

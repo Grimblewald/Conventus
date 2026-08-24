@@ -145,12 +145,34 @@
 
       <div class="field">
         <label for="figure">Figure (optional — PNG, JPG, TIFF or PDF, max 8 MB)</label>
+        {% if draft and draft.figure_filename %}
+        <div class="help" style="margin-bottom:6px;">
+          A figure is attached
+          (<a href="{{ url_for('member.abstract_figure', aid=draft.id) }}"
+              target="_blank" rel="noopener">view</a>).
+          Leave this empty to keep it, or choose a file to replace it.
+        </div>
+        <label class="help" style="display:block; margin-bottom:6px;">
+          <input type="checkbox" name="remove_figure" value="1"> Remove the attached figure
+        </label>
+        {% endif %}
         <input class="input" id="figure" name="figure" type="file" accept=".png,.jpg,.jpeg,.tif,.tiff,.pdf"
                data-max-megapixels="{{ max_megapixels }}">
       </div>
 
       <div class="field">
         <label for="profile_picture">Profile picture (optional — PNG, JPG, or WebP, max 4 MB)</label>
+        {% if draft and draft.profile_picture_filename %}
+        <div class="help" style="margin-bottom:6px;">
+          A photo is attached
+          (<a href="{{ url_for('public.abstract_upload', name=draft.profile_picture_filename) }}"
+              target="_blank" rel="noopener">view</a>).
+          Leave this empty to keep it, or choose a file to replace it.
+        </div>
+        <label class="help" style="display:block; margin-bottom:6px;">
+          <input type="checkbox" name="remove_profile_picture" value="1"> Remove the attached photo
+        </label>
+        {% endif %}
         <input class="input" id="profile_picture" name="profile_picture" type="file" accept=".png,.jpg,.jpeg,.webp"
                data-max-megapixels="{{ max_megapixels }}">
         <div class="help">A headshot or photo for your presenter profile.</div>

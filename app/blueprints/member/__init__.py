@@ -597,6 +597,9 @@ def submit_abstract(slug):
                 remove_upload(current_app.config["UPLOAD_FOLDER"],
                               a.figure_filename)
             a.figure_filename = new_fig
+        elif request.form.get("remove_figure") == "1" and a.figure_filename:
+            remove_upload(current_app.config["UPLOAD_FOLDER"], a.figure_filename)
+            a.figure_filename = None
 
         pic = request.files.get("profile_picture")
         if pic and pic.filename:
@@ -615,6 +618,11 @@ def submit_abstract(slug):
                 remove_upload(current_app.config["UPLOAD_FOLDER"],
                               f"abstracts/{a.profile_picture_filename}")
             a.profile_picture_filename = rel.split("/", 1)[-1]
+        elif (request.form.get("remove_profile_picture") == "1"
+                and a.profile_picture_filename):
+            remove_upload(current_app.config["UPLOAD_FOLDER"],
+                          f"abstracts/{a.profile_picture_filename}")
+            a.profile_picture_filename = None
 
         if not draft:
             db.session.add(a)
@@ -786,6 +794,32 @@ def submit_previewed_abstract(aid):
 # ---------------------------------------------------------------------------
 # Abstract soft-delete (OTP-confirmed, member)
 # ---------------------------------------------------------------------------
+
+@member_bp.route("/abstracts/<int:aid>/delete-draft", methods=["POST"])
+@login_required
+def delete_draft_abstract(aid):
+    """Discard a draft outright.
+
+    A draft has never been sent anywhere and nobody has read it, so the emailed
+    code that guards a real submission would only be an obstacle to throwing
+    away one's own unfinished work.
+    """
+    a = Abstract.query.get_or_404(aid)
+    if a.user_id != current_user.id:
+        abort(403)
+    if a.deleted_at is not None or a.status != "draft":
+        flash("That abstract can't be discarded here.", "error")
+        return redirect(url_for("member.dashboard"))
+
+    title = a.title
+    a.deleted_at = datetime.utcnow()
+    db.session.commit()
+    audit.record("abstract.draft_discarded",
+                 target_kind="abstract", target_id=a.id,
+                 summary=f"{current_user.email} discarded draft \"{title}\"")
+    flash(f"Discarded draft \"{title}\".", "success")
+    return redirect(url_for("member.dashboard"))
+
 
 @member_bp.route("/abstracts/<int:aid>/delete-request", methods=["POST"])
 @login_required

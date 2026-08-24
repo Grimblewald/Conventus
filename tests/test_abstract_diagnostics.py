@@ -349,3 +349,89 @@ class TestEditingAfterSubmission:
         wired = set(re.findall(r'\["(btn-[a-z]+)",', page))
         assert rendered, "expected action buttons on the page"
         assert rendered <= wired, f"no handler for {rendered - wired}"
+
+    def test_editing_keeps_the_existing_figure(self, seeded, member_client,
+                                                app, conference):
+        """An untouched file input posts an empty filename, and must not be
+        read as "remove the figure"."""
+        from pathlib import Path
+
+        from flask import current_app
+
+        aid = self._abstract(app, conference, "submitted")
+        with app.app_context():
+            folder = Path(current_app.config["UPLOAD_FOLDER"]) / "abstracts"
+            folder.mkdir(parents=True, exist_ok=True)
+            (folder / "fig_keepme.png").write_bytes(b"not really a png")
+            a = Abstract.query.get(aid)
+            a.figure_filename = "abstracts/fig_keepme.png"
+            db.session.commit()
+
+        member_client.post(f"/conferences/{conference}/abstract", data={
+            "title": "A submitted piece of work", "authors": "Jane Doe|1|Uni",
+            "body": "A body with nothing wrong with it.",
+            "presenting_author_index": "0", "action": "submit",
+            "edit_id": str(aid),
+        }, follow_redirects=True)
+
+        with app.app_context():
+            assert Abstract.query.get(aid).figure_filename == \
+                "abstracts/fig_keepme.png"
+            folder = Path(current_app.config["UPLOAD_FOLDER"]) / "abstracts"
+            assert (folder / "fig_keepme.png").exists(), "file deleted from disk"
+
+    def test_the_edit_form_shows_the_figure_that_is_attached(
+            self, seeded, member_client, app, conference):
+        """Otherwise the author sees an empty file input and cannot tell
+        whether their figure is still there."""
+        aid = self._abstract(app, conference, "submitted")
+        with app.app_context():
+            a = Abstract.query.get(aid)
+            a.figure_filename = "abstracts/fig_keepme.png"
+            db.session.commit()
+
+        page = member_client.get(
+            f"/conferences/{conference}/abstract?edit={aid}").data
+        assert b"A figure is attached" in page
+        assert b"remove_figure" in page
+
+
+class TestDiscardingADraft:
+    """A draft has been sent nowhere and read by nobody, so the emailed code
+    that guards a real submission is only an obstacle."""
+
+    def _draft(self, app, conference, status="draft"):
+        with app.app_context():
+            c = Conference.query.filter_by(slug=conference).first()
+            u = User.query.filter_by(email="member@test.example.org").first()
+            a = Abstract(user_id=u.id, conference_id=c.id, status=status,
+                         title="Half-written thing", authors="Jane Doe|1|Uni",
+                         body="Not finished.", presenting_author_index=0)
+            db.session.add(a)
+            db.session.commit()
+            return a.id
+
+    def test_a_draft_goes_without_a_code(self, seeded, member_client, app,
+                                         conference):
+        aid = self._draft(app, conference)
+        resp = member_client.post(f"/abstracts/{aid}/delete-draft",
+                                  follow_redirects=True)
+        assert b"Discarded draft" in resp.data
+        with app.app_context():
+            assert Abstract.query.get(aid).deleted_at is not None
+
+    def test_a_submitted_abstract_still_needs_one(self, seeded, member_client,
+                                                  app, conference):
+        aid = self._draft(app, conference, status="submitted")
+        member_client.post(f"/abstracts/{aid}/delete-draft",
+                           follow_redirects=True)
+        with app.app_context():
+            assert Abstract.query.get(aid).deleted_at is None
+
+    def test_it_is_not_a_way_into_someone_else_s_drafts(self, seeded, client,
+                                                        app, conference):
+        aid = self._draft(app, conference)
+        assert client.post(
+            f"/abstracts/{aid}/delete-draft").status_code in (302, 401, 403)
+        with app.app_context():
+            assert Abstract.query.get(aid).deleted_at is None

@@ -215,11 +215,15 @@ def send_payment_email(registration: Registration) -> bool:
     # Who is asking. Without it this is an anonymous request for a bank
     # transfer, which is the shape of a scam — and the invoice it accompanies
     # is issued by a named entity with an ABN.
+    #
+    # The society, never a person: this goes to every registrant, and no
+    # individual's address belongs on a broadcast. The contact page reaches
+    # whoever is currently listed without publishing anyone.
     body += "\n-- \n" + "\n".join(
         line for line in (
             ident.legal_name or site.site_name,
             f"ABN {ident.abn}" if ident.abn else "",
-            ident.contact_email or "",
+            url_for("public.contact", _external=True),
         ) if line) + "\n"
 
     if not send_mail(to=registration.user.email,

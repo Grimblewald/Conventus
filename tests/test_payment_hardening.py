@@ -227,7 +227,10 @@ class TestThePriceIsStruckOnce:
         """A conference with a $300 early-bird rate and a $450 standard one."""
         import secrets
         tag = secrets.token_hex(4)
-        deadline = (date.today() - timedelta(days=1) if early_bird_gone
+        # Days, not one day: the app compares against the UTC date and this
+        # runs in a zone ahead of it, so a one-day gap is no gap at all for
+        # part of every day.
+        deadline = (date.today() - timedelta(days=3) if early_bird_gone
                     else date.today() + timedelta(days=30))
         with app.app_context():
             c = Conference(slug=f"eb-{tag}", title="Early Bird 2027",

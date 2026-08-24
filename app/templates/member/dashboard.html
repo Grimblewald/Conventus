@@ -23,7 +23,9 @@
             <td>{{ site.currency_symbol }}{{ r.amount | format_amount }} {{ site.currency_code }}</td>
             <td><span class="status" data-v="{{ r.status }}">{{ r.status }}</span></td>
             <td style="display:flex; gap:6px; flex-wrap:wrap;">
-              {% if r.status in ('pending', 'failed', 'cancelled') and (payments_open_to_members() or current_user.is_admin or can('financial.manage')) %}
+              {# Not 'cancelled': that means the registration itself was
+                 cancelled, which the pay link also refuses. #}
+              {% if r.status in ('pending', 'failed') and (payments_open_to_members() or current_user.is_admin or can('financial.manage')) %}
                 <a class="btn btn-primary btn-sm" href="{{ url_for('member.pay_registration', reg_id=r.id) }}">Pay</a>
               {% endif %}
               {# Details stay editable while the conference is still taking

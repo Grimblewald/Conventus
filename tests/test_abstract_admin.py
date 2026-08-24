@@ -285,6 +285,7 @@ class TestBookletCompile:
         assert resp.status_code == 200, resp.data[:500]
         assert resp.data[:4] == b"%PDF"
 
+    @pytest.mark.real_latex
     def test_contents_entries_link_to_their_own_abstract(self, seeded,
                                                         admin_client, app, db):
         """Each contents entry must jump to its own abstract.

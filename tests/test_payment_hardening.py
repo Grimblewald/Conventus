@@ -497,3 +497,68 @@ class TestResendPaymentEmail:
             f"/admin/registrations/{rid}/resend-payment-email")
         assert resp.status_code in (302, 403, 404)
         assert mailbox == []
+
+
+class TestACancelledAttemptIsNotACancelledRegistration:
+    """A payer backing out of the gateway leaves the fee owing and payable."""
+
+    def _webhook(self, client, monkeypatch, rid, event_type, success=False):
+        from app.services.gateways import WebhookResult
+
+        class _Gateway:
+            def verify_webhook(self, body, headers):
+                return WebhookResult(
+                    success=success, registration_id=rid,
+                    transaction_id="TXN-X", event_type=event_type,
+                    merchant_reference=f"reg_{rid}", amount=40000)
+
+        monkeypatch.setattr("app.services.payments._active_gateway",
+                            lambda: _Gateway())
+        return client.post("/payments/webhook", data=b"{}",
+                           content_type="application/json")
+
+    def test_cancelling_leaves_the_registration_pending(self, seeded, client,
+                                                        monkeypatch, app):
+        rid, _ = _registration(app, amount=40000)
+        self._webhook(client, monkeypatch, rid, "payment.cancelled")
+        with app.app_context():
+            reg = Registration.query.get(rid)
+            assert reg.status == "pending", "the registration was not cancelled"
+            assert reg.amount_outstanding == 40000
+            assert reg.last_webhook_event == "payment.cancelled"
+
+    def test_a_rejected_card_leaves_it_pending_too(self, seeded, client,
+                                                   monkeypatch, app):
+        rid, _ = _registration(app, amount=40000)
+        self._webhook(client, monkeypatch, rid, "payment.rejected")
+        with app.app_context():
+            assert Registration.query.get(rid).status == "pending"
+
+    def test_an_ended_attempt_clears_the_in_flight_marker(self, seeded, client,
+                                                          monkeypatch, app):
+        """Otherwise a registration sticks in `processing` and cannot be paid."""
+        rid, _ = _registration(app, amount=40000, status="processing")
+        self._webhook(client, monkeypatch, rid, "payment.cancelled")
+        with app.app_context():
+            assert Registration.query.get(rid).status == "pending"
+
+    def test_the_pay_link_still_works_after_a_cancelled_attempt(
+            self, seeded, client, monkeypatch, app):
+        """The forwarded link must not die because the payer once backed out."""
+        rid, _ = _registration(app, amount=40000)
+        with app.app_context():
+            token = Registration.query.get(rid).ensure_pay_token()
+        self._webhook(client, monkeypatch, rid, "payment.cancelled")
+
+        resp = client.get(f"/pay/registration/{token}")
+        assert b"no longer be paid" not in resp.data
+        assert b"Registration cancelled" not in resp.data
+
+    def test_an_administrator_can_still_cancel_a_registration(
+            self, seeded, admin_client, app):
+        """`cancelled` keeps its meaning — it just belongs to a person now."""
+        rid, _ = _registration(app, amount=40000)
+        admin_client.post(f"/admin/registrations/{rid}/status",
+                          data={"status": "cancelled"}, follow_redirects=True)
+        with app.app_context():
+            assert Registration.query.get(rid).status == "cancelled"

@@ -40,6 +40,7 @@ def abstract_id(app):
 
 
 class TestRender:
+    @pytest.mark.real_latex
     def test_compiles_a_real_pdf(self, app, abstract_id):
         """Including the LaTeX metacharacters an author will inevitably type."""
         from app.services.abstract_latex import render_abstract_pdf

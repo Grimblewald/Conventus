@@ -31,6 +31,14 @@
   times. Sending while member payments are closed is possible but asks for
   confirmation first, since the card link stays inert until they are opened.
 
+### Changed
+- **The test suite no longer compiles LaTeX it does not examine.** Sending an
+  abstract or settling a payment attaches a rendered PDF, so most of the suite
+  ran tectonic as a side effect of exercising something else — 41 compiles, two
+  thirds of the total runtime, for bytes no assertion looked at. Compiles are
+  stubbed by default with a content-sensitive fake, and the tests that are
+  about the toolchain opt back in with a `real_latex` marker. 227s to 92s.
+
 ### Fixed
 - **An author can correct a submitted abstract until submissions close.** The
   confirmation email told them they could edit and use the latest version,
@@ -55,6 +63,20 @@
   HTML, so a journal such as "Organic &amp; Biomolecular Chemistry" was printed
   with the entity intact, in the booklet and on the site alike.
 
+- **Cancelling a payment cancelled the registration.** A payer who backed out
+  of the gateway — or whose card was declined — had their registration marked
+  cancelled or failed, though they were still registered and still owed the
+  fee. The durable pay link then refused it outright, so a link forwarded to a
+  finance office stopped working because the academic had once pressed cancel,
+  while the dashboard went on offering a Pay button: the two disagreed. And
+  because the status only changed when the webhook arrived, the page shown on
+  return from the gateway said pending while the record later read cancelled.
+  A payment attempt ending is not the registration ending. The status is left
+  alone, an in-flight marker is cleared so the payer can start again, and what
+  happened to the attempt stays on the ledger and in the last webhook event.
+  `cancelled` now means somebody cancelled the registration. A migration
+  returns rows cancelled by a webhook to pending, touching only those carrying
+  evidence of that path and leaving anything cancelled by a person alone.
 - **Editing a registration re-priced it at today's rate.** The fee was derived
   again on every save, so a member who paid the early-bird rate and later came
   back to correct a dietary note — after the early-bird deadline had passed —

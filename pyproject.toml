@@ -44,6 +44,9 @@ target-version = "py312"
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
+markers = [
+    "real_latex: run tectonic for real; for tests about the toolchain itself",
+]
 
 [dependency-groups]
 dev = [

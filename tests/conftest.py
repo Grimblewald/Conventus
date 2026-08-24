@@ -24,6 +24,34 @@ DevelopmentConfig.RATELIMIT_ENABLED = False
 from app.extensions import db as _db
 
 
+@pytest.fixture(autouse=True)
+def stub_latex_compile(request, monkeypatch):
+    """Replace the tectonic run with a fake, unless the test asks for the real
+    one with the `real_latex` marker.
+
+    Sending an abstract or settling a payment attaches a rendered PDF, so most
+    of the suite compiled LaTeX as a side effect of exercising something else —
+    a few seconds each, for bytes nothing then looked at.
+
+    The fake is content-sensitive: the same .tex always yields the same bytes
+    and different .tex different bytes, so tests that rely on a document being
+    rebuilt identically still mean something.
+    """
+    if "real_latex" in request.keywords:
+        return
+
+    import hashlib
+
+    from app.services import documents as docs
+
+    def _fake_compile(tectonic, job_dir, tex_path, epoch, memory_mb=0,
+                      should_abort=None, timeout=0):
+        digest = hashlib.sha256(Path(tex_path).read_bytes()).hexdigest()
+        return b"%PDF-" + digest.encode()
+
+    monkeypatch.setattr(docs, "_compile", _fake_compile)
+
+
 @pytest.fixture(scope="session")
 def app():
     """Session-scoped Flask app with a temp instance and DB.

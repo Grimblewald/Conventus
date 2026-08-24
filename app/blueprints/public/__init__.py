@@ -486,10 +486,13 @@ def payment_webhook():
                                 f"transactions in the Merchant Portal and "
                                 f"refund the duplicate."))
                 elif event_type in ("payment.rejected", "payment.rejected_capture", "payment.cancelled"):
-                    # Never downgrade a completed payment on a stale or
-                    # out-of-order failure event.
-                    if reg.status in ("pending", "processing"):
-                        reg.status = "cancelled" if event_type == "payment.cancelled" else "failed"
+                    # An attempt ending is not the registration ending. The fee
+                    # is still owed and still payable, so the status stays as
+                    # it was; what happened to the attempt is on the ledger and
+                    # in last_webhook_event. Only the in-flight marker is
+                    # cleared, so the payer can start again.
+                    if reg.status == "processing":
+                        reg.status = "pending"
                     db.session.commit()
                 elif event_type in ("payment.pending_capture", "payment.capture_requested"):
                     if reg.status == "pending":

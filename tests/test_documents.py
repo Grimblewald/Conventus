@@ -165,6 +165,7 @@ def test_missing_tectonic_raises(ctx, monkeypatch):
 
 # --- (f) broken body → RenderError with a non-empty log ---------------------
 
+@pytest.mark.real_latex
 def test_broken_body_raises_with_log(ctx, monkeypatch):
     broken = types.SimpleNamespace(
         pdf_body=RawLatex(r"\begin{tabular}{cc} never closed"),
@@ -667,6 +668,7 @@ def test_boot_warm_respects_the_flag(monkeypatch):
     assert started == []
 
 
+@pytest.mark.real_latex
 def test_compile_takes_a_box_wide_lock(ctx, monkeypatch):
     """One tectonic per machine, not per worker: the in-process queue caps
     concurrency inside a single gunicorn worker only."""
@@ -718,6 +720,7 @@ def test_compile_runs_under_a_memory_cap(ctx):
     assert render_document("invoice", _vars())[:4] == b"%PDF"
 
 
+@pytest.mark.real_latex
 def test_memory_cap_is_enforced_on_the_child(ctx, monkeypatch):
     """The limiter is really applied to the subprocess — proved by setting a
     cap so small that the compile cannot possibly succeed."""
@@ -930,6 +933,7 @@ def test_optional_blocks_vanish_when_unset(ctx):
         assert flag in tex, flag
 
 
+@pytest.mark.real_latex
 def test_abandoned_job_skips_compile_after_acquiring_lock(ctx):
     """A job whose caller has already timed out must not spend the single
     machine-wide compile slot: once the box lock is held, an abandoned job is
@@ -958,6 +962,7 @@ def test_abandoned_job_skips_compile_after_acquiring_lock(ctx):
     assert "abandoned" in str(job.error)
 
 
+@pytest.mark.real_latex
 def test_should_abort_predicate_prevents_tectonic_run(ctx, monkeypatch):
     """_compile checks should_abort right after taking the lock, before it
     would launch the subprocess."""

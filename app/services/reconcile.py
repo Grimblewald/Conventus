@@ -24,9 +24,12 @@ _STATUS_MAP = {
     "PAID": "paid",
     "CAPTURED": "captured-as-paid",
     "REFUNDED": "refunded",
-    "REJECTED": "failed",
-    "REJECTED_CAPTURE": "failed",
-    "CANCELLED": "cancelled",
+    # An attempt that did not complete leaves the registration owing and
+    # payable, so these return it to pending rather than marking it failed or
+    # cancelled — the registration was neither.
+    "REJECTED": "pending",
+    "REJECTED_CAPTURE": "pending",
+    "CANCELLED": "pending",
     "PENDING_CAPTURE": "processing",
     "CAPTURE_REQUESTED": "processing",
 }
@@ -82,8 +85,9 @@ def reconcile_payments() -> dict:
             reg.status = "paid"
         elif target == "refunded":
             reg.status = "refunded"
-        elif target in ("failed", "cancelled") and reg.status in ("pending", "processing"):
-            reg.status = target
+        elif target == "pending" and reg.status == "processing":
+            # The attempt we thought was in flight is over; it is payable again.
+            reg.status = "pending"
         elif target == "processing" and reg.status == "pending":
             reg.status = "processing"
         else:

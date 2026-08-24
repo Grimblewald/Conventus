@@ -32,6 +32,29 @@
   confirmation first, since the card link stays inert until they are opened.
 
 ### Fixed
+- **An author can correct a submitted abstract until submissions close.** The
+  confirmation email told them they could edit and use the latest version,
+  while the dashboard offered no way to — and the edit URL, which had no status
+  check, opened an abstract at any status: saving an accepted one set it back
+  to "submitted", discarding the decision while leaving the decision's author
+  and date pointing at whoever made it. Editing is now offered up to the
+  deadline for anything not yet decided, and refused afterwards. The form says
+  when it is amending rather than submitting, and the confirmation reflects it.
+- **The abstract preview no longer implies acceptance.** It described the PDF
+  as laid out the way the abstract "will appear in the booklet", two sentences
+  before saying the email was not a decision. It now describes the rendering as
+  a guide to composition, says the final layout may differ, and says plainly
+  that it is not an indication of acceptance.
+- **Abstract figures are legible.** A figure was pushed to the foot of the page
+  and then sized to whatever space was left, so a full-width image arrived as a
+  thumbnail marooned in white space. Figures now sit directly after the text at
+  a sensible size, ahead of the references rather than after them.
+- **References are set tightly** rather than at paragraph spacing, which had
+  them drifting a line apart each.
+- **Citation titles no longer print HTML entities.** Crossref returns them as
+  HTML, so a journal such as "Organic &amp; Biomolecular Chemistry" was printed
+  with the entity intact, in the booklet and on the site alike.
+
 - **Editing a registration re-priced it at today's rate.** The fee was derived
   again on every save, so a member who paid the early-bird rate and later came
   back to correct a dietary note — after the early-bird deadline had passed —

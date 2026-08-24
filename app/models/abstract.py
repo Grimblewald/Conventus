@@ -10,6 +10,10 @@ SPEAKER_STATUS_ORDER = {s: i for i, s in enumerate(SPEAKER_STATUSES)}
 ALL_STATUSES = ("draft", "submitted", "accepted", "rejected", "revise",
                 "plenary", "keynote", "invited")
 
+# Statuses an author may still change. Everything else has been decided, and a
+# decision must not be edited out from under the person who made it.
+EDITABLE_STATUSES = ("draft", "submitted", "revise")
+
 
 class Abstract(db.Model):
     __tablename__ = "abstracts"
@@ -116,6 +120,22 @@ class Abstract(db.Model):
             return []
         return [p.strip() for p in raw.replace("\r\n", "\n").split("\n\n")
                 if p.strip()]
+
+    @property
+    def is_editable(self) -> bool:
+        """Whether the author may still change this abstract.
+
+        Authors spot their own errors after sending, so the deadline is the
+        cut-off rather than the act of submitting. A decision closes it: an
+        accepted abstract that could still be rewritten is no longer the one
+        that was accepted.
+        """
+        conf = self.conference
+        return (self.status in EDITABLE_STATUSES
+                and self.deleted_at is None
+                and conf is not None
+                and not conf.is_draft
+                and conf.accepts_abstracts)
 
     @property
     def is_speaker(self) -> bool:

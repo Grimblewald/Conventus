@@ -111,6 +111,16 @@ def fetch_metadata(doi: str) -> dict | None:
         return None
 
 
+def _plain(text: str) -> str:
+    """Crossref returns titles and journal names as HTML, so "Organic &amp;
+    Biomolecular Chemistry" arrives with the entity intact and would otherwise
+    be printed literally. Applied at format time rather than on fetch so
+    already-cached entries are corrected too."""
+    import html
+
+    return html.unescape(text or "")
+
+
 def format_reference(ref_data: dict) -> str:
     """Format a reference dict into a full human-readable citation string.
 
@@ -147,7 +157,7 @@ def format_reference(ref_data: dict) -> str:
         parts.append(year)
     if doi:
         parts.append(f"DOI: {doi}")
-    return ". ".join(parts)
+    return _plain(". ".join(parts))
 
 
 def format_reference_compact(ref_data: dict) -> str:
@@ -191,7 +201,7 @@ def format_reference_compact(ref_data: dict) -> str:
             parts.append(f"{doi}")
         else:
             parts.append(doi)
-    return ". ".join(parts)
+    return _plain(". ".join(parts))
 
 
 def _parse_crossref(msg: dict) -> dict:

@@ -70,7 +70,7 @@
             <td><span class="status" data-v="{{ a.status }}">{{ a.status }}</span></td>
             <td>{{ a.created_at.strftime('%-d %b %Y') }}</td>
             <td>
-              {% if a.status in ('draft', 'revise') %}
+              {% if a.is_editable %}
                 <a class="btn btn-ghost btn-sm" href="{{ url_for('member.submit_abstract', slug=a.conference.slug, edit=a.id) }}">Edit</a>
               {% endif %}
               {# The booklet's own rendering, so formatting can be checked

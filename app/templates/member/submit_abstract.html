@@ -167,11 +167,22 @@
         At least one author must register for the conference for the abstract to be included in the final program.
       </p>
 
+      {% set already_submitted = draft and draft.status == 'submitted' %}
+      {% if already_submitted %}
+      <p class="muted" style="margin-top:16px; font-size:13px;">
+        This abstract has already been submitted. Saving your changes replaces
+        the version we hold; it does not submit it a second time.
+      </p>
+      {% endif %}
+
       <input type="hidden" name="action" id="form-action" value="submit">
       <div style="display:flex; gap:8px; margin-top:20px;">
+        {% if not already_submitted %}
         <button class="btn btn-ghost" type="submit" id="btn-draft">Save draft</button>
+        {% endif %}
         <button class="btn btn-ghost" type="submit" id="btn-preview">Preview</button>
-        <button class="btn btn-primary" type="submit" id="btn-submit">Submit abstract</button>
+        <button class="btn btn-primary" type="submit" id="btn-submit">
+          {% if already_submitted %}Save changes{% else %}Submit abstract{% endif %}</button>
       </div>
       {% if form.authors %}
       <script type="application/json" id="authors-data">{{ form.authors | tojson }}</script>

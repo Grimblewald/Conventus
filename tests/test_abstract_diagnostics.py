@@ -11,7 +11,7 @@ from datetime import date
 import pytest
 
 from app.extensions import db
-from app.models import Abstract, Conference
+from app.models import Abstract, Conference, User
 from app.models.audit import AuditLog
 
 
@@ -252,3 +252,71 @@ class TestPerUserLimitSurvivesTheDraftRoute:
         with app.app_context():
             assert Abstract.query.get(aid).status == "submitted"
 
+
+
+class TestEditingAfterSubmission:
+    """Authors spot their own errors after sending, so the deadline is the
+    cut-off rather than the act of submitting."""
+
+    def _abstract(self, app, slug, status):
+        with app.app_context():
+            c = Conference.query.filter_by(slug=slug).first()
+            u = User.query.filter_by(email="member@test.example.org").first()
+            a = Abstract(user_id=u.id, conference_id=c.id, status=status,
+                         title="A submitted piece of work",
+                         authors="Jane Doe|1|Uni",
+                         body="A body with nothing wrong with it.",
+                         presenting_author_index=0)
+            db.session.add(a)
+            db.session.commit()
+            return a.id
+
+    def test_a_submitted_abstract_can_still_be_edited(self, seeded,
+                                                      member_client, app, conference):
+        aid = self._abstract(app, conference, "submitted")
+        resp = member_client.get(f"/conferences/{conference}/abstract?edit={aid}")
+        assert resp.status_code == 200
+        assert b"already been submitted" in resp.data
+
+    def test_saving_it_keeps_it_submitted(self, seeded, member_client, app, conference):
+        aid = self._abstract(app, conference, "submitted")
+        member_client.post(f"/conferences/{conference}/abstract", data={
+            "title": "A corrected piece of work", "authors": "Jane Doe|1|Uni",
+            "body": "A body with nothing wrong with it.",
+            "presenting_author_index": "0", "action": "submit",
+            "edit_id": str(aid),
+        }, follow_redirects=True)
+        with app.app_context():
+            a = Abstract.query.get(aid)
+            assert a.status == "submitted"
+            assert a.title == "A corrected piece of work"
+
+    def test_an_accepted_abstract_cannot_be_edited(self, seeded, member_client,
+                                                   app, conference):
+        """Saving one used to set it back to 'submitted', discarding the
+        decision while leaving decided_by pointing at whoever made it."""
+        aid = self._abstract(app, conference, "accepted")
+
+        resp = member_client.get(f"/conferences/{conference}/abstract?edit={aid}",
+                                 follow_redirects=True)
+        assert b"no longer be edited" in resp.data
+
+        member_client.post(f"/conferences/{conference}/abstract", data={
+            "title": "Sneaky rewrite", "authors": "Jane Doe|1|Uni",
+            "body": "A body with nothing wrong with it.",
+            "presenting_author_index": "0", "action": "submit",
+            "edit_id": str(aid),
+        }, follow_redirects=True)
+        with app.app_context():
+            a = Abstract.query.get(aid)
+            assert a.status == "accepted"
+            assert a.title == "A submitted piece of work"
+
+    def test_editing_closes_with_submissions(self, seeded, member_client, app,
+                                             conference):
+        aid = self._abstract(app, conference, "submitted")
+        with app.app_context():
+            c = Conference.query.filter_by(slug=conference).first()
+            c.is_accepting_abstracts = False
+            db.session.commit()
+            assert Abstract.query.get(aid).is_editable is False

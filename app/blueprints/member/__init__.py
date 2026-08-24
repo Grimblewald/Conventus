@@ -456,6 +456,12 @@ def submit_abstract(slug):
                  .filter_by(id=edit_id, user_id=current_user.id)
                  .filter(Abstract.deleted_at.is_(None))
                  .first())
+        # Without this the URL reaches a decided abstract, and saving it sets
+        # the status back to "submitted" — discarding the decision while
+        # leaving decided_by and decided_at pointing at whoever made it.
+        if draft is not None and not draft.is_editable:
+            flash("That abstract can no longer be edited.", "error")
+            return redirect(url_for("member.dashboard"))
 
     if request.method == "POST":
         action = request.form.get("action", "submit")
@@ -556,6 +562,7 @@ def submit_abstract(slug):
             a = draft
         else:
             a = Abstract(user_id=current_user.id, conference_id=c.id)
+        revision = a.status == "submitted"
         a.title = title
         a.authors = authors
         a.body = body
@@ -627,9 +634,11 @@ def submit_abstract(slug):
         if action == "preview":
             return redirect(url_for("member.preview_abstract", aid=a.id))
 
-        audit.record("abstract.submitted" if not is_draft else "abstract.draft",
-                     target_kind="abstract", target_id=a.id,
-                     summary=f"{current_user.email} → {c.slug}: {title}")
+        audit.record(
+            "abstract.draft" if is_draft else
+            "abstract.revised" if revision else "abstract.submitted",
+            target_kind="abstract", target_id=a.id,
+            summary=f"{current_user.email} → {c.slug}: {title}")
 
         # A receipt, not a decision — and only on an actual submission, so
         # saving a draft five times does not send five emails.
@@ -637,10 +646,15 @@ def submit_abstract(slug):
         if not is_draft and c.abstract_receipt_email:
             from ...services.abstract_latex import send_abstract_receipt
             receipted = send_abstract_receipt(
-                a, uploads_root=Path(current_app.config["UPLOAD_FOLDER"]))
+                a, uploads_root=Path(current_app.config["UPLOAD_FOLDER"]),
+                revision=revision)
 
         if is_draft:
             flash("Draft saved.", "success")
+        elif revision:
+            flash("Your changes have been saved — we'll use this version."
+                  + (" A copy is on its way to your inbox." if receipted
+                     else ""), "success")
         elif receipted:
             flash("Abstract submitted — a confirmation with a PDF copy is on "
                   "its way to your inbox. You'll be notified again after "

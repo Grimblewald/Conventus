@@ -20,6 +20,17 @@ from .documents import latex_escape as _latex_escape
 
 KNOWN_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff"}
 
+# How densely an abstract page sets. Named because they are the values worth
+# tuning when the booklet looks too airy or too cramped, and because a figure
+# constrained by both dimensions keeps its aspect ratio inside that box —
+# a wide figure gets the full measure, a tall one is capped rather than
+# swallowing the page.
+FIGURE_MAX_WIDTH = "\\textwidth"
+FIGURE_MAX_HEIGHT = "0.32\\textheight"
+FIGURE_SPACE_ABOVE = "8pt"
+REF_TOP_SPACE = "4pt"
+REF_ITEM_SPACE = "1pt"
+
 
 def convert_for_latex(src: Path, dst: Path) -> Path:
     """Ensure *src* is a LaTeX-compatible image, writing to *dst* as needed.
@@ -227,13 +238,30 @@ def abstract_fragment(label: str, abstract,
     lines.append("")
     lines.append(body)
 
-    # References (compact, before figure, small font)
+    if abstract.figure_filename:
+        out = _out_ext(abstract.figure_filename)
+        lines.append("")
+        lines.append(f"\\vspace{{{FIGURE_SPACE_ABOVE}}}")
+        lines.append("\\begin{center}")
+        lines.append(
+            "\\includegraphics[\n"
+            f"    width={FIGURE_MAX_WIDTH},\n"
+            f"    height={FIGURE_MAX_HEIGHT},\n"
+            "    keepaspectratio\n"
+            f"  ]{{{folder}/figure{out}}}"
+        )
+        lines.append("\\end{center}")
+
     refs = abstract.references or []
     if refs:
         lines.append("")
         lines.append("\\textbf{\\small References}")
+        # topsep is read as the list opens, so it has to be set before it.
+        lines.append(f"\\begingroup\\setlength{{\\topsep}}{{{REF_TOP_SPACE}}}"
+                     f"\\setlength{{\\partopsep}}{{0pt}}")
         lines.append("\\begin{enumerate}")
-        lines.append("\\small")
+        lines.append(f"\\small\\setlength{{\\itemsep}}{{{REF_ITEM_SPACE}}}"
+                     f"\\setlength{{\\parsep}}{{0pt}}")
         for ref in refs:
             meta = fetch_metadata(ref["doi"])
             if meta:
@@ -242,21 +270,7 @@ def abstract_fragment(label: str, abstract,
                 cite = ref["doi"].replace("_", "\\_")
             doi_esc = ref["doi"].replace("_", "\\_")
             lines.append(f"  \\item \\href{{https://doi.org/{doi_esc}}}{{{cite}}}")
-        lines.append("\\end{enumerate}")
-
-    if abstract.figure_filename:
-        out = _out_ext(abstract.figure_filename)
-        lines.append("")
-        lines.append("\\vspace*{\\fill}")
-        lines.append("\\begin{center}")
-        lines.append(
-            "\\includegraphics[\n"
-            "    width=\\textwidth,\n"
-            "    height=\\dimexpr\\textheight-\\pagetotal-4ex\\relax,\n"
-            "    keepaspectratio\n"
-            f"  ]{{{folder}/figure{out}}}"
-        )
-        lines.append("\\end{center}")
+        lines.append("\\end{enumerate}\\endgroup")
 
     lines.append("")
     lines.append("\\newpage")
@@ -403,7 +417,8 @@ def abstract_pdf_filename(abstract) -> str:
     return f"{stem}.pdf"
 
 
-def send_abstract_receipt(abstract, *, uploads_root: Path) -> bool:
+def send_abstract_receipt(abstract, *, uploads_root: Path,
+                          revision: bool = False) -> bool:
     """Confirm a submission in writing, with the abstract attached as a PDF.
 
     The submission page has always told authors their abstract was received
@@ -432,19 +447,25 @@ def send_abstract_receipt(abstract, *, uploads_root: Path) -> bool:
                             render_abstract_pdf(abstract,
                                                 uploads_root=uploads_root),
                             "application/pdf"))
-        note = ("A PDF of your abstract is attached, laid out the way it will "
-                "appear in the abstract booklet. Please check it over — if "
-                "anything has not come out as you intended, you can edit your "
-                "submission and we will use the latest version.\n\n")
+        note = ("A PDF of your abstract is attached. It shows roughly how an "
+                "abstract is typeset for the booklet, so you can check that "
+                "your text, figure and references have come through as you "
+                "intended. It is a guide to composition only — the final "
+                "layout may differ, and it does not indicate that your "
+                "abstract has been accepted.\n\n"
+                "If anything is wrong, you can edit your submission until "
+                "submissions close and we will use your latest version.\n\n")
     except Exception:
         log.exception("Abstract receipt PDF failed for abstract %s", abstract.id)
-        note = ("You can review your submission at any time by logging in to "
-                "your dashboard.\n\n")
+        note = ("You can review your submission, and edit it until "
+                "submissions close, by logging in to your dashboard.\n\n")
 
     presenting = abstract.presenting_author[0] or author.full_name or ""
+    opening = ("Thank you — we have received your updated abstract for"
+               if revision else
+               "Thank you — we have received your abstract for")
     body = (
-        f"Thank you — we have received your abstract for "
-        f"{conference.title} ({conference.date_range}).\n\n"
+        f"{opening} {conference.title} ({conference.date_range}).\n\n"
         f"Title: {abstract.title}\n"
         f"Presenting author: {presenting}\n\n"
         f"{note}"
@@ -453,7 +474,8 @@ def send_abstract_receipt(abstract, *, uploads_root: Path) -> bool:
     )
     return send_mail(
         to=author.email,
-        subject=f"Abstract received — {conference.title}",
+        subject=(f"Abstract updated — {conference.title}" if revision
+                 else f"Abstract received — {conference.title}"),
         body=body,
         attachments=attachments or None,
     )

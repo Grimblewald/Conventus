@@ -63,6 +63,17 @@
   HTML, so a journal such as "Organic &amp; Biomolecular Chemistry" was printed
   with the entity intact, in the booklet and on the site alike.
 
+- **A registration's payments are filed under one banner.** Every checkout
+  attempt mints its own merchant reference, so the ledger view gave each one a
+  banner of its own — an abandoned attempt sat apart from the payment that
+  eventually succeeded, and the charge lines, which carry the registration's
+  own reference, sat in a third place again. Everything belonging to a
+  registration now groups under it, labelled with its reference and showing
+  what is outstanding and how many attempts were made; each row names the
+  attempt it came from. Manual invoices and gateway tests, which belong to no
+  registration, keep their own reference as before. The banner reports where
+  the registration stands rather than how the last attempt ended, so one that
+  is merely unpaid no longer reads as cancelled.
 - **Cancelling a payment cancelled the registration.** A payer who backed out
   of the gateway — or whose card was declined — had their registration marked
   cancelled or failed, though they were still registered and still owed the

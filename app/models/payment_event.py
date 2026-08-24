@@ -33,10 +33,21 @@ class PaymentEvent(db.Model):
 
     @property
     def group_key(self) -> str:
-        """Group by merchant reference — the stable key across a payment's
-        whole lifecycle. Worldline assigns each operation (authorization,
-        void, refund) its own transaction ID, so grouping by transaction ID
-        would split one payment's history into several groups."""
+        """What this event is filed under in the ledger view.
+
+        A registration collects everything that happened to it. Every checkout
+        attempt mints its own merchant reference, so grouping by reference put
+        each attempt under its own banner and left an abandoned one filed apart
+        from the payment that eventually succeeded — with the charge lines,
+        which carry the registration's own reference, in a third place again.
+
+        Events belonging to no registration — manual invoices, gateway tests —
+        keep their merchant reference, which is the stable key across their
+        lifecycle. Worldline gives each operation (authorization, void, refund)
+        its own transaction id, so that is never the thing to group on.
+        """
+        if self.registration_id:
+            return f"reg_{self.registration_id}"
         return self.merchant_reference or self.transaction_id or "(unreferenced)"
 
 

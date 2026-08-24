@@ -562,3 +562,67 @@ class TestACancelledAttemptIsNotACancelledRegistration:
                           data={"status": "cancelled"}, follow_redirects=True)
         with app.app_context():
             assert Registration.query.get(rid).status == "cancelled"
+
+
+class TestTransactionGrouping:
+    """One registration, one banner — however many attempts it took."""
+
+    def _events(self, app, rid):
+        """A registration paid on the second attempt, after abandoning one."""
+        from app.models import record_payment_event
+        with app.app_context():
+            record_payment_event(
+                transaction_id="", merchant_reference=f"reg_{rid}-c1u1-aaaa",
+                registration_id=rid, event_type="checkout.created", amount=40000)
+            record_payment_event(
+                transaction_id="TXN-A", merchant_reference=f"reg_{rid}-c1u1-aaaa",
+                registration_id=rid, event_type="payment.cancelled", amount=40000)
+            record_payment_event(
+                transaction_id="", merchant_reference=f"reg_{rid}-c1u1-bbbb",
+                registration_id=rid, event_type="checkout.created", amount=40000)
+            record_payment_event(
+                transaction_id="TXN-B", merchant_reference=f"reg_{rid}-c1u1-bbbb",
+                registration_id=rid, event_type="payment.captured", amount=40000)
+
+    def test_every_attempt_files_under_the_registration(self, seeded, app):
+        from app.models import PaymentEvent
+        rid, _ = _registration(app, amount=40000)
+        self._events(app, rid)
+        with app.app_context():
+            keys = {e.group_key for e in
+                    PaymentEvent.query.filter_by(registration_id=rid).all()}
+            assert keys == {f"reg_{rid}"}, (
+                "an abandoned attempt must not get a banner of its own")
+
+    def test_an_unrelated_reference_keeps_its_own_group(self, seeded, app):
+        """Manual invoices and gateway tests have no registration to file under."""
+        from app.models import PaymentEvent, record_payment_event
+        with app.app_context():
+            record_payment_event(merchant_reference="INV20260824ABCD",
+                                 event_type="invoice.sent", amount=25000)
+            e = (PaymentEvent.query
+                 .filter_by(merchant_reference="INV20260824ABCD").first())
+            assert e.group_key == "INV20260824ABCD"
+
+    def test_the_banner_reports_the_registration_not_the_last_attempt(
+            self, seeded, admin_client, app):
+        rid, _ = _registration(app, amount=40000)
+        self._events(app, rid)
+        page = admin_client.get("/admin/financial/transactions").data
+        with app.app_context():
+            assert Registration.query.get(rid).amount_due == 0
+        assert b"2 checkout attempts" in page
+        # "cancelled" described the abandoned attempt, not the registration.
+        assert page.count(b"REG-") >= 1
+
+    def test_an_abandoned_attempt_alone_reads_as_unpaid(self, seeded, app):
+        from app.blueprints.admin.financial import _transaction_state
+        from app.models import PaymentEvent, record_payment_event
+        rid, _ = _registration(app, amount=40000)
+        with app.app_context():
+            record_payment_event(
+                transaction_id="TXN-C", merchant_reference=f"reg_{rid}-c1u1-cccc",
+                registration_id=rid, event_type="payment.cancelled", amount=40000)
+            evts = PaymentEvent.query.filter_by(registration_id=rid).all()
+            reg = Registration.query.get(rid)
+            assert _transaction_state(evts, reg) == "unpaid"

@@ -896,11 +896,19 @@ def financial_transactions():
     for e in events:
         grouped.setdefault(e.group_key, []).append(e)
 
-    by_ref = _issued_by_reference(grouped.keys())
+    # A registration's group spans every reference its attempts minted, and a
+    # document is filed under the reference of the payment it belongs to — so
+    # the documents for a group are those of all of its references, not of its
+    # key.
+    refs_in_group = {key: {e.merchant_reference for e in evts if e.merchant_reference}
+                     for key, evts in grouped.items()}
+    by_ref = _issued_by_reference(
+        {r for refs in refs_in_group.values() for r in refs})
 
     groups = []
     for key, evts in grouped.items():
-        state = _transaction_state(evts)
+        reg = next((e.registration for e in evts if e.registration), None)
+        state = _transaction_state(evts, reg)
         cancel_ref = ""
         ref = evts[0].merchant_reference or ""
         if ref.startswith("test_") and state in ("awaiting capture", "in progress"):
@@ -908,14 +916,24 @@ def financial_transactions():
                    and not e.event_type.startswith("invoice.") for e in evts):
                 cancel_ref = ref
         # Offer "Send pending document" when the group's most recent document.*
-        # event is a document.pending (a §7 failed render awaiting retry).
+        # event is a document.pending (a §7 failed render awaiting retry). Its
+        # own reference, since a group may hold several.
         pending_ref = ""
         doc_evts = [e for e in evts if e.event_type.startswith("document.")]
-        if doc_evts and max(doc_evts, key=lambda e: e.id).event_type == "document.pending":
-            pending_ref = ref
+        if doc_evts:
+            newest = max(doc_evts, key=lambda e: e.id)
+            if newest.event_type == "document.pending":
+                pending_ref = newest.merchant_reference or ref
+        documents = sorted(
+            (d for r in refs_in_group[key] for d in by_ref.get(r, [])),
+            key=lambda d: (d.issued_at, d.id), reverse=True)
         groups.append({"key": key, "events": evts, "state": state,
+                       "label": reg.reference if reg else key,
+                       "registration": reg,
+                       "attempts": len({e.merchant_reference for e in evts
+                                        if e.event_type == "checkout.created"}),
                        "cancel_ref": cancel_ref, "pending_ref": pending_ref,
-                       "documents": by_ref.get(key, [])})
+                       "documents": documents})
 
     return render_template("admin/financial_transactions.html",
                            groups=groups, q=q, event_count=len(events))
@@ -968,7 +986,9 @@ def financial_download_documents_zip():
 
     q = (request.args.get("q") or request.form.get("q") or "").strip()
     events = _transaction_events(q)
-    refs = {e.group_key for e in events}
+    # A document is filed under the reference of the payment it belongs to,
+    # which is not the key its group is filed under.
+    refs = {e.merchant_reference for e in events if e.merchant_reference}
     by_ref = _issued_by_reference(refs)
     issued = [d for docs in by_ref.values() for d in docs]
     issued.sort(key=lambda d: (d.issued_at, d.id), reverse=True)
@@ -1010,12 +1030,30 @@ def financial_download_documents_zip():
                      download_name="documents.zip")
 
 
-def _transaction_state(evts) -> str:
-    """Best-known lifecycle state of a transaction, derived from its events."""
+def _transaction_state(evts, reg=None) -> str:
+    """Best-known lifecycle state of a transaction, derived from its events.
+
+    A registration's group covers every attempt made against it, so its banner
+    reports where the registration stands rather than how the last attempt
+    ended — an abandoned checkout leaves the fee owing, and a banner reading
+    "cancelled" over a registration that is merely unpaid says the wrong thing.
+    """
     from datetime import datetime, timedelta
 
     suffixes = {e.event_type.rsplit(".", 1)[-1] for e in evts}
     types = {e.event_type for e in evts}
+
+    if reg is not None:
+        if "refunded" in suffixes:
+            return "refunded"
+        if suffixes & {"chargebacked", "reversed", "chargeback_reversed"}:
+            return "disputed"
+        if suffixes & {"captured", "paid"}:
+            return "paid" if (reg.amount_due or 0) <= 0 else "part paid"
+        if suffixes & {"pending_capture", "capture_requested"}:
+            return "awaiting capture"
+        return "unpaid"
+
     if "refunded" in suffixes:
         return "refunded"
     if suffixes & {"chargebacked", "reversed", "chargeback_reversed"}:

@@ -39,10 +39,20 @@
   </form>
 </div>
 
+{% if can('financial.manage') and not payments_open_to_members() %}
+<div class="card" style="padding:12px 16px; margin-bottom:14px; border-color:#e8c954;">
+  <p style="margin:0;"><strong>Member payments are closed.</strong> A payment
+    email can still be sent — the bank transfer details in it apply — but the
+    card link will not work until you open payments on the
+    <a href="{{ url_for('admin.financial') }}">Financial</a> page.</p>
+</div>
+{% endif %}
+
 {% if regs %}
 <div style="overflow-x:auto;">
 <table class="table">
   <thead><tr><th>Reference</th><th>User</th><th>Conference</th><th>Tier</th><th>Amount</th><th>Status</th><th>Payment sent</th><th>Date</th>
+      {% if can('financial.manage') %}<th>Payment email</th>{% endif %}
       {% if can('registrations.edit') %}<th></th>{% endif %}</tr></thead>
   <tbody>
     {% for r in regs %}
@@ -53,8 +63,35 @@
       <td>{{ r.tier_name }}</td>
       <td>{{ site.currency_symbol }}{{ r.amount | format_amount }}</td>
       <td><span class="status" data-v="{{ r.status }}">{{ r.status }}</span></td>
-      <td>{{ r.payment_sent_at.strftime('%-d %b %Y') if r.payment_sent_at else '—' }}</td>
+      {# A date alone hides both the payer never asked and the one chased four times. #}
+      {% set sent = email_counts.get(r.id, 0) %}
+      <td style="white-space:nowrap;">
+        {% if r.payment_sent_at %}
+          {{ r.payment_sent_at.strftime('%-d %b %Y') }}
+          {% if sent > 1 %}<span class="muted">×{{ sent }}</span>{% endif %}
+        {% else %}
+          <span style="color:#d4a017;">never</span>
+        {% endif %}
+      </td>
       <td>{{ r.created_at.strftime('%-d %b %Y') }}</td>
+      {% if can('financial.manage') %}<td>
+        {% if r.status in ('paid', 'refunded', 'cancelled') or r.amount_due <= 0 %}
+          <span class="muted">—</span>
+        {% else %}
+        <form method="post" style="display:inline;"
+              action="{{ url_for('admin.registration_resend_payment_email', reg_id=r.id) }}"
+              data-confirm="Email the payment link for {{ r.reference }} to {{ r.user.email if r.user else 'this member' }}?{% if not payments_open_to_members() %} Member payments are closed, so the card link will not work until you open them.{% endif %}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="next" value="{{ request.full_path }}">
+          {% if payments_open_to_members() %}
+          <button class="btn btn-quiet btn-sm" type="submit">{% if sent %}Resend{% else %}Send{% endif %}</button>
+          {% else %}
+          <input type="hidden" name="anyway" value="1">
+          <button class="btn btn-quiet btn-sm" type="submit">Send anyway</button>
+          {% endif %}
+        </form>
+        {% endif %}
+      </td>{% endif %}
         {% if can('registrations.edit') %}<td>
           <form method="post" action="{{ url_for('admin.registration_status', reg_id=r.id) }}" style="display:flex; gap:4px; align-items:center;">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

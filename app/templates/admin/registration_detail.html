@@ -23,11 +23,50 @@
         <span class="muted">({{ reg.sanitized_reference }} on a bank transfer)</span></dd></div>
       <div><dt>Transaction</dt><dd>{{ reg.transaction_id or '—' }}</dd></div>
       <div><dt>Last webhook</dt><dd>{{ reg.last_webhook_event or '—' }}</dd></div>
-      <div><dt>Payment sent</dt><dd>{{ reg.payment_sent_at.strftime('%-d %b %Y %H:%M') if reg.payment_sent_at else '—' }}</dd></div>
+      <div><dt>Payment email</dt><dd>
+        {% if reg.payment_sent_at %}
+          last sent {{ reg.payment_sent_at.strftime('%-d %b %Y %H:%M') }}
+          <span class="muted">({{ emails_sent }} in all)</span>
+        {% else %}
+          <span style="color:#d4a017;">never sent</span>
+        {% endif %}
+      </dd></div>
       <div><dt>Registered</dt><dd>{{ reg.created_at.strftime('%-d %b %Y %H:%M') }}</dd></div>
       <div><dt>Updated</dt><dd>{{ reg.updated_at.strftime('%-d %b %Y %H:%M') }}</dd></div>
     </dl>
   </div>
+
+  {% if can('financial.manage') %}
+  <div class="card">
+    <h4 style="margin-top:0;">Payment email</h4>
+    {% if reg.status in ('paid', 'refunded', 'cancelled') %}
+      <p class="muted">This registration is {{ reg.status }} — there is nothing to ask for.</p>
+    {% elif reg.amount_due <= 0 %}
+      <p class="muted">Nothing is outstanding on this registration.</p>
+    {% else %}
+      <p class="muted">Sends the payment link and bank transfer details to
+        {{ reg.user.email }}, for {{ site.currency_symbol }}{{ reg.amount_due | format_amount }}
+        {{ site.currency_code }}.</p>
+      {% if not payments_open_to_members() %}
+      <p style="color:#d4a017;">Member payments are closed — the card link will
+        not work until you open them.</p>
+      {% endif %}
+      <form method="post"
+            action="{{ url_for('admin.registration_resend_payment_email', reg_id=reg.id) }}"
+            data-confirm="Email the payment link for {{ reg.reference }} to {{ reg.user.email }}?">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="next" value="{{ url_for('admin.registration_detail', reg_id=reg.id) }}">
+        {% if payments_open_to_members() %}
+        <button class="btn btn-primary btn-sm" type="submit">
+          {% if emails_sent %}Send again{% else %}Send payment email{% endif %}</button>
+        {% else %}
+        <input type="hidden" name="anyway" value="1">
+        <button class="btn btn-quiet btn-sm" type="submit">Send anyway</button>
+        {% endif %}
+      </form>
+    {% endif %}
+  </div>
+  {% endif %}
 
   {% if can('registrations.edit') %}
   <div class="card">

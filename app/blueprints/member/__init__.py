@@ -25,8 +25,7 @@ from ...security import audit
 from ...services.invoice import _reg_merchant_reference
 from ...services.mail import send_mail
 from ...services.payments import (
-    gateway_available, initiate_payment, payment_url_for,
-    payments_open_to_members, sandbox_mode, send_payment_email,
+    initiate_payment, payments_open_to_members, send_payment_email,
     send_registration_confirmation,
 )
 from ...services.uploads import UploadError, remove_upload, save_figure, save_image
@@ -305,10 +304,7 @@ def register_conf(slug):
             # Owing something — whether that is the whole fee, or the balance
             # after an upgrade on a registration already part paid.
             if payments_open_to_members():
-                pay_url = payment_url_for(reg)
-                send_payment_email(reg, pay_url)
-                reg.payment_sent_at = datetime.utcnow()
-                db.session.commit()
+                send_payment_email(reg)
                 flash("Registration saved. A payment link has been emailed to "
                       "you.", "success")
             else:

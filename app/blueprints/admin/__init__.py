@@ -142,6 +142,8 @@ def registrations():
         .order_by(Conference.start_date.desc())
         .all()
     )
+    from ...models.payment_event import payment_email_counts
+
     return render_template(
         "admin/registrations.html",
         regs=regs,
@@ -149,7 +151,55 @@ def registrations():
         conference_id=conference_id,
         status_filter=status_filter,
         q=q,
+        email_counts=payment_email_counts([r.id for r in regs]),
     )
+
+
+@admin_bp.route("/registrations/<int:reg_id>/resend-payment-email",
+                methods=["POST"])
+@requires_permission("financial.manage")
+def registration_resend_payment_email(reg_id):
+    """Send this registration's payment email again.
+
+    One registration at a time: a button that emails everyone at once can only
+    be pressed wrongly once.
+    """
+    from ...services.payments import (payments_open_to_members,
+                                      send_payment_email)
+
+    reg = Registration.query.get_or_404(reg_id)
+    back = request.form.get("next") or url_for("admin.registrations")
+    closed = not payments_open_to_members()
+
+    if reg.deleted_at is not None:
+        flash("That registration has been deleted.", "error")
+    elif reg.user is None or not reg.user.email:
+        flash("That registration has no email address to send to.", "error")
+    elif reg.status in ("paid", "refunded", "cancelled"):
+        flash(f"This registration is {reg.status}, so nothing was sent.",
+              "error")
+    elif reg.amount_due <= 0:
+        flash("Nothing is outstanding on this registration, so nothing was "
+              "sent.", "error")
+    elif closed and request.form.get("anyway") != "1":
+        # Backstop; the page may have been rendered while payments were open.
+        flash("Member payments are closed, so the link in this email would "
+              "not work yet. Open member payments first.", "error")
+    elif not send_payment_email(reg):
+        flash("The payment email could not be sent. Nothing has been "
+              "recorded — check the mail settings and try again.", "error")
+    else:
+        from ...security import audit as audit_log
+        audit_log.record(
+            "financial.payment_email_resent",
+            target_kind="registration", target_id=reg.id,
+            summary=f"{current_user.email} sent {reg.reference} to "
+                    f"{reg.user.email}")
+        flash(f"Payment email sent to {reg.user.email}." + (
+            " Member payments are closed, so the card link will not work "
+            "until you open them; the bank transfer details still apply."
+            if closed else ""), "success")
+    return redirect(back)
 
 
 @admin_bp.route("/registrations/<int:reg_id>/status", methods=["POST"])
@@ -217,10 +267,13 @@ def registration_detail(reg_id):
     conference = reg.conference
     schema = conference.registration_form_schema if conference else None
     sub_events_list = conference.sub_events if conference else []
+    from ...models.payment_event import payment_email_counts
+
     return render_template(
         "admin/registration_detail.html",
         reg=reg, conference=conference,
         schema=schema, sub_events_list=sub_events_list,
+        emails_sent=payment_email_counts([reg.id]).get(reg.id, 0),
     )
 
 

@@ -131,16 +131,26 @@ def send_registration_confirmation(registration: Registration) -> bool:
     )
 
 
-def send_payment_email(registration: Registration, pay_url: str) -> bool:
-    """Email the member a payment link for their registration.
+def send_payment_email(registration: Registration) -> bool:
+    """Ask a member to pay, and record that we asked. Returns whether it sent.
 
     Carries the registration's reference and, if the society has configured
     payment instructions, those too. A member paying by bank transfer has
     nothing else to quote — the transfer arrives as a line on a statement, and
     without the reference on it the treasurer cannot tell whose it is.
+
+    The only way to ask, so the timestamp and count an admin reads always
+    describe the same sends the payer received.
     """
+    from datetime import datetime
+
+    from ..extensions import db
+    from ..models import record_payment_event
     from ..models.content import get_financial_identity, get_site_settings
-    from .invoice import sanitized_reference
+    from ..models.payment_event import PAYMENT_EMAIL_EVENT
+    from .invoice import _reg_merchant_reference, sanitized_reference
+
+    pay_url = payment_url_for(registration)
     conf = registration.conference
     site = get_site_settings()
     body = (
@@ -171,8 +181,20 @@ def send_payment_email(registration: Registration, pay_url: str) -> bool:
         ):
             instructions = instructions.replace("{" + name + "}", str(value))
         body += f"\nOr pay by bank transfer:\n{instructions}\n"
-    return send_mail(
-        to=registration.user.email,
-        subject=f"Payment for {conf.title}",
-        body=body,
+
+    if not send_mail(to=registration.user.email,
+                     subject=f"Payment for {conf.title}", body=body):
+        return False        # A send that failed is not an ask.
+
+    registration.payment_sent_at = datetime.utcnow()
+    db.session.commit()
+    record_payment_event(
+        # Grouped with the payment itself rather than starting its own group.
+        merchant_reference=_reg_merchant_reference(registration),
+        registration_id=registration.id,
+        event_type=PAYMENT_EMAIL_EVENT,
+        amount=registration.amount_due,
+        note=f"{registration.reference}: payment link emailed to "
+             f"{registration.user.email}",
     )
+    return True

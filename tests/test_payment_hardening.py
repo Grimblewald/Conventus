@@ -384,3 +384,116 @@ class TestCancelledThenPaid:
                 "a successful capture must settle a cancelled attempt")
             assert reg.amount_outstanding == 0
             assert reg.transaction_id == "PAY-SECOND-TRY"
+
+
+class TestResendPaymentEmail:
+    """A payment link otherwise goes out only when a member saves their
+    registration, and only if the portal is open at that moment."""
+
+    @pytest.fixture
+    def mailbox(self, monkeypatch):
+        box: list[dict] = []
+
+        def _record(**kw):
+            box.append(kw)
+            return True
+
+        monkeypatch.setattr("app.services.mail.send_mail", _record)
+        # payments binds send_mail at import.
+        monkeypatch.setattr("app.services.payments.send_mail", _record)
+        return box
+
+    @pytest.fixture
+    def portal_open(self, monkeypatch):
+        monkeypatch.setattr(
+            "app.services.payments.payments_open_to_members", lambda: True)
+
+    def _send(self, admin_client, rid, **data):
+        return admin_client.post(
+            f"/admin/registrations/{rid}/resend-payment-email",
+            data=data, follow_redirects=True)
+
+    def _count(self, app, rid):
+        from app.models.payment_event import payment_email_counts
+        with app.app_context():
+            return payment_email_counts([rid]).get(rid, 0)
+
+    def test_it_sends_and_counts_each_ask(self, seeded, admin_client, app,
+                                          mailbox, portal_open):
+        rid, _ = _registration(app, amount=40000)
+        assert self._count(app, rid) == 0
+
+        self._send(admin_client, rid)
+        assert self._count(app, rid) == 1
+        with app.app_context():
+            assert Registration.query.get(rid).payment_sent_at is not None
+
+        self._send(admin_client, rid)
+        assert self._count(app, rid) == 2
+        assert len(mailbox) == 2
+
+    def test_asking_does_not_move_the_balance(self, seeded, admin_client, app,
+                                              mailbox, portal_open):
+        rid, _ = _registration(app, amount=40000)
+        self._send(admin_client, rid)
+        self._send(admin_client, rid)
+        with app.app_context():
+            assert Registration.query.get(rid).amount_outstanding == 40000
+
+    def test_a_settled_registration_is_not_chased(self, seeded, admin_client,
+                                                  app, mailbox, portal_open):
+        rid, _ = _registration(app, amount=40000)
+        with app.app_context():
+            from app.models import record_payment_event
+            record_payment_event(transaction_id="PAY-DONE",
+                                 merchant_reference=f"reg_{rid}",
+                                 registration_id=rid,
+                                 event_type="payment.captured", amount=40000)
+            reg = Registration.query.get(rid)
+            reg.status = "paid"
+            db.session.commit()
+
+        self._send(admin_client, rid)
+        assert mailbox == []
+
+    def test_a_closed_portal_refuses_without_an_override(self, seeded,
+                                                         admin_client, app,
+                                                         mailbox, monkeypatch):
+        monkeypatch.setattr(
+            "app.services.payments.payments_open_to_members", lambda: False)
+        rid, _ = _registration(app, amount=40000)
+
+        resp = self._send(admin_client, rid)
+        assert b"Member payments are closed" in resp.data
+        assert mailbox == []
+        assert self._count(app, rid) == 0
+
+    def test_a_closed_portal_sends_with_the_override(self, seeded, admin_client,
+                                                     app, mailbox, monkeypatch):
+        monkeypatch.setattr(
+            "app.services.payments.payments_open_to_members", lambda: False)
+        rid, _ = _registration(app, amount=40000)
+
+        self._send(admin_client, rid, anyway="1")
+        assert len(mailbox) == 1
+        assert self._count(app, rid) == 1
+
+    def test_a_failed_send_records_nothing(self, seeded, admin_client, app,
+                                           monkeypatch, portal_open):
+        """Recording it would say the payer was contacted when they were not."""
+        monkeypatch.setattr("app.services.payments.send_mail",
+                            lambda **kw: False)
+        rid, _ = _registration(app, amount=40000)
+
+        self._send(admin_client, rid)
+        assert self._count(app, rid) == 0
+        with app.app_context():
+            assert Registration.query.get(rid).payment_sent_at is None
+
+    def test_it_needs_the_finance_permission(self, seeded, member_client, app,
+                                             mailbox, portal_open):
+        rid, _ = _registration(app, amount=40000)
+        resp = member_client.post(
+            f"/admin/registrations/{rid}/resend-payment-email")
+        assert resp.status_code in (302, 403, 404)
+        assert mailbox == []

@@ -54,6 +54,10 @@ class PaymentEvent(db.Model):
 # read as three charges.
 CHARGE_EVENTS = ("registration.payment_due", "registration.no_payment_due")
 
+# Weightless: asking for money is not a movement of it. The `registration`
+# namespace is absent from _MONEY_NAMESPACES, so event_delta already returns 0.
+PAYMENT_EMAIL_EVENT = "registration.payment_email_sent"
+
 _SETTLES = ("captured", "paid")
 _REVERSES = ("refunded",)
 _MONEY_NAMESPACES = ("payment", "manual", "reconcile", "refund")
@@ -134,6 +138,24 @@ def amount_received(registration_id: int) -> int:
     """
     return -sum(event_delta(t, a) for t, a in _money_rows(registration_id)
                 if t not in CHARGE_EVENTS)
+
+
+def payment_email_counts(registration_ids) -> dict[int, int]:
+    """How many payment emails each registration has been sent.
+
+    One grouped query, so a list view asks once for the whole page.
+    """
+    ids = [i for i in registration_ids if i]
+    if not ids:
+        return {}
+    rows = (PaymentEvent.query
+            .filter(PaymentEvent.registration_id.in_(ids),
+                    PaymentEvent.event_type == PAYMENT_EMAIL_EVENT)
+            .with_entities(PaymentEvent.registration_id,
+                           db.func.count(PaymentEvent.id))
+            .group_by(PaymentEvent.registration_id)
+            .all())
+    return dict(rows)
 
 
 def recompute_outstanding(registration_id: int) -> int | None:

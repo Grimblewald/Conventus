@@ -2,6 +2,19 @@
 
 ## [Unreleased]  **MIGRATION REQUIRED**
 
+### Added
+- **A payment email can be sent again from the registrations list.** A payment
+  link only ever went out at the moment a member saved their registration, and
+  only if member payments happened to be open at the time — so anyone who
+  registered beforehand was told they would be notified and then never was, and
+  "the email never arrived" had no answer. Anyone holding `financial.manage` can
+  now send it per registration, from the list or the registration's own page.
+  Registrations that are settled or owe nothing are not offered it. The list
+  shows when the last one went and how many have been sent in all, so a payer
+  who has never been asked is distinguishable from one who has been chased four
+  times. Sending while member payments are closed is possible but asks for
+  confirmation first, since the card link stays inert until they are opened.
+
 ### Fixed
 - **Editing a registration re-priced it at today's rate.** The fee was derived
   again on every save, so a member who paid the early-bird rate and later came

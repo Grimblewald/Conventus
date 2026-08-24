@@ -661,9 +661,9 @@ class TestDurableRegistrationPayLink:
         from app.models import Registration
         rid, token = self._reg(app)
         with app.app_context():
-            from app.services.payments import payment_url_for, send_payment_email
+            from app.services.payments import send_payment_email
             reg = Registration.query.get(rid)
-            send_payment_email(reg, payment_url_for(reg))
+            send_payment_email(reg)
         assert mailbox
         body = mailbox[-1]["body"]
         assert f"/pay/registration/{token}" in body

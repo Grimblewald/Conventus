@@ -417,6 +417,17 @@ def default_manual_invoice_body() -> str:
 # Variable resolution — shared by the initial send and the §7 retry.
 # ---------------------------------------------------------------------------
 
+def _registration_pay_link(reg: Registration) -> str:
+    """The registration's durable pay link, or "" if a URL can't be built."""
+    from .payments import payment_url_for
+
+    try:
+        return payment_url_for(reg)
+    except Exception:
+        log.warning("No pay link for reg %s", reg.id, exc_info=True)
+        return ""
+
+
 def _registration_vars(reg: Registration, kind: str,
                        amount_cents: int | None = None) -> dict:
     """Real document variables for a settled registration.
@@ -443,6 +454,10 @@ def _registration_vars(reg: Registration, kind: str,
         # quote back.
         "transaction_id": reg.transaction_id or reg.reference,
         "payment_reference": reg.reference,
+        # The durable, token-keyed link, so a finance office holding nothing
+        # but a forwarded PDF can still pay it. Without this the skeleton's
+        # link section is flagged off and the invoice silently omits it.
+        "payment_link": _registration_pay_link(reg),
         "payment_date": datetime.utcnow().strftime("%-d %B %Y"),
         "site_name": site.site_name,
         "registration_id": str(reg.id),

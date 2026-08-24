@@ -438,7 +438,10 @@ def _registration_vars(reg: Registration, kind: str,
         "amount": format_amount(amount),
         "currency_code": site.currency_code,
         "currency_symbol": site.currency_symbol,
-        "transaction_id": reg.transaction_id or "N/A",
+        # The registration's own reference until the gateway assigns one: this
+        # prints as the document's number, and "N/A" is not a thing a payer can
+        # quote back.
+        "transaction_id": reg.transaction_id or reg.reference,
         "payment_reference": reg.reference,
         "payment_date": datetime.utcnow().strftime("%-d %B %Y"),
         "site_name": site.site_name,

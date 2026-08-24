@@ -201,11 +201,27 @@ def send_payment_email(registration: Registration) -> bool:
             instructions = instructions.replace("{" + name + "}", str(value))
         body += f"{instructions}\n\n"
 
+    # The invoice itself. A failed render never costs the email — being asked
+    # to pay, with a link and the bank details, is the part that matters and
+    # the attachment is what makes it filable.
+    attachments = []
+    try:
+        from .invoice import _safe_ref, registration_document
+        attachments.append((
+            f"invoice-{_safe_ref(registration.reference)}.pdf",
+            registration_document(registration, "invoice"),
+            "application/pdf"))
+        attached = True
+    except Exception:
+        log.exception("Invoice PDF failed for reg %s", registration.id)
+        attached = False
+
     body += (
         f"Please quote {registration.reference} with your payment.\n\n"
-        f"If you need an invoice as a PDF — for a grant, an employer or your "
-        f"own records — you can download one from your dashboard, and a "
-        f"receipt once your payment has gone through.\n\n"
+        + ("Your invoice is attached.\n\n" if attached else
+           "If you need an invoice as a PDF — for a grant, an employer or "
+           "your own records — you can download one from your dashboard.\n\n")
+        + f"A receipt follows once your payment has gone through.\n\n"
         f"You can update your registration any time by logging in. Changes to "
         f"dietary and accessibility requirements need to reach us before we "
         f"send the final numbers to caterers and venues, so please make them "
@@ -227,7 +243,8 @@ def send_payment_email(registration: Registration) -> bool:
         ) if line) + "\n"
 
     if not send_mail(to=registration.user.email,
-                     subject=f"Payment for {conf.title}", body=body):
+                     subject=f"Invoice {registration.reference} — {conf.title}",
+                     body=body, attachments=attachments or None):
         return False        # A send that failed is not an ask.
 
     registration.payment_sent_at = datetime.utcnow()

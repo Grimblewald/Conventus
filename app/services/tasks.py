@@ -36,17 +36,34 @@ def pending() -> int:
     return _queue.qsize()
 
 
+def _worker_name() -> str:
+    import os
+    import socket
+
+    return f"{socket.gethostname()}:{os.getpid()}"
+
+
 def _run() -> None:
     from ..extensions import db
+    from ..models.queue_stat import record_depth
 
+    name = _worker_name()
     while True:
         app, fn = _queue.get()
         try:
             with app.app_context():
+                # Before and after: a burst is visible while it is being
+                # worked through, not only once it has drained.
+                record_depth(name, _queue.qsize() + 1)
                 fn()
         except Exception:
             log.exception("Background job failed")
         finally:
+            try:
+                with app.app_context():
+                    record_depth(name, _queue.qsize())
+            except Exception:
+                pass
             try:
                 # The session is thread-local; leaving it open would hold a
                 # pooled connection for the life of the process.

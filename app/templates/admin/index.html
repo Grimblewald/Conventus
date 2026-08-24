@@ -20,6 +20,27 @@
 </div>
 {% endif %}
 
+{% set q = queue_state() %}
+<div class="card" style="margin-top:24px; padding:16px 20px;
+     {% if q.current > 25 %}border-color:#d4a017;{% endif %}">
+  <h4 style="margin-top:0;">Send queue</h4>
+  <p style="margin:0;">
+    <strong>{{ q.current }}</strong> confirmation{{ 's' if q.current != 1 }} and
+    receipt{{ 's' if q.current != 1 }} waiting to be rendered and sent
+    <span class="muted">· peak {{ q.peak_24h }} in the last 24 hours</span>
+  </p>
+  <p class="muted" style="margin:6px 0 0; font-size:0.85rem;">
+    {% if q.current > 25 %}
+      A backlog this size drains at roughly one every few seconds, so emails
+      may take a while to arrive. Nothing is lost — submissions and payments
+      are recorded before anything is sent.
+    {% else %}
+      Documents are rendered after a request is answered, so a rush of
+      submissions queues here rather than holding the site up.
+    {% endif %}
+  </p>
+</div>
+
 <div class="grid cols-2" style="margin-top:36px;">
   <div>
     <h3>Recent abstracts</h3>

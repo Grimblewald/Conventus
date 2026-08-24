@@ -1,5 +1,20 @@
 {# Shared admin sub-navigation. Permission-gated. #}
 <aside class="admin-side">
+  {# Queued work: confirmations and receipts waiting to be rendered and sent.
+     Shown everywhere in the admin so a backlog on a deadline evening is
+     noticed rather than reported by someone still waiting for their email. #}
+  {% set q = queue_state() %}
+  <div style="margin-bottom:14px; padding:8px 10px; border-radius:var(--rad);
+              border:1px solid var(--c-card-border);
+              {% if q.current > 25 %}border-color:#d4a017;{% endif %}">
+    <div class="muted" style="font-size:0.7rem; text-transform:uppercase; letter-spacing:0.05em;">Send queue</div>
+    <div style="font-size:0.95rem;">
+      <strong>{{ q.current }}</strong> waiting
+      {% if q.current > 25 %}<span style="color:#d4a017;" title="Emails may take a while to arrive">·&nbsp;busy</span>{% endif %}
+    </div>
+    <div class="muted" style="font-size:0.75rem;">peak {{ q.peak_24h }} in 24h</div>
+  </div>
+
   <h5>Manage</h5>
   <ul>
     <li><a href="{{ url_for('admin.index') }}" {% if request.endpoint == 'admin.index' %}class="active"{% endif %}>Overview</a></li>

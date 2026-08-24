@@ -28,7 +28,21 @@ admin_bp = Blueprint("admin", __name__, template_folder="../../templates/admin")
 # the current user is not permitted to use.
 @admin_bp.app_context_processor
 def _inject_can():
-    return {"can": can}
+    return {"can": can, "queue_state": _queue_state}
+
+
+def _queue_state():
+    """Background work outstanding, for the indicator in the admin chrome.
+
+    A callable rather than a value so pages that do not show it pay nothing,
+    and so a failure here cannot stop an admin page rendering.
+    """
+    try:
+        from ...models.queue_stat import snapshot
+        return snapshot()
+    except Exception:
+        current_app.logger.warning("Queue snapshot failed", exc_info=True)
+        return {"current": 0, "peak_24h": 0, "known": False}
 
 
 # ---------------------------------------------------------------------------

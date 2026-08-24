@@ -164,3 +164,57 @@ class TestWhatIsQueuedAndWhatIsNot:
                     follow_redirects=True)
         assert sent, "the code was not sent during the request"
         assert calls == [], "a login code must not be deferred"
+
+
+class TestTheQueueIndicator:
+    """Each process holds its own queue, so the depth has to be assembled from
+    all of them rather than read from whichever one served the page."""
+
+    def test_it_sums_across_workers_and_keeps_the_peak(self, seeded, app):
+        from app.models.queue_stat import QueueStat, record_depth, snapshot
+
+        with app.app_context():
+            QueueStat.query.delete()
+            db.session.commit()
+            record_depth("box:1", 4)
+            record_depth("box:2", 7)
+            record_depth("box:1", 2)          # drained a little
+
+            state = snapshot()
+            assert state["current"] == 9, "2 still waiting on one, 7 on the other"
+            assert state["peak_24h"] == 7, "the high-water mark is kept"
+
+    def test_a_worker_that_has_gone_away_is_not_counted(self, seeded, app):
+        """Its last row remains, but nobody is going to do that work."""
+        from datetime import datetime, timedelta
+
+        from app.models.queue_stat import QueueStat, record_depth, snapshot
+
+        with app.app_context():
+            QueueStat.query.delete()
+            db.session.commit()
+            record_depth("box:dead", 12)
+            row = QueueStat.query.filter_by(worker="box:dead").one()
+            row.updated_at = datetime.utcnow() - timedelta(hours=2)
+            db.session.commit()
+
+            state = snapshot()
+            assert state["current"] == 0
+            assert state["peak_24h"] == 12, "it still happened"
+
+    def test_the_admin_pages_show_it(self, seeded, admin_client, app):
+        from app.models.queue_stat import record_depth
+
+        with app.app_context():
+            record_depth("box:1", 3)
+
+        overview = admin_client.get("/admin/").data
+        assert b"Send queue" in overview
+        # The chrome carries it on every admin page, not just the overview.
+        assert b"Send queue" in admin_client.get("/admin/registrations").data
+
+    def test_a_broken_snapshot_does_not_break_the_page(self, seeded,
+                                                       admin_client, monkeypatch):
+        monkeypatch.setattr("app.models.queue_stat.snapshot",
+                            lambda: (_ for _ in ()).throw(RuntimeError("boom")))
+        assert admin_client.get("/admin/").status_code == 200

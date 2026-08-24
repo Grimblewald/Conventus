@@ -3,6 +3,14 @@
 ## [Unreleased]  **MIGRATION REQUIRED**
 
 ### Added
+- **The admin shows how much work is queued.** Confirmations and receipts are
+  rendered after a request is answered, so a rush queues instead of holding the
+  site up — but nothing said how deep that queue was, and the first sign of a
+  backlog would have been someone asking where their email was. Every admin
+  page now carries the count, and the overview explains what it means. Each
+  worker process holds its own queue, so the figure is assembled from all of
+  them rather than read from whichever happened to serve the page; the peak
+  over the last 24 hours is kept alongside it.
 - **Members can download their own invoice or receipt.** A payment email is
   plain text and carries no PDF, and there was no way for a member to obtain
   one: document downloads were staff-only, and an unpaid registration had no

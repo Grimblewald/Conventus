@@ -432,6 +432,13 @@ def auto_memory_mb() -> int:
     document from expanding without bound — not to fit tectonic into less than
     it can run in. So the host share may only ever raise the cap above the
     known-working floor, never lower it.
+
+    Measured, so the floor is not lowered on a hunch: resident use is ~200MB
+    whatever the document — a one-line file takes 202MB and a forty-page
+    booklet carrying forty distinct figures takes 213MB, so content is worth
+    about 10MB of it. Address space is the binding constraint rather than
+    resident size, and the same booklet compiles under a 640MB cap and aborts
+    under 512MB.
     """
     total = total_memory_mb()
     if not total:

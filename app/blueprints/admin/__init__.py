@@ -239,14 +239,18 @@ def registration_send_receipt(reg_id):
 
     # What was received, not the tier price: the two differ on a registration
     # part paid or upgraded, and the receipt is a record of money that arrived.
-    send_invoice_email(reg, amount_cents=amount_received(reg.id))
+    # Rendering it takes seconds, so it happens after this request is answered —
+    # a treasurer clearing a backlog should not wait on each one.
+    from ...services.tasks import run_later_for
+    run_later_for(Registration, reg.id, send_invoice_email,
+                  amount_cents=amount_received(reg.id))
     from ...security import audit as audit_log
     kind = "adjustment note" if reg.status == "refunded" else "receipt"
     audit_log.record(
         "financial.receipt_sent", target_kind="registration", target_id=reg.id,
         summary=f"{current_user.email} sent {reg.reference} {kind} to "
                 f"{reg.user.email}")
-    flash(f"{kind.capitalize()} sent to {reg.user.email}.", "success")
+    flash(f"{kind.capitalize()} on its way to {reg.user.email}.", "success")
     return redirect(back)
 
 

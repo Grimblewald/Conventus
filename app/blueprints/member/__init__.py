@@ -304,9 +304,10 @@ def register_conf(slug):
             # Owing something — whether that is the whole fee, or the balance
             # after an upgrade on a registration already part paid.
             if payments_open_to_members():
-                send_payment_email(reg)
-                flash("Registration saved. A payment link has been emailed to "
-                      "you.", "success")
+                from ...services.tasks import run_later_for
+                run_later_for(Registration, reg.id, send_payment_email)
+                flash("Registration saved. A payment link is on its way to "
+                      "your inbox.", "success")
             else:
                 flash("Registration saved. Our payment portal is under "
                       "construction — you will be notified when it is ready.",

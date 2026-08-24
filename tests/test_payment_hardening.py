@@ -670,7 +670,7 @@ class TestSendingAReceipt:
         rid = self._settled_by_transfer(app)
         resp = admin_client.post(f"/admin/registrations/{rid}/send-receipt",
                                  follow_redirects=True)
-        assert b"Receipt sent to" in resp.data
+        assert b"Receipt on its way to" in resp.data
         assert len(mailbox) == 1
         assert mailbox[0].get("attachments"), "the PDF should be attached"
 

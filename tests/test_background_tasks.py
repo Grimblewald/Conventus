@@ -115,3 +115,52 @@ class TestSubmissionDoesNotWaitForItsReceipt:
         assert resp.status_code == 200
         assert rendered == [], "the receipt was rendered inside the request"
         assert deferred, "the receipt was not handed to the background runner"
+
+
+class TestWhatIsQueuedAndWhatIsNot:
+    """Mail whose result the user is shown must stay in the request; mail
+    nobody is waiting on must not hold a worker."""
+
+    def _deferred(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(tasks, "run_later_for",
+                            lambda *a, **k: calls.append(a[2]))
+        return calls
+
+    def test_a_payment_email_is_queued(self, seeded, member_client, app,
+                                       monkeypatch):
+        from app.models import Conference, PriceTier
+        calls = self._deferred(monkeypatch)
+        # member imports the name at module load, so patch it there.
+        monkeypatch.setattr(
+            "app.blueprints.member.payments_open_to_members", lambda: True)
+        import secrets
+        tag = secrets.token_hex(4)
+        with app.app_context():
+            c = Conference(slug=f"q-{tag}", title="Queue Conf",
+                           start_date=date(2027, 5, 1), end_date=date(2027, 5, 2),
+                           is_accepting_registrations=True)
+            db.session.add(c)
+            db.session.flush()
+            db.session.add(PriceTier(conference_id=c.id, name="Standard",
+                                     amount=40000))
+            db.session.commit()
+            slug = c.slug
+
+        member_client.post(f"/conferences/{slug}/register",
+                           data={"tier": "Standard"}, follow_redirects=True)
+        assert any(getattr(f, "__name__", "") == "send_payment_email"
+                   for f in calls), "the payment email held the request open"
+
+    def test_a_login_code_is_not_queued(self, seeded, client, monkeypatch):
+        """The user is shown whether it sent, and cannot log in until it lands —
+        deferring would cost the error message and save them nothing."""
+        calls = self._deferred(monkeypatch)
+        sent = []
+        monkeypatch.setattr("app.blueprints.auth.send_mail",
+                            lambda **kw: sent.append(kw) or True)
+
+        client.post("/auth/login", data={"email": "member@test.example.org"},
+                    follow_redirects=True)
+        assert sent, "the code was not sent during the request"
+        assert calls == [], "a login code must not be deferred"

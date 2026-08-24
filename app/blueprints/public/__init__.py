@@ -433,14 +433,14 @@ def payment_webhook():
                         # not flip the status; failures need human eyes.
                         db.session.commit()
                         if any(w in event_type for w in ("rejected", "cancelled")):
-                            _notify_payment_attention(reg, result)
+                            _attention_later(reg, result)
                 elif event_type in ("payment.chargebacked",
                                     "payment.chargeback_reversed",
                                     "payment.reversed"):
                     # Disputes are managed in the Merchant Portal; record the
                     # event and alert admins without changing the status.
                     db.session.commit()
-                    _notify_payment_attention(reg, result)
+                    _attention_later(reg, result)
                 elif result.success:
                     # `cancelled` belongs here beside `failed`: a payer who
                     # backs out of the gateway and comes back to try again is
@@ -470,7 +470,7 @@ def payment_webhook():
                             reg.transaction_id = old_txn
                         db.session.commit()
                         if double_payment:
-                            _notify_payment_attention(reg, result, reason=(
+                            _attention_later(reg, result, reason=(
                                 f"A second successful payment "
                                 f"({result.transaction_id}) arrived for a "
                                 f"registration that is already {reg.status} "
@@ -547,6 +547,15 @@ def _document_later(reg_id: int) -> None:
     from ...services.tasks import run_later_for
 
     run_later_for(Registration, reg_id, send_invoice_email)
+
+
+def _attention_later(reg, result, reason: str = "") -> None:
+    """Alert admins after the webhook is answered — it emails every one of them."""
+    from ...models import Registration
+    from ...services.tasks import run_later_for
+
+    run_later_for(Registration, reg.id, _notify_payment_attention,
+                  result=result, reason=reason)
 
 
 def _notify_payment_attention(reg, result, reason: str = "") -> None:

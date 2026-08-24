@@ -3,6 +3,22 @@
 ## [Unreleased]  **MIGRATION REQUIRED**
 
 ### Added
+- **Members can download their own invoice or receipt.** A payment email is
+  plain text and carries no PDF, and there was no way for a member to obtain
+  one: document downloads were staff-only, and an unpaid registration had no
+  invoice document at all. The dashboard now offers **Invoice** while a balance
+  is owed and **Receipt** once it is settled, and the payment email says so.
+  The invoice asks for the outstanding balance rather than the tier's price,
+  which are different numbers on a registration that has been upgraded or part
+  paid.
+- **A document is compiled at most once.** Rendered PDFs are not stored, so
+  every download re-ran LaTeX — and the bulk download re-ran it for every
+  document in the zip, every time. Because a document's bytes are a pure
+  function of its inputs, finished PDFs are now cached and served from disk
+  thereafter; editing a document template misses the cache rather than serving
+  the old design. Staff downloads and the zip take the same path, so they are
+  cheaper too. The cache holds nothing that cannot be rebuilt and can be
+  deleted at any time.
 - **A payment email can be sent again from the registrations list.** A payment
   link only ever went out at the moment a member saved their registration, and
   only if member payments happened to be open at the time — so anyone who

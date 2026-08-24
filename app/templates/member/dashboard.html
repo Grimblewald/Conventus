@@ -32,6 +32,11 @@
               {% if r.conference.accepts_registrations and not r.conference.is_draft %}
                 <a class="btn btn-ghost btn-sm" href="{{ url_for('member.register_conf', slug=r.conference.slug) }}">Update</a>
               {% endif %}
+              {% if r.status in ('paid', 'refunded') %}
+                <a class="btn btn-quiet btn-sm" href="{{ url_for('member.registration_document', reg_id=r.id, kind='receipt') }}">Receipt</a>
+              {% elif r.amount_due > 0 %}
+                <a class="btn btn-quiet btn-sm" href="{{ url_for('member.registration_document', reg_id=r.id, kind='invoice') }}">Invoice</a>
+              {% endif %}
             </td>
           </tr>
           {% endfor %}

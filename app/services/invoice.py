@@ -410,18 +410,25 @@ def default_manual_invoice_body() -> str:
 # Variable resolution — shared by the initial send and the §7 retry.
 # ---------------------------------------------------------------------------
 
-def _registration_vars(reg: Registration, kind: str) -> dict:
-    """Real document variables for a settled registration."""
+def _registration_vars(reg: Registration, kind: str,
+                       amount_cents: int | None = None) -> dict:
+    """Real document variables for a settled registration.
+
+    *amount_cents* overrides the tier price, which is the wrong figure whenever
+    the document is about a balance rather than a fee — an invoice asks for
+    what is owed, not what the tier costs.
+    """
     site = get_site_settings()
     user = reg.user
     conf = reg.conference
+    amount = reg.amount if amount_cents is None else amount_cents
     return _finalise_issuer_text({
         "user_name": user.full_name or user.email,
         "user_email": user.email,
         "conference_title": conf.title,
         "conference_dates": conf.date_range,
         "tier_name": reg.tier_name,
-        "amount": format_amount(reg.amount),
+        "amount": format_amount(amount),
         "currency_code": site.currency_code,
         "currency_symbol": site.currency_symbol,
         "transaction_id": reg.transaction_id or "N/A",
@@ -429,7 +436,7 @@ def _registration_vars(reg: Registration, kind: str) -> dict:
         "payment_date": datetime.utcnow().strftime("%-d %B %Y"),
         "site_name": site.site_name,
         "registration_id": str(reg.id),
-        **_business_vars(reg.amount),
+        **_business_vars(amount),
     })
 
 
@@ -454,6 +461,43 @@ def _manual_receipt_vars(reference: str, recipient: str,
         "registration_id": "N/A",
         **_business_vars(amount_cents),
     })
+
+
+def registration_document(reg: Registration, kind: str) -> bytes:
+    """A registration's invoice or receipt as PDF bytes, compiled at most once.
+
+    A receipt is rebuilt from the `IssuedDocument` recorded when it was emailed,
+    so the member gets the same bytes their copy has. That row is absent when
+    the render or the send failed at capture, in which case it is built from
+    what was actually received.
+
+    An invoice is always built live: the balance moves, and the document has to
+    ask for what is owed today.
+    """
+    import hashlib
+
+    from ..models import IssuedDocument, get_document_template
+    from ..models.payment_event import amount_received
+    from .documents import cached_pdf, regenerate_cached, render_document
+
+    if kind == "receipt":
+        issued = (IssuedDocument.query
+                  .filter_by(kind="receipt",
+                             reference=_reg_merchant_reference(reg))
+                  .order_by(IssuedDocument.issued_at.desc(),
+                            IssuedDocument.id.desc())
+                  .first())
+        if issued is not None:
+            return regenerate_cached(issued)
+        amount = amount_received(reg.id)
+    else:
+        amount = reg.amount_due
+
+    vars_ = _registration_vars(reg, kind, amount_cents=amount)
+    content_hash = get_document_template(kind).content_hash
+    key = hashlib.sha256(
+        f"{kind}|{reg.id}|{amount}|{content_hash}".encode()).hexdigest()[:32]
+    return cached_pdf(f"reg-{key}", lambda: render_document(kind, vars_))
 
 
 def _reg_merchant_reference(reg: Registration) -> str:

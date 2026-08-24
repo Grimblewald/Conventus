@@ -322,3 +322,183 @@ def test_migration_follows_house_guard_rules():
     assert "if 'issued_documents' not in existing:" in src
     assert "op.create_table('issued_documents'" in src
     assert "op.drop_table('issued_documents')" in src
+
+
+# --- member-facing invoice/receipt downloads ---------------------------------
+
+@pytest.fixture
+def compiles(monkeypatch):
+    """Record the .tex of every real compile; identical input, identical bytes."""
+    seen: list[str] = []
+
+    def _counting(tectonic, job_dir, tex_path, epoch, memory_mb=0,
+                  should_abort=None, timeout=0):
+        seen.append(Path(tex_path).read_text(encoding="utf-8"))
+        return _content_compile(tectonic, job_dir, tex_path, epoch)
+
+    monkeypatch.setattr(docs, "_compile", _counting)
+    return seen
+
+
+def _unpaid_reg(app, *, amount=50000):
+    from app.models import User, Conference, Registration
+    tag = secrets.token_hex(4)
+    with app.app_context():
+        u = User(email=f"owes-{tag}@example.org", full_name="Owes Money",
+                 role_name="member")
+        db.session.add(u)
+        db.session.flush()
+        c = Conference(slug=f"conf-{tag}", title="Physics 2026",
+                       start_date=date(2026, 9, 1), end_date=date(2026, 9, 3))
+        db.session.add(c)
+        db.session.flush()
+        reg = Registration(user_id=u.id, conference_id=c.id,
+                           tier_name="Standard", amount=amount, status="pending")
+        db.session.add(reg)
+        db.session.commit()
+        reg.charge_to(amount, reason="Standard")
+        return reg.id
+
+
+class TestDocumentCaching:
+    """A document's bytes are a pure function of its inputs, so it need only
+    ever be compiled once."""
+
+    def _fetch(self, app, rid, kind="invoice"):
+        from app.models import Registration
+        from app.services.invoice import registration_document
+        with app.app_context():
+            return registration_document(Registration.query.get(rid), kind)
+
+    def test_a_second_request_does_not_compile_again(self, seed_templates,
+                                                     compiles):
+        app = seed_templates
+        rid = _unpaid_reg(app)
+
+        first = self._fetch(app, rid)
+        second = self._fetch(app, rid)
+
+        assert first == second
+        assert len(compiles) == 1
+
+    def test_a_changed_balance_rebuilds_once_then_caches(self, seed_templates,
+                                                         compiles):
+        from app.models import Registration
+        app = seed_templates
+        rid = _unpaid_reg(app, amount=50000)
+        self._fetch(app, rid)
+
+        with app.app_context():
+            reg = Registration.query.get(rid)
+            reg.charge_to(65000, reason="upgraded")
+
+        self._fetch(app, rid)
+        self._fetch(app, rid)
+        assert len(compiles) == 2
+
+    def test_the_invoice_asks_for_the_balance_not_the_tier_price(
+            self, seed_templates, compiles):
+        """Part paid: the invoice must ask for what is left."""
+        from app.models import Registration, record_payment_event
+        app = seed_templates
+        rid = _unpaid_reg(app, amount=50000)
+        with app.app_context():
+            record_payment_event(transaction_id="PAY-PART",
+                                 merchant_reference=f"reg_{rid}",
+                                 registration_id=rid,
+                                 event_type="payment.captured", amount=20000)
+            assert Registration.query.get(rid).amount_due == 30000
+
+        self._fetch(app, rid)
+        assert "300.00" in compiles[0]
+        assert "500.00" not in compiles[0]
+
+    def test_a_receipt_matches_the_document_that_was_emailed(
+            self, seed_templates, content_pdf, mailbox):
+        from app.models import Registration
+        from app.services.invoice import registration_document, send_invoice_email
+        app = seed_templates
+        rid, _ = _make_paid_reg(app)
+
+        with app.app_context():
+            send_invoice_email(Registration.query.get(rid))
+        emailed = mailbox[-1]["attachments"][0][1]
+
+        with app.app_context():
+            assert registration_document(
+                Registration.query.get(rid), "receipt") == emailed
+
+    def test_a_receipt_falls_back_when_none_was_recorded(self, seed_templates,
+                                                         compiles):
+        """The row is absent when the render or the send failed at capture."""
+        from app.models import IssuedDocument, Registration, record_payment_event
+        app = seed_templates
+        rid, _ = _make_paid_reg(app, amount=11000)
+        with app.app_context():
+            record_payment_event(transaction_id="PAY-CAP",
+                                 merchant_reference=f"reg_{rid}",
+                                 registration_id=rid,
+                                 event_type="payment.captured", amount=11000)
+            from app.services.invoice import (_reg_merchant_reference,
+                                              registration_document)
+            reg = Registration.query.get(rid)
+            assert IssuedDocument.query.filter_by(
+                reference=_reg_merchant_reference(reg)).count() == 0
+            pdf = registration_document(reg, "receipt")
+
+        assert pdf.startswith(b"%PDF-")
+        assert "110.00" in compiles[0]
+
+
+class TestMemberDocumentRoute:
+    def _login_owner(self, app, rid, client):
+        from app.models import Registration
+        with app.app_context():
+            uid = Registration.query.get(rid).user_id
+        with client.session_transaction() as sess:
+            sess["_user_id"] = str(uid)
+            sess["_fresh"] = True
+
+    def test_the_owner_can_download_an_invoice(self, seed_templates, client,
+                                               content_pdf):
+        app = seed_templates
+        rid = _unpaid_reg(app)
+        self._login_owner(app, rid, client)
+
+        resp = client.get(f"/registrations/{rid}/document/invoice")
+        assert resp.status_code == 200
+        assert resp.mimetype == "application/pdf"
+
+    def test_another_member_cannot(self, seed_templates, member_client,
+                                   content_pdf):
+        app = seed_templates
+        rid = _unpaid_reg(app)
+        assert member_client.get(
+            f"/registrations/{rid}/document/invoice").status_code == 403
+
+    def test_a_receipt_is_refused_while_unpaid(self, seed_templates, client,
+                                               content_pdf):
+        app = seed_templates
+        rid = _unpaid_reg(app)
+        self._login_owner(app, rid, client)
+
+        resp = client.get(f"/registrations/{rid}/document/receipt",
+                          follow_redirects=True)
+        assert b"once your payment has gone through" in resp.data
+
+    def test_an_invoice_is_refused_once_nothing_is_owed(self, seed_templates,
+                                                        client, content_pdf):
+        app = seed_templates
+        rid, _ = _make_paid_reg(app)
+        self._login_owner(app, rid, client)
+
+        resp = client.get(f"/registrations/{rid}/document/invoice",
+                          follow_redirects=True)
+        assert b"Nothing is outstanding" in resp.data
+
+    def test_an_unknown_kind_is_not_served(self, seed_templates, client):
+        app = seed_templates
+        rid = _unpaid_reg(app)
+        self._login_owner(app, rid, client)
+        assert client.get(
+            f"/registrations/{rid}/document/statement").status_code == 404

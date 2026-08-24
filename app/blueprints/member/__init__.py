@@ -955,6 +955,53 @@ def review_recuse(assignment_id):
 # Payment stub — replace with real payment provider integration.
 # ---------------------------------------------------------------------------
 
+@member_bp.route("/registrations/<int:reg_id>/document/<kind>")
+@login_required
+def registration_document(reg_id, kind):
+    """The member's own invoice or receipt for a registration.
+
+    Compiled at most once per distinct document and served from cache
+    afterwards, so this stays cheap however often it is asked for. The budget
+    below bounds the misses, which are the only part that costs anything.
+    """
+    from ...models.rate_limit import allow
+    from ...services.documents import RenderError
+    from ...services.invoice import _safe_ref, registration_document
+
+    if kind not in ("invoice", "receipt"):
+        abort(404)
+    reg = Registration.query.get_or_404(reg_id)
+    if reg.user_id != current_user.id or reg.deleted_at is not None:
+        abort(403)
+
+    if kind == "receipt" and reg.status not in ("paid", "refunded"):
+        flash("A receipt is available once your payment has gone through.",
+              "error")
+        return redirect(url_for("member.dashboard"))
+    if kind == "invoice" and reg.amount_due <= 0:
+        flash("Nothing is outstanding on this registration.", "error")
+        return redirect(url_for("member.dashboard"))
+
+    if not allow(f"doc.{current_user.id}", str(reg_id), limit=20,
+                 per_seconds=3600):
+        flash("That has been requested a few too many times just now. Please "
+              "try again shortly.", "error")
+        return redirect(url_for("member.dashboard"))
+
+    try:
+        pdf = registration_document(reg, kind)
+    except RenderError as e:
+        current_app.logger.warning("Document %s failed for reg %s: %s",
+                                   kind, reg_id, e)
+        flash("That document could not be produced just now. Please try again "
+              "shortly, or contact us if it keeps happening.", "error")
+        return redirect(url_for("member.dashboard"))
+
+    return send_file(BytesIO(pdf), mimetype="application/pdf",
+                     as_attachment=True,
+                     download_name=f"{kind}-{_safe_ref(reg.reference)}.pdf")
+
+
 @member_bp.route("/pay/<int:reg_id>")
 @login_required
 def pay_registration(reg_id):

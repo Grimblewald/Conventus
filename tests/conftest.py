@@ -51,6 +51,9 @@ def app():
             "RATELIMIT_ENABLED": False,
         })
         app.config["UPLOAD_FOLDER"] = str(Path(tmp) / "uploads")
+        # Keep rendered-document caches and job dirs out of the project tree,
+        # so a run cannot be served results cached by an earlier one.
+        app.config["DOC_RENDER_ROOT"] = str(Path(tmp) / "doc-render")
         app.config["SETUP_FLAG_PATH"] = str(Path(tmp) / ".setup-complete")
         app.config["SETUP_PASSWORD_PATH"] = str(Path(tmp) / "setup-pw")
         Path(app.config["UPLOAD_FOLDER"]).mkdir(parents=True, exist_ok=True)

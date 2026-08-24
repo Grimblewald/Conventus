@@ -30,6 +30,7 @@ the same reason (`DOC_WARM_ON_BOOT`).
 from __future__ import annotations
 
 import fcntl
+import logging
 import os
 import queue
 import re
@@ -40,6 +41,8 @@ import threading
 from pathlib import Path
 
 from flask import current_app
+
+log = logging.getLogger(__name__)
 
 # Fixed epoch for byte-reproducible PDFs (tectonic honours SOURCE_DATE_EPOCH).
 # 2024-01-01T00:00:00Z. Never change casually — the regeneration store (plan
@@ -755,6 +758,12 @@ def regenerate_document(issued) -> bytes:
     return render_document(issued.kind, vars_, template=template)
 
 
+def regenerate_cached(issued) -> bytes:
+    """`regenerate_document` compiled once per stored document, then cached."""
+    return cached_pdf(f"issued-{issued.id}-{issued.content_hash}",
+                      lambda: regenerate_document(issued))
+
+
 # ---------------------------------------------------------------------------
 # Preview — a CALLER of render_document, never a second renderer (plan §5).
 # ---------------------------------------------------------------------------
@@ -860,6 +869,44 @@ def preview_document(kind: str, overrides: dict | None = None,
     if overrides:
         vars_.update(overrides)
     return render_document(kind, vars_, template=template)
+
+
+def _issued_cache_dir() -> Path:
+    return _doc_render_root() / "issued"
+
+
+def cached_pdf(key: str, build) -> bytes:
+    """The PDF for *key*, compiling it only the first time it is asked for.
+
+    Safe because a document's bytes are a pure function of its inputs: the
+    pinned SOURCE_DATE_EPOCH and the snapshotted variables and template make
+    every rebuild identical, so a hit can never be stale. Callers put the
+    template's content hash in the key, so editing a template misses rather
+    than serving the old design.
+
+    Purely a cache. The directory can be deleted at any time.
+    """
+    dest = _issued_cache_dir() / f"{key}.pdf"
+    try:
+        return dest.read_bytes()
+    except OSError:
+        pass
+
+    pdf = build()
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp_fd, tmp = tempfile.mkstemp(prefix=".doc-", suffix=".tmp",
+                                       dir=str(dest.parent))
+        try:
+            with os.fdopen(tmp_fd, "wb") as fh:
+                fh.write(pdf)
+            os.replace(tmp, dest)       # Atomic: readers see whole files only.
+        finally:
+            if os.path.exists(tmp):
+                os.unlink(tmp)
+    except OSError:
+        log.warning("Could not cache document %s", key, exc_info=True)
+    return pdf
 
 
 # --- Warm pregen cache: one long-lived PDF per kind, keyed by content_hash. --

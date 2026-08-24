@@ -934,7 +934,7 @@ def financial_download_issued_document(doc_id):
     from io import BytesIO
 
     from ...models import IssuedDocument
-    from ...services.documents import RenderError, regenerate_document
+    from ...services.documents import RenderError, regenerate_cached
     from ...services.invoice import _safe_ref
 
     issued = db.session.get(IssuedDocument, doc_id)
@@ -943,7 +943,7 @@ def financial_download_issued_document(doc_id):
         return redirect(url_for("admin.financial_transactions"))
 
     try:
-        pdf = regenerate_document(issued)
+        pdf = regenerate_cached(issued)
     except RenderError as e:
         flash(f"The document could not be regenerated: {e}"
               + (f"\n{e.log}" if e.log else ""), "error")
@@ -963,7 +963,7 @@ def financial_download_documents_zip():
     import zipfile
     from io import BytesIO
 
-    from ...services.documents import RenderError, regenerate_document
+    from ...services.documents import RenderError, regenerate_cached
     from ...services.invoice import _safe_ref
 
     q = (request.args.get("q") or request.form.get("q") or "").strip()
@@ -990,7 +990,7 @@ def financial_download_documents_zip():
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for d in capped:
             try:
-                pdf = regenerate_document(d)
+                pdf = regenerate_cached(d)
             except RenderError:
                 errors += 1
                 continue

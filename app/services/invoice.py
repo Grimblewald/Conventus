@@ -519,9 +519,17 @@ def registration_document(reg: Registration, kind: str) -> bytes:
         amount = reg.amount_due
 
     vars_ = _registration_vars(reg, kind, amount_cents=amount)
-    content_hash = get_document_template(kind).content_hash
-    key = hashlib.sha256(
-        f"{kind}|{reg.id}|{amount}|{content_hash}".encode()).hexdigest()[:32]
+    # Keyed on everything the output is made from — the resolved variables as
+    # well as the template. A key built from a chosen few fields cannot notice
+    # a change to how the rest are produced, so adding a variable would go on
+    # serving documents rendered before it existed.
+    import json
+
+    fingerprint = json.dumps(
+        {"kind": kind, "template": get_document_template(kind).content_hash,
+         "vars": {k: str(v) for k, v in sorted(vars_.items())}},
+        sort_keys=True)
+    key = hashlib.sha256(fingerprint.encode()).hexdigest()[:32]
     return cached_pdf(f"reg-{key}", lambda: render_document(kind, vars_))
 
 

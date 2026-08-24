@@ -400,7 +400,6 @@ def payment_webhook():
     """Receive payment provider webhooks. Provider selected from DB config."""
     from ...models import Registration
     from ...services.payments import _active_gateway
-    from ...services.invoice import send_invoice_email
 
     g = _active_gateway()
     if not g:
@@ -428,10 +427,7 @@ def payment_webhook():
                         reg.status = "refunded"
                         db.session.commit()
                         if first_refund:
-                            try:
-                                send_invoice_email(reg)
-                            except Exception:
-                                current_app.logger.exception("Refund invoice email failed for reg %d", reg.id)
+                            _document_later(reg.id)
                     else:
                         # Initiated (refund.created) or failed refunds must
                         # not flip the status; failures need human eyes.
@@ -460,10 +456,7 @@ def payment_webhook():
                         current_app.logger.info(
                             "Payment webhook: reg %d marked paid (%s)",
                             result.registration_id, result.transaction_id)
-                        try:
-                            send_invoice_email(reg)
-                        except Exception:
-                            current_app.logger.exception("Invoice email failed for reg %d", reg.id)
+                        _document_later(reg.id)
                     else:
                         # Already paid or refunded. A redelivered webhook for
                         # the SAME transaction is routine; a successful capture
@@ -540,6 +533,20 @@ def payment_webhook():
     except Exception:
         current_app.logger.exception("Webhook processing failed")
         return {"status": "error", "message": "Payment processing error"}, 500
+
+
+def _document_later(reg_id: int) -> None:
+    """Send this registration's receipt or adjustment note, after we answer.
+
+    Rendering it takes seconds and is serialised box-wide, so doing it here
+    would hold the webhook open — and a gateway retries what it thinks timed
+    out, which multiplies the load exactly when a rush caused it.
+    """
+    from ...models import Registration
+    from ...services.invoice import send_invoice_email
+    from ...services.tasks import run_later_for
+
+    run_later_for(Registration, reg_id, send_invoice_email)
 
 
 def _notify_payment_attention(reg, result, reason: str = "") -> None:

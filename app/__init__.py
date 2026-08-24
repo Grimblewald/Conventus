@@ -157,7 +157,34 @@ def _connect_mailer(app: Flask) -> None:
         connect_mailer()
 
 
+def _sqlite_concurrency(app: Flask) -> None:
+    """Let a reader proceed while something else is writing.
+
+    SQLite's default journal takes a lock that blocks readers for the length of
+    a write, so a background job writing would stall requests that only wanted
+    to read. Write-ahead logging removes that, and the busy timeout turns the
+    remaining brief contention into a short wait rather than an immediate
+    "database is locked".
+    """
+    import sqlite3
+
+    from sqlalchemy import event
+    from sqlalchemy.engine import Engine
+
+    @event.listens_for(Engine, "connect")
+    def _set_pragmas(dbapi_connection, _record):
+        if not isinstance(dbapi_connection, sqlite3.Connection):
+            return
+        cur = dbapi_connection.cursor()
+        try:
+            cur.execute("PRAGMA journal_mode=WAL")
+            cur.execute("PRAGMA busy_timeout=5000")
+        finally:
+            cur.close()
+
+
 def _init_extensions(app: Flask) -> None:
+    _sqlite_concurrency(app)
     db.init_app(app)
     migrate.init_app(app, db, directory=str(Path(app.root_path).parent / "migrations"))
     login_manager.init_app(app)

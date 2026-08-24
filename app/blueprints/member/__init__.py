@@ -649,13 +649,18 @@ def submit_abstract(slug):
             summary=f"{current_user.email} → {c.slug}: {title}")
 
         # A receipt, not a decision — and only on an actual submission, so
-        # saving a draft five times does not send five emails.
+        # saving a draft five times does not send five emails. Rendering it
+        # takes seconds, so it happens after the author has been answered:
+        # submissions arrive in a rush before a deadline, and holding a worker
+        # for each one takes the site down for everyone.
         receipted = False
         if not is_draft and c.abstract_receipt_email:
             from ...services.abstract_latex import send_abstract_receipt
-            receipted = send_abstract_receipt(
-                a, uploads_root=Path(current_app.config["UPLOAD_FOLDER"]),
-                revision=revision)
+            from ...services.tasks import run_later_for
+            run_later_for(Abstract, a.id, send_abstract_receipt,
+                          uploads_root=Path(current_app.config["UPLOAD_FOLDER"]),
+                          revision=revision)
+            receipted = True
 
         if is_draft:
             flash("Draft saved.", "success")
@@ -783,8 +788,10 @@ def submit_previewed_abstract(aid):
     receipted = False
     if c.abstract_receipt_email:
         from ...services.abstract_latex import send_abstract_receipt
-        receipted = send_abstract_receipt(
-            a, uploads_root=Path(current_app.config["UPLOAD_FOLDER"]))
+        from ...services.tasks import run_later_for
+        run_later_for(Abstract, a.id, send_abstract_receipt,
+                      uploads_root=Path(current_app.config["UPLOAD_FOLDER"]))
+        receipted = True
     flash("Abstract submitted." + (" A confirmation with a PDF copy is on its "
                                    "way to your inbox." if receipted else "")
           + " You'll be notified after review.", "success")

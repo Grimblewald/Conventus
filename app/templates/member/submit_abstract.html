@@ -195,9 +195,18 @@
     <script>
       (function () {
         var action = document.getElementById("form-action");
-        document.getElementById("btn-draft").addEventListener("click", function () { action.value = "draft"; });
-        document.getElementById("btn-preview").addEventListener("click", function () { action.value = "preview"; });
-        document.getElementById("btn-submit").addEventListener("click", function () { action.value = "submit"; });
+        if (!action) return;
+        // Guarded individually: not every button is rendered for every
+        // abstract, and one missing element would otherwise throw and leave
+        // the remaining buttons without a handler — so they would all submit
+        // under the field's default action.
+        [["btn-draft", "draft"],
+         ["btn-preview", "preview"],
+         ["btn-submit", "submit"]].forEach(function (pair) {
+          var btn = document.getElementById(pair[0]);
+          if (!btn) return;
+          btn.addEventListener("click", function () { action.value = pair[1]; });
+        });
       })();
     </script>
   </div>

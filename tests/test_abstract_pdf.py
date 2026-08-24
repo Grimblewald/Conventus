@@ -178,3 +178,57 @@ class TestSubmissionReceipt:
         assert len(sent) == 1
         assert not sent[0]["attachments"]
         assert "Abstract received" in sent[0]["subject"]
+
+
+class TestFigureSizing:
+    """The figure takes the space left on the page, which is what keeps an
+    abstract to one page — but it must never be enlarged past its own size."""
+
+    def _fragment(self, **overrides):
+        from types import SimpleNamespace
+
+        from app.services.abstract_latex import abstract_fragment
+
+        a = SimpleNamespace(
+            title="A title", authors="Jane Doe|1|Uni", body="Some body text.",
+            custom_data={}, references=None, figure_filename="fig.png",
+            profile_picture_filename=None, presenting_author_index=0)
+        for k, v in overrides.items():
+            setattr(a, k, v)
+        return abstract_fragment("001", a)
+
+    def test_the_height_comes_from_the_space_left_on_the_page(self):
+        tex = self._fragment()
+        assert "\\pagegoal" in tex and "\\pagetotal" in tex
+        # A fixed height would push the figure to the next page and strand the
+        # remainder of this one.
+        assert "0.32\\textheight" not in tex
+
+    def test_it_is_never_enlarged_past_its_own_size(self):
+        tex = self._fragment()
+        assert "\\sbox0" in tex, "the natural size has to be measured"
+        assert "\\ifdim\\dimen0>\\dimen2 \\dimen0=\\dimen2\\fi" in tex
+        assert "\\ifdim\\dimen4>\\wd0 \\dimen4=\\wd0\\fi" in tex
+
+    def test_it_cannot_be_given_a_height_of_zero(self):
+        """A non-positive height fails the compile, taking the booklet with it."""
+        assert "\\ifdim\\dimen0<12pt \\dimen0=12pt\\fi" in self._fragment()
+
+    def test_room_is_kept_for_the_references(self):
+        """Otherwise a figure expanding into the gap orphans them overleaf."""
+        refs = [{"key": 1, "doi": "10.1/a"}, {"key": 2, "doi": "10.1/b"}]
+        assert "-4\\baselineskip" in self._fragment(references=refs)
+        assert "-0pt" in self._fragment(references=None)
+
+    def test_references_do_not_inherit_the_body_line_spacing(self):
+        refs = [{"key": 1, "doi": "10.1/a"}]
+        tex = self._fragment(references=refs)
+        assert "\\setstretch{1}" in tex
+        assert "\\footnotesize" in tex
+        # [n], matching how the body cites them.
+        assert "[1]~" in tex
+
+    def test_the_figure_comes_before_the_references(self):
+        refs = [{"key": 1, "doi": "10.1/a"}]
+        tex = self._fragment(references=refs)
+        assert tex.index("includegraphics") < tex.index("\\textbf{References}")

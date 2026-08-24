@@ -20,16 +20,21 @@ from .documents import latex_escape as _latex_escape
 
 KNOWN_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff"}
 
-# How densely an abstract page sets. Named because they are the values worth
-# tuning when the booklet looks too airy or too cramped, and because a figure
-# constrained by both dimensions keeps its aspect ratio inside that box —
-# a wide figure gets the full measure, a tall one is capped rather than
-# swallowing the page.
+# How an abstract page uses its space. Body text is deliberately absent from
+# this list: its size, measure and leading are what make an abstract readable
+# and are not somewhere to claw back room. Everything here is apparatus around
+# it.
+#
+# A figure constrained in both dimensions keeps its aspect ratio inside that
+# box, so a wide figure gets the full measure and a tall one is capped rather
+# than swallowing the page.
 FIGURE_MAX_WIDTH = "\\textwidth"
-FIGURE_MAX_HEIGHT = "0.32\\textheight"
 FIGURE_SPACE_ABOVE = "8pt"
-REF_TOP_SPACE = "4pt"
-REF_ITEM_SPACE = "1pt"
+
+# References are apparatus, not prose: smaller, single-spaced, and set close.
+REF_FONT_SIZE = "\\footnotesize"
+REF_TOP_SPACE = "10pt"
+REF_ITEM_SPACE = "2pt"
 
 
 def convert_for_latex(src: Path, dst: Path) -> Path:
@@ -240,28 +245,64 @@ def abstract_fragment(label: str, abstract,
 
     if abstract.figure_filename:
         out = _out_ext(abstract.figure_filename)
+        # Room to keep clear for the reference block, so a figure that expands
+        # into the space left on the page does not orphan the references onto
+        # the next one.
+        reserve = f"{len(abstract.references or []) + 2}\\baselineskip" \
+            if abstract.references else "0pt"
         lines.append("")
+        # The figure takes exactly the space left between the body and the
+        # references, which is what keeps an abstract to one page. A fixed
+        # height larger than the remainder would push the whole figure to the
+        # next page and leave the gap empty. An author whose text leaves little
+        # room gets a small figure, and can shorten the text if they would
+        # rather have a large one.
+        #
+        # \pagetotal only counts what the page builder has already taken, so
+        # the paragraph has to be ended and a breakpoint offered before the
+        # remaining space can be measured. \pagegoal is \maxdimen until the
+        # page builder has run at all, hence the clamp.
+        lines.append("\\par")
         lines.append(f"\\vspace{{{FIGURE_SPACE_ABOVE}}}")
-        lines.append("\\begin{center}")
+        lines.append("\\penalty0")
+        lines.append("\\begingroup")
+        lines.append(f"\\sbox0{{\\includegraphics{{{folder}/figure{out}}}}}")
+        lines.append("\\dimen0=\\pagegoal")
+        lines.append("\\ifdim\\dimen0>\\textheight \\dimen0=\\textheight\\fi")
+        lines.append("\\advance\\dimen0 by -\\pagetotal")
+        lines.append(f"\\advance\\dimen0 by -{reserve}")
+        # A height of zero or less fails the compile, taking the booklet with it.
+        lines.append("\\ifdim\\dimen0<12pt \\dimen0=12pt\\fi")
+        # Never beyond the figure's own size: keepaspectratio scales to fill the
+        # box it is given, so an image smaller than the measure would otherwise
+        # be enlarged past its resolution.
+        lines.append("\\dimen2=\\dimexpr\\ht0+\\dp0\\relax")
+        lines.append("\\ifdim\\dimen0>\\dimen2 \\dimen0=\\dimen2\\fi")
+        lines.append(f"\\dimen4={FIGURE_MAX_WIDTH}")
+        lines.append("\\ifdim\\dimen4>\\wd0 \\dimen4=\\wd0\\fi")
+        # Frozen to literals: \includegraphics uses the scratch registers too.
+        lines.append("\\edef\\abstractfigureheight{\\the\\dimen0}")
+        lines.append("\\edef\\abstractfigurewidth{\\the\\dimen4}")
         lines.append(
-            "\\includegraphics[\n"
-            f"    width={FIGURE_MAX_WIDTH},\n"
-            f"    height={FIGURE_MAX_HEIGHT},\n"
-            "    keepaspectratio\n"
-            f"  ]{{{folder}/figure{out}}}"
-        )
-        lines.append("\\end{center}")
+            "\\centerline{\\includegraphics["
+            "width=\\abstractfigurewidth,"
+            "height=\\abstractfigureheight,"
+            "keepaspectratio"
+            f"]{{{folder}/figure{out}}}}}")
+        lines.append("\\endgroup")
 
     refs = abstract.references or []
     if refs:
         lines.append("")
-        lines.append("\\textbf{\\small References}")
-        # topsep is read as the list opens, so it has to be set before it.
-        lines.append(f"\\begingroup\\setlength{{\\topsep}}{{{REF_TOP_SPACE}}}"
-                     f"\\setlength{{\\partopsep}}{{0pt}}")
-        lines.append("\\begin{enumerate}")
-        lines.append(f"\\small\\setlength{{\\itemsep}}{{{REF_ITEM_SPACE}}}"
-                     f"\\setlength{{\\parsep}}{{0pt}}")
+        # Set as its own block rather than a list: an enumerate inherits the
+        # body's line spacing and paragraph skip and reserves a wide label
+        # margin, none of which suits a reference. \setstretch is local to the
+        # group, so nothing here reaches the body text.
+        lines.append(f"\\begingroup\\setstretch{{1}}{REF_FONT_SIZE}"
+                     f"\\setlength{{\\parskip}}{{{REF_ITEM_SPACE}}}"
+                     f"\\setlength{{\\parindent}}{{0pt}}")
+        lines.append(f"\\vspace{{{REF_TOP_SPACE}}}")
+        lines.append("\\noindent\\textbf{References}\\par")
         for ref in refs:
             meta = fetch_metadata(ref["doi"])
             if meta:
@@ -269,8 +310,11 @@ def abstract_fragment(label: str, abstract,
             else:
                 cite = ref["doi"].replace("_", "\\_")
             doi_esc = ref["doi"].replace("_", "\\_")
-            lines.append(f"  \\item \\href{{https://doi.org/{doi_esc}}}{{{cite}}}")
-        lines.append("\\end{enumerate}\\endgroup")
+            # [n] matches how the body cites them; an enumerate prints "n.".
+            lines.append(
+                f"\\noindent\\hangindent=1.8em\\hangafter=1 [{ref['key']}]~"
+                f"\\href{{https://doi.org/{doi_esc}}}{{{cite}}}\\par")
+        lines.append("\\endgroup")
 
     lines.append("")
     lines.append("\\newpage")

@@ -320,3 +320,32 @@ class TestEditingAfterSubmission:
             c.is_accepting_abstracts = False
             db.session.commit()
             assert Abstract.query.get(aid).is_editable is False
+
+    def test_previewing_a_submitted_abstract_does_not_resubmit_it(
+            self, seeded, member_client, app, conference):
+        """Preview and Submit are separate actions on the same form."""
+        aid = self._abstract(app, conference, "submitted")
+        resp = member_client.post(f"/conferences/{conference}/abstract", data={
+            "title": "A submitted piece of work", "authors": "Jane Doe|1|Uni",
+            "body": "A body with nothing wrong with it.",
+            "presenting_author_index": "0", "action": "preview",
+            "edit_id": str(aid),
+        }, follow_redirects=False)
+        assert resp.status_code == 302
+        assert f"/abstracts/{aid}/preview" in resp.headers["Location"]
+        with app.app_context():
+            assert Abstract.query.get(aid).status == "submitted"
+
+    def test_every_rendered_action_button_can_set_the_action(
+            self, seeded, member_client, app, conference):
+        """A button whose handler is missing submits under the form's default,
+        so Preview would resubmit."""
+        import re
+
+        aid = self._abstract(app, conference, "submitted")
+        page = member_client.get(
+            f"/conferences/{conference}/abstract?edit={aid}").data.decode()
+        rendered = set(re.findall(r'<button[^>]*id="(btn-[a-z]+)"', page))
+        wired = set(re.findall(r'\["(btn-[a-z]+)",', page))
+        assert rendered, "expected action buttons on the page"
+        assert rendered <= wired, f"no handler for {rendered - wired}"

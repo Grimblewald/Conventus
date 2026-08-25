@@ -126,7 +126,7 @@ def send_registration_confirmation(registration: Registration) -> bool:
     )
     return send_mail(
         to=registration.user.email,
-        subject=f"Registration confirmed — {conf.title}",
+        subject=f"Registration confirmed - {conf.title}",
         body=body,
     )
 
@@ -243,7 +243,7 @@ def send_payment_email(registration: Registration) -> bool:
         ) if line) + "\n"
 
     if not send_mail(to=registration.user.email,
-                     subject=f"Invoice {registration.reference} — {conf.title}",
+                     subject=f"Invoice {registration.reference} - {conf.title}",
                      body=body, attachments=attachments or None):
         return False        # A send that failed is not an ask.
 

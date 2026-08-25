@@ -518,8 +518,8 @@ def send_abstract_receipt(abstract, *, uploads_root: Path,
     )
     return send_mail(
         to=author.email,
-        subject=(f"Abstract updated — {conference.title}" if revision
-                 else f"Abstract received — {conference.title}"),
+        subject=(f"Abstract updated - {conference.title}" if revision
+                 else f"Abstract received - {conference.title}"),
         body=body,
         attachments=attachments or None,
     )

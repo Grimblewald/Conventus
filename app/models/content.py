@@ -343,7 +343,7 @@ def get_financial_identity() -> FinancialIdentity:
 _DOCUMENT_DEFAULTS = {
     # An invoice REQUESTS payment. It must never read like a receipt.
     "invoice": {
-        "subject": "Invoice {transaction_id} — {conference_title}",
+        "subject": "Invoice {transaction_id} - {conference_title}",
         "email_body": (
             "Dear {user_name},\n\n"
             "Please find attached invoice {transaction_id} for "
@@ -360,7 +360,7 @@ _DOCUMENT_DEFAULTS = {
     },
     # A receipt CONFIRMS payment already made.
     "receipt": {
-        "subject": "Receipt {transaction_id} — {conference_title}",
+        "subject": "Receipt {transaction_id} - {conference_title}",
         "email_body": (
             "Dear {user_name},\n\n"
             "Thank you — your payment has been received. Your receipt is "
@@ -375,7 +375,7 @@ _DOCUMENT_DEFAULTS = {
     },
     # An adjustment note records a refund or correction against a payment.
     "adjustment": {
-        "subject": "Adjustment note {transaction_id} — {conference_title}",
+        "subject": "Adjustment note {transaction_id} - {conference_title}",
         "email_body": (
             "Dear {user_name},\n\n"
             "An adjustment has been made to your payment for "

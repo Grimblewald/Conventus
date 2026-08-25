@@ -48,6 +48,13 @@
   about the toolchain opt back in with a `real_latex` marker. 227s to 92s.
 
 ### Fixed
+- **Wide admin tables scroll instead of spilling off the page.** Each of them
+  sits in a horizontal scroll wrapper, but the wrapper could never take effect:
+  the admin layout is a grid, and a grid track refuses to shrink below its
+  content unless told to, so a table wider than the page pushed the whole
+  column out past the edge rather than scrolling within it. The registrations
+  list crossed that width when the payment-email columns were added, but the
+  fault was in the layout and every admin table was exposed to it.
 - **An author can correct a submitted abstract until submissions close.** The
   confirmation email told them they could edit and use the latest version,
   while the dashboard offered no way to — and the edit URL, which had no status

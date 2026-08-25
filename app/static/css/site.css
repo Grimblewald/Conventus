@@ -736,6 +736,10 @@ section.block.ink .table td {
   color: var(--c-accent); text-decoration: none;
 }
 
+/* A grid item's automatic minimum size is its content, so without this the
+   wide admin tables force the track wider than the page instead of scrolling
+   inside their own overflow wrapper. */
+.admin-main { min-width: 0; }
 .admin-main h2 { margin-top: 0; }
 
 .stats .stat {

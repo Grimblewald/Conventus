@@ -218,3 +218,44 @@ class TestTheQueueIndicator:
         monkeypatch.setattr("app.models.queue_stat.snapshot",
                             lambda: (_ for _ in ()).throw(RuntimeError("boom")))
         assert admin_client.get("/admin/").status_code == 200
+
+
+class TestDeferredJobsCanBuildLinks:
+    """The jobs that get deferred send mail carrying links. Building an
+    external URL outside a request needs SERVER_NAME, which is not set — so a
+    deferred job raised, the runner logged it, and the mail silently never
+    went. Only the paths that stayed in a request kept working."""
+
+    def test_a_deferred_job_can_build_an_external_url(self, app, monkeypatch):
+        from flask import url_for
+
+        monkeypatch.setitem(app.config, "TESTING", False)
+        monkeypatch.setitem(app.config, "SERVER_NAME", None)
+        result = {}
+        done = threading.Event()
+
+        def _job():
+            try:
+                result["url"] = url_for("public.pay_registration",
+                                        token="abc", _external=True)
+            except Exception as e:
+                result["error"] = f"{type(e).__name__}: {e}"
+            finally:
+                done.set()
+
+        with app.test_request_context("/", base_url="https://example.org"):
+            assert tasks.run_later(_job) is True
+
+        assert done.wait(timeout=5), "the job never ran"
+        assert "error" not in result, result.get("error")
+        assert result["url"] == "https://example.org/pay/registration/abc"
+
+    def test_it_still_runs_when_scheduled_outside_a_request(self, app,
+                                                            monkeypatch):
+        """Cron and CLI callers have no request to borrow an address from."""
+        monkeypatch.setitem(app.config, "TESTING", False)
+        ran = threading.Event()
+
+        with app.app_context():
+            assert tasks.run_later(ran.set) is True
+        assert ran.wait(timeout=5)

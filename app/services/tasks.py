@@ -49,9 +49,16 @@ def _run() -> None:
 
     name = _worker_name()
     while True:
-        app, fn = _queue.get()
+        app, fn, base_url = _queue.get()
         try:
-            with app.app_context():
+            # A request context, not merely an application one: these jobs
+            # send mail carrying links, and building an external URL outside a
+            # request needs SERVER_NAME, which a site does not otherwise need
+            # to set. The scheduling request knew its own address, so the job
+            # borrows it and the links come out on the host the visitor used.
+            ctx = (app.test_request_context(base_url=base_url) if base_url
+                   else app.app_context())
+            with ctx:
                 # Before and after: a burst is visible while it is being
                 # worked through, not only once it has drained.
                 record_depth(name, _queue.qsize() + 1)
@@ -89,7 +96,7 @@ def run_later(fn) -> bool:
     there is no application to carry into the thread. Returns whether it was
     deferred.
     """
-    from flask import current_app, has_app_context
+    from flask import current_app, has_app_context, has_request_context, request
 
     if not has_app_context():
         fn()
@@ -99,9 +106,13 @@ def run_later(fn) -> bool:
         fn()
         return False
 
+    # Carried into the worker so the job can build links on the same host the
+    # visitor reached us on. Without it, anything emailing a URL fails.
+    base_url = request.url_root if has_request_context() else None
+
     _ensure_worker()
     try:
-        _queue.put_nowait((app, fn))
+        _queue.put_nowait((app, fn, base_url))
         return True
     except queue.Full:
         # Running it here would block the request, which is the thing this

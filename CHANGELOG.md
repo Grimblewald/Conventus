@@ -48,6 +48,19 @@
   about the toolchain opt back in with a `real_latex` marker. 227s to 92s.
 
 ### Fixed
+- **A DOI pasted the way journals print it no longer breaks the abstract.**
+  Reference lists write "DOI: 10.1126/…", so that is what an author copies —
+  and the label went into the Crossref request untouched, where the space in it
+  is a character an HTTP request may not carry. The lookup raised rather than
+  returning nothing, which took out both the abstract preview and its PDF: the
+  author could neither read nor download their own submission. The `doi:` label
+  is now understood alongside the URL forms, whatever remains is escaped before
+  it reaches the network, and a lookup that fails for any reason leaves the
+  reference without a citation instead of failing the page. Existing abstracts
+  are corrected on the next lookup and need no edit. A DOI Crossref has no
+  record of is still remembered so it is not asked for repeatedly, but a
+  timeout or a DNS failure is not — that says nothing about the DOI, and
+  remembering it made one bad minute permanent for a perfectly good reference.
 - **Wide admin tables scroll instead of spilling off the page.** Each of them
   sits in a horizontal scroll wrapper, but the wrapper could never take effect:
   the admin layout is a grid, and a grid track refuses to shrink below its

@@ -4,8 +4,9 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from urllib.parse import quote
 from urllib.request import Request, urlopen
-from urllib.error import URLError
+from urllib.error import HTTPError
 
 log = logging.getLogger(__name__)
 
@@ -14,21 +15,34 @@ _CACHE: dict[str, dict | None] = {}
 _CACHE_FILE: Path | None = None
 _CACHE_DIRTY = False
 
-_DOI_URL_PREFIXES = [
+# "doi:" is how journals print a DOI in their own reference lists, so it is
+# what arrives when an author copies one out of a paper. The URL forms are what
+# arrives when they copy the address bar instead.
+_DOI_PREFIXES = [
     "https://doi.org/", "http://doi.org/",
     "https://dx.doi.org/", "http://dx.doi.org/",
     "doi.org/", "dx.doi.org/",
+    "doi:", "doi ",
 ]
 
 
 def normalize_doi(raw: str) -> str:
-    """Strip doi.org URL prefixes so only the bare DOI remains."""
-    doi = raw.strip()
-    for prefix in _DOI_URL_PREFIXES:
-        if doi.lower().startswith(prefix.lower()):
-            doi = doi[len(prefix):]
-            break
-    return doi.strip()
+    """Reduce however a DOI was pasted to the bare DOI itself.
+
+    Repeated rather than matched once, because the two families combine:
+    a reference list gives "doi: https://doi.org/10.1126/x" as readily as
+    either half on its own.
+    """
+    doi = (raw or "").strip()
+    changed = True
+    while changed:
+        changed = False
+        for prefix in _DOI_PREFIXES:
+            if doi.lower().startswith(prefix.lower()):
+                doi = doi[len(prefix):].strip()
+                changed = True
+                break
+    return doi
 
 
 def _init_cache() -> Path:
@@ -81,34 +95,53 @@ def fetch_metadata(doi: str) -> dict | None:
 
     Results are cached to disk and survive server restarts.
     """
-    global _CACHE_DIRTY
     _load_cache()
-    doi = doi.strip()
+    # Normalised here as well as on save, so an entry stored before this knew
+    # about a prefix resolves on the next lookup instead of needing an edit.
+    doi = normalize_doi(doi)
+    if not doi:
+        return None
     if doi in _CACHE:
         return _CACHE[doi]
 
-    url = CROSSREF_API.format(doi=doi)
+    # Quoted, because the DOI reaches us as free text: a stray space or hash
+    # otherwise builds a request the HTTP client refuses to send, and refuses
+    # by raising. Slashes stay literal — a DOI always has one, and Crossref
+    # wants it as a path separator.
+    url = CROSSREF_API.format(doi=quote(doi, safe="/"))
     req = Request(url, headers={"User-Agent": "Conventus/1.0 (mailto:noreply@example.org)"})
     try:
         resp = urlopen(req, timeout=10)
         data = json.loads(resp.read().decode("utf-8"))
         msg = data.get("message")
         if not msg or data.get("status") != "ok":
-            _CACHE[doi] = None
-            _CACHE_DIRTY = True
-            _save_cache()
-            return None
-        result = _parse_crossref(msg)
-        _CACHE[doi] = result
-        _CACHE_DIRTY = True
-        _save_cache()
-        return result
-    except (URLError, json.JSONDecodeError, OSError) as e:
+            return _remember(doi, None)
+        return _remember(doi, _parse_crossref(msg))
+    except HTTPError as e:
+        # The DOI is wrong, not the network. Asking again gets the same answer.
+        log.info("CrossRef has no record of %s (HTTP %s)", doi, e.code)
+        return _remember(doi, None)
+    except Exception as e:
+        # A citation is an enrichment; a reference renders without one. Nothing
+        # here may take down the page an author is trying to read, and the ways
+        # a bad DOI can fail are not enumerable — a malformed one raises out of
+        # the HTTP client rather than out of the socket.
+        #
+        # Not remembered: a timeout, a DNS failure or a malformed response says
+        # nothing about the DOI, and caching it would make one bad minute
+        # permanent for a reference that is perfectly good.
         log.warning("CrossRef lookup failed for %s: %s", doi, e)
-        _CACHE[doi] = None
-        _CACHE_DIRTY = True
-        _save_cache()
         return None
+
+
+def _remember(doi: str, result: dict | None) -> dict | None:
+    """Cache a settled answer — one that asking again would not change."""
+    global _CACHE_DIRTY
+
+    _CACHE[doi] = result
+    _CACHE_DIRTY = True
+    _save_cache()
+    return result
 
 
 def _plain(text: str) -> str:

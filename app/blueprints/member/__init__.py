@@ -30,7 +30,8 @@ from ...services.payments import (
 )
 from ...services.uploads import UploadError, remove_upload, save_figure, save_image
 from ...services.form_renderer import validate_form
-from ...services.citations import fetch_metadata, format_reference, normalize_doi
+from ...services.citations import (fetch_metadata, format_reference, is_doi,
+                                   normalize_doi)
 
 
 member_bp = Blueprint("member", __name__)
@@ -354,14 +355,22 @@ def register_conf(slug):
 
 
 def _validate_reference(key: int, doi: str, body: str) -> list[str]:
+    """Whether one reference is usable, in whatever form it was pasted.
+
+    The DOI is read through the same parser that stores it, rather than tested
+    against a cheaper idea of what a DOI looks like. Two answers to that one
+    question is how a reference came to be accepted when saved and refused when
+    submitted, and taking the second answer away is what stops it recurring.
+    """
     errors: list[str] = []
     marker = f"[{key}]"
     if marker not in body:
         errors.append(
             f"Reference {marker} ({doi}) is not cited in the abstract text. "
             f"Add {marker} where this reference belongs.")
-    if not doi.startswith("10."):
-        errors.append(f"Reference {marker} DOI does not look valid (should start with 10.).")
+    if not is_doi(doi):
+        errors.append(f"Reference {marker}: no DOI found in “{doi}”. "
+                      f"A DOI looks like 10.1000/xyz123.")
     return errors
 
 
@@ -387,6 +396,13 @@ def submission_errors(*, title: str, authors: str, body: str,
                       f"the limit is 300 (soft cap 320).")
     if schema:
         errors.extend(validate_form(schema, form_data))
+
+    # Normalised here rather than left to each caller: the form re-parses what
+    # was typed and the preview page submits what was stored, and a rule that
+    # depends on its caller having tidied up first is a rule that only holds on
+    # whichever path remembered to.
+    references = [{**r, "doi": normalize_doi(r.get("doi", ""))}
+                  for r in references]
 
     ref_keys = {r["key"] for r in references}
     for ref in references:

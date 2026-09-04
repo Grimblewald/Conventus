@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 from urllib.parse import quote
 from urllib.request import Request, urlopen
@@ -15,34 +16,38 @@ _CACHE: dict[str, dict | None] = {}
 _CACHE_FILE: Path | None = None
 _CACHE_DIRTY = False
 
-# "doi:" is how journals print a DOI in their own reference lists, so it is
-# what arrives when an author copies one out of a paper. The URL forms are what
-# arrives when they copy the address bar instead.
-_DOI_PREFIXES = [
-    "https://doi.org/", "http://doi.org/",
-    "https://dx.doi.org/", "http://dx.doi.org/",
-    "doi.org/", "dx.doi.org/",
-    "doi:", "doi ",
-]
+# A DOI is a registrant prefix and a suffix, and that shape is the one thing
+# every way of pasting one has in common: out of a journal's reference list
+# ("DOI: 10.1126/x", "DOI (10.1126/x)"), out of the address bar
+# ("https://doi.org/10.1126/x"), or out of an author's own numbered
+# bibliography ("4. Smith et al. 10.1126/x").
+_DOI_RE = re.compile(r"10\.\d{4,9}/\S+")
+
+# Punctuation that ends the sentence a DOI was printed in rather than the DOI.
+_TRAILING = ".,;:)]}>”’\"'"
 
 
 def normalize_doi(raw: str) -> str:
-    """Reduce however a DOI was pasted to the bare DOI itself.
+    """Read the DOI out of however it was pasted.
 
-    Repeated rather than matched once, because the two families combine:
-    a reference list gives "doi: https://doi.org/10.1126/x" as readily as
-    either half on its own.
+    Searched for rather than stripped down to, because the forms a DOI arrives
+    in are not a list anyone can finish: every prefix left off the list is a
+    reference refused for being correct. What no DOI can be found in is handed
+    back unchanged, so a caller can say what it read.
     """
-    doi = (raw or "").strip()
-    changed = True
-    while changed:
-        changed = False
-        for prefix in _DOI_PREFIXES:
-            if doi.lower().startswith(prefix.lower()):
-                doi = doi[len(prefix):].strip()
-                changed = True
-                break
-    return doi
+    m = _DOI_RE.search(raw or "")
+    if not m:
+        return (raw or "").strip()
+    return m.group(0).rstrip(_TRAILING)
+
+
+def is_doi(raw: str) -> bool:
+    """Whether *raw* holds a DOI at all — the only test for it in the codebase.
+
+    Callers asking the question cheaply for themselves is how the validator
+    came to refuse strings this module had already learned to accept.
+    """
+    return bool(_DOI_RE.search(raw or ""))
 
 
 def _init_cache() -> Path:
@@ -170,8 +175,10 @@ def format_reference(ref_data: dict) -> str:
     year = ref_data.get("year", "")
     volume = ref_data.get("volume", "")
     pages = ref_data.get("pages", "")
-    doi = ref_data.get("doi", "")
-    
+    # Normalised for display too: a reference stored with the label its journal
+    # printed would otherwise render as "DOI: DOI: 10.1126/x".
+    doi = normalize_doi(ref_data.get("doi", ""))
+
     parts = []
     if authors:
         parts.append(authors)
@@ -205,7 +212,7 @@ def format_reference_compact(ref_data: dict) -> str:
     authors = ref_data.get("authors", "")
     journal = ref_data.get("journal", "")
     year = ref_data.get("year", "")
-    doi = ref_data.get("doi", "")
+    doi = normalize_doi(ref_data.get("doi", ""))
 
     first_author = ""
     if authors:

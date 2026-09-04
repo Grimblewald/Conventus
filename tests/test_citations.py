@@ -51,6 +51,12 @@ class TestNormalizeDoi:
         "https://doi.org/10.1126/sciadv.ade5079",
         "doi: https://doi.org/10.1126/sciadv.ade5079",
         "  10.1126/sciadv.ade5079 ",
+        # Every one of these was found in a submitted or abandoned abstract.
+        "DOI (10.1126/sciadv.ade5079)",
+        "DOI (10.1126/sciadv.ade5079).",
+        "https://doi.org10.1126/sciadv.ade5079",
+        "4.\tDoi: 10.1126/sciadv.ade5079",
+        "[3] Zhao P, et al. Sci Adv (2023). 10.1126/sciadv.ade5079",
     ])
     def test_every_way_a_doi_gets_pasted_reduces_to_the_doi(self, raw):
         assert citations.normalize_doi(raw) == "10.1126/sciadv.ade5079"
@@ -58,6 +64,30 @@ class TestNormalizeDoi:
     def test_it_survives_nothing_at_all(self):
         assert citations.normalize_doi("") == ""
         assert citations.normalize_doi(None) == ""
+
+    @pytest.mark.parametrize("raw", [
+        "0.1016/j.ejpb.2025.114637",     # a real typo, from a real abstract
+        "see the paper for details",
+        "",
+    ])
+    def test_what_holds_no_doi_is_not_invented_into_one(self, raw):
+        """Tolerance is for how a DOI was written, not for whether there is one.
+
+        Handed back unchanged rather than emptied, so whoever refuses it can
+        show the author what was read.
+        """
+        assert not citations.is_doi(raw)
+        assert citations.normalize_doi(raw) == raw.strip()
+
+    def test_one_answer_to_what_a_doi_is(self):
+        """is_doi and normalize_doi cannot disagree, being the same match.
+
+        A second opinion held elsewhere in the codebase is the fault this
+        pair replaced.
+        """
+        for raw in ["DOI: 10.1126/sciadv.ade5079", "not a reference", ""]:
+            assert citations.is_doi(raw) == citations.normalize_doi(
+                raw).startswith("10.")
 
 
 class TestLookupNeverRaises:
@@ -75,16 +105,33 @@ class TestLookupNeverRaises:
             "https://api.crossref.org/works/10.1126/sciadv.ade5079"]
 
     def test_the_url_it_builds_never_carries_a_raw_space(self, monkeypatch):
-        """A space in the path is what the HTTP client refused to send."""
+        """A space in the path is what the HTTP client refused to send.
+
+        No longer escaped, because no space survives being read out: a DOI
+        ends where the whitespace after it begins. The guarantee is about what
+        reaches the network, not about which step removed it.
+        """
         captured: list[str] = []
         monkeypatch.setattr(citations, "urlopen", _responder(
             {"status": "ok", "message": {}}, captured))
 
-        citations.fetch_metadata("10.1126/sci adv#frag")
+        citations.fetch_metadata("10.1126/sciadv trailing words")
 
         assert captured, "no request was made"
         assert " " not in captured[0]
-        assert "%20" in captured[0]
+        assert captured[0].endswith("/10.1126/sciadv")
+
+    def test_what_survives_being_read_out_is_still_escaped(self, monkeypatch):
+        """Whitespace is not the only character a URL cannot carry raw."""
+        captured: list[str] = []
+        monkeypatch.setattr(citations, "urlopen", _responder(
+            {"status": "ok", "message": {}}, captured))
+
+        citations.fetch_metadata("10.1126/sciadv#frag")
+
+        assert captured, "no request was made"
+        assert "#" not in captured[0]
+        assert "%23" in captured[0]
 
     def test_a_url_the_client_refuses_is_an_absent_citation_not_a_500(
             self, monkeypatch):

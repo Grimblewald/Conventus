@@ -10,7 +10,8 @@ import re
 
 from flask import url_for
 
-from . import CheckoutResult, ConnectionTestResult, PaymentGateway, PaymentStatus, WebhookResult
+from . import (CheckoutResult, ConnectionTestResult, PaymentGateway,
+               PaymentStatus, WebhookResult, warn_if_unreachable)
 from ...models import get_active_payment_gateway
 
 log = logging.getLogger(__name__)
@@ -48,6 +49,18 @@ def _registration_reference(registration) -> str:
 
 
 class ANZWorldlineGateway(PaymentGateway):
+
+    @classmethod
+    def checkout_origins(cls) -> list[str]:
+        """Where Worldline's hosted checkout page is served from.
+
+        A wildcard over the registrable domain rather than the two API bases
+        above, because the hosted page is not always served from the API host:
+        a response carrying only a partial redirect URL is assembled below into
+        a deeper subdomain. Live and preprod both fall under this.
+        """
+        return ["https://*.anzworldline-solutions.com.au"]
+
     def __init__(self, config=None):
         from ...models.content import PaymentGatewayConfig
         if config is None:
@@ -179,6 +192,11 @@ class ANZWorldlineGateway(PaymentGateway):
                 return CheckoutResult(error="No redirect URL in Worldline response",
                                       payment_id=payment_id,
                                       merchant_reference=merchant_reference)
+
+            # Every checkout this gateway mints passes through here, so it is
+            # the one place that can notice the page being unreachable before
+            # a payer does.
+            warn_if_unreachable(redirect_url, "ANZWorldlineGateway")
 
             return CheckoutResult(redirect_url=redirect_url, payment_id=payment_id,
                                   merchant_reference=merchant_reference)

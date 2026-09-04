@@ -32,6 +32,7 @@ from .extensions import (
     migrate,
     talisman,
 )
+from .services.gateways import all_checkout_origins
 
 
 # ---------------------------------------------------------------------------
@@ -203,7 +204,13 @@ def _init_extensions(app: Flask) -> None:
         "font-src": "'self'",
         "connect-src": "'self'",
         "frame-ancestors": "'none'",
-        "form-action": "'self'",
+        # Browsers enforce form-action on the redirect a form submission
+        # follows, so paying — a POST that lands on the gateway's hosted page —
+        # needs the gateway's origin here or Chrome and Safari drop the
+        # redirect and the payer sees the button do nothing. Asked of the
+        # gateways rather than written out again: one copy of a hostname whose
+        # staleness has no symptom beyond a dead button.
+        "form-action": ["'self'"] + all_checkout_origins(),
         "base-uri": "'self'",
     }
     talisman.init_app(

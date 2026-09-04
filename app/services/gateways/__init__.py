@@ -9,6 +9,8 @@ from urllib.parse import urlsplit
 
 log = logging.getLogger(__name__)
 
+_DEFAULT_PORTS = {"https": 443, "http": 80}
+
 
 @dataclass
 class PaymentStatus:
@@ -137,7 +139,11 @@ def origin_permitted(url: str, patterns: list[str]) -> bool:
         source = urlsplit(pattern)
         if not source.hostname or source.scheme != target.scheme:
             continue
-        if source.port and source.port != target.port:
+        # A source with no port means the scheme's default port, so a URL on
+        # an explicit other port does not match. Erring the other way would
+        # let this stay quiet about a redirect the browser is going to block.
+        wanted = source.port or _DEFAULT_PORTS.get(source.scheme)
+        if (target.port or _DEFAULT_PORTS.get(target.scheme)) != wanted:
             continue
         # fnmatch, so "*.example.com" matches a host at any depth beneath it —
         # which is what a browser does, and what the hosted checkout page needs

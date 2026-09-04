@@ -57,6 +57,13 @@ class TestOriginMatching:
         assert not origin_permitted("", ["https://*.example.com"])
         assert not origin_permitted("https://payment.example.com", [])
 
+    def test_a_source_without_a_port_means_the_default_port(self):
+        """Matching an explicit other port would keep the guard quiet about a
+        redirect the browser is going to block."""
+        pattern = ["https://*.example.com"]
+        assert origin_permitted("https://payment.example.com:443/x", pattern)
+        assert not origin_permitted("https://payment.example.com:8443/x", pattern)
+
 
 class TestTheGuardSpeaksUp:
     def test_a_checkout_outside_the_declared_origins_is_logged_as_an_error(

@@ -79,15 +79,27 @@ class TestNormalizeDoi:
         assert not citations.is_doi(raw)
         assert citations.normalize_doi(raw) == raw.strip()
 
-    def test_one_answer_to_what_a_doi_is(self):
-        """is_doi and normalize_doi cannot disagree, being the same match.
-
-        A second opinion held elsewhere in the codebase is the fault this
-        pair replaced.
-        """
-        for raw in ["DOI: 10.1126/sciadv.ade5079", "not a reference", ""]:
-            assert citations.is_doi(raw) == citations.normalize_doi(
-                raw).startswith("10.")
+    @pytest.mark.parametrize("raw", [
+        "DOI: 10.1126/sciadv.ade5079",
+        "10.1126/sciadv.ade5079",
+        "not a reference",
+        "",
+        # Prefixes outside the 4-9 digits a registrant prefix has. These begin
+        # "10." while holding no DOI, which is the case that separates asking
+        # the parser from testing the first three characters.
+        "10.123/too-short",
+        "10.1234567890/too-long",
+    ])
+    def test_one_answer_to_what_a_doi_is(self, raw):
+        """Both functions read the same match, so neither can accept what the
+        other refuses. A second opinion is the fault this pair replaced."""
+        found = citations.is_doi(raw)
+        out = citations.normalize_doi(raw)
+        if found:
+            assert out.startswith("10.")
+            assert citations.is_doi(out), "what came out must still be a DOI"
+        else:
+            assert out == raw.strip(), "nothing found means nothing changed"
 
 
 class TestLookupNeverRaises:

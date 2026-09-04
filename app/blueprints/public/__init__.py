@@ -359,7 +359,7 @@ def abstract_view(aid):
         abort(404)
 
     refs_with_meta: list[dict] = []
-    for ref in (a.references or []):
+    for ref in a.resolved_references:
         meta = fetch_metadata(ref["doi"])
         if meta:
             refs_with_meta.append({

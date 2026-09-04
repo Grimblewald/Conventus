@@ -291,7 +291,7 @@ def abstract_fragment(label: str, abstract,
             f"]{{{folder}/figure{out}}}}}")
         lines.append("\\endgroup")
 
-    refs = abstract.references or []
+    refs = abstract.resolved_references
     if refs:
         lines.append("")
         # Set as its own block rather than a list: an enumerate inherits the

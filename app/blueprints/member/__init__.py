@@ -727,7 +727,7 @@ def preview_abstract(aid):
         abort(403)
 
     refs_with_meta: list[dict] = []
-    for ref in (a.references or []):
+    for ref in a.resolved_references:
         doi = ref["doi"]
         meta = fetch_metadata(doi)
         if meta:

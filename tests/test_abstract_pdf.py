@@ -188,6 +188,7 @@ class TestFigureSizing:
     def _fragment(self, **overrides):
         from types import SimpleNamespace
 
+        from app.models import Abstract
         from app.services.abstract_latex import abstract_fragment
 
         a = SimpleNamespace(
@@ -196,6 +197,9 @@ class TestFigureSizing:
             profile_picture_filename=None, presenting_author_index=0)
         for k, v in overrides.items():
             setattr(a, k, v)
+        # References reach the renderer through the model's resolving accessor.
+        # Borrowed rather than reimplemented, so the stub cannot drift from it.
+        a.resolved_references = Abstract.resolved_references.fget(a)
         return abstract_fragment("001", a)
 
     def test_the_height_comes_from_the_space_left_on_the_page(self):

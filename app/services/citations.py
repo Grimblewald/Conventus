@@ -175,9 +175,7 @@ def format_reference(ref_data: dict) -> str:
     year = ref_data.get("year", "")
     volume = ref_data.get("volume", "")
     pages = ref_data.get("pages", "")
-    # Normalised for display too: a reference stored with the label its journal
-    # printed would otherwise render as "DOI: DOI: 10.1126/x".
-    doi = normalize_doi(ref_data.get("doi", ""))
+    doi = ref_data.get("doi", "")
 
     parts = []
     if authors:
@@ -212,7 +210,7 @@ def format_reference_compact(ref_data: dict) -> str:
     authors = ref_data.get("authors", "")
     journal = ref_data.get("journal", "")
     year = ref_data.get("year", "")
-    doi = normalize_doi(ref_data.get("doi", ""))
+    doi = ref_data.get("doi", "")
 
     first_author = ""
     if authors:

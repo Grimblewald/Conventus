@@ -84,6 +84,20 @@ class Abstract(db.Model):
                 if r.status == "completed" and r.recommendation]
         return dict(Counter(recs))
 
+    @property
+    def resolved_references(self) -> list[dict]:
+        """Stored references, each DOI reduced to the DOI itself.
+
+        Read through the parser rather than trusted as stored. The box it came
+        from is free text, so a saved reference may still carry the label its
+        journal printed around the DOI, and every consumer of this list puts
+        the value straight into a URL.
+        """
+        from ..services.citations import normalize_doi
+
+        return [{**ref, "doi": normalize_doi(ref.get("doi", ""))}
+                for ref in (self.references or [])]
+
     @staticmethod
     def clean_website(raw: str | None) -> str:
         """Normalize an optional presenter website URL.

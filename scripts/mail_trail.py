@@ -375,19 +375,27 @@ def health(days: int = 21, only: str = "") -> int:
     for domain, cs in domains.items():
         entered = [c for c in cs if c.attempt_count]
         recent = [c for c in cs if c.created_at >= cutoff]
-        recent_entered = [c for c in recent if c.attempt_count]
         last_ok = max((c.created_at for c in entered), default=None)
+        # Everything issued since the domain last proved it receives. A success
+        # anywhere inside the window says nothing about the silence after it,
+        # so the run is measured from that point rather than across the window.
+        dry = [c for c in cs if last_ok is None or c.created_at > last_ok]
+        dry_span = ((max(c.created_at for c in dry)
+                     - min(c.created_at for c in dry))
+                    if len(dry) > 1 else timedelta(0))
 
-        if recent_entered:
-            verdict = "receiving"
-        elif not recent:
+        if not recent:
             verdict = "idle — no traffic in window"
         elif last_ok is None:
             verdict = "never received one"
-        else:
+        elif not dry:
+            verdict = "receiving"
+        elif len(dry) >= 3 and dry_span >= timedelta(days=1):
             verdict = "WENT QUIET"
+        else:
+            verdict = "receiving"
         rows.append((verdict, domain, len(cs), len(entered), last_ok,
-                     len(recent), len(recent_entered)))
+                     len(recent), len(dry)))
 
     order = {"WENT QUIET": 0, "never received one": 1, "receiving": 2,
              "idle — no traffic in window": 3}
@@ -396,10 +404,10 @@ def health(days: int = 21, only: str = "") -> int:
     print(f"Window: last {days} days (since {_fmt(cutoff)})")
     print()
     print(f"  {'domain':<34} {'sent':>5} {'used':>5} {'recent':>7} "
-          f"{'used':>5}  {'last used':<20} verdict")
-    for verdict, domain, sent, used, last_ok, recent, recent_used in rows:
+          f"{'unused since':>13}  {'last used':<20} verdict")
+    for verdict, domain, sent, used, last_ok, recent, dry in rows:
         print(f"  {domain:<34} {sent:>5} {used:>5} {recent:>7} "
-              f"{recent_used:>5}  {_fmt(last_ok):<20} {verdict}")
+              f"{dry:>13}  {_fmt(last_ok):<20} {verdict}")
 
     quiet = [r for r in rows if r[0] == "WENT QUIET"]
     print()

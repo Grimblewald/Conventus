@@ -276,37 +276,51 @@ def stalled(days: int = 14) -> int:
     for c in codes:
         by_addr[(c.email or "").lower()].append(c)
 
+    # Two or more, because one code nobody used is somebody changing their
+    # mind. A run of them is the mail having stopped.
+    min_run = 2
+    # And spread over more than a moment: codes minted minutes apart around a
+    # successful sign-in are one person clicking twice, while somebody locked
+    # out comes back over hours and days.
+    min_span = timedelta(hours=1)
+
     regressed, never = [], []
     for email, rows in by_addr.items():
         rows.sort(key=lambda r: r.id)
-        recent = [c for c in rows if c.created_at >= cutoff]
-        if not recent or any(c.attempt_count for c in recent):
-            continue
         entered = [c for c in rows if c.attempt_count]
-        if entered:
-            regressed.append((email, rows, recent, max(c.created_at
-                                                       for c in entered)))
-        else:
-            never.append((email, rows, recent))
+        # Everything since they last proved they were receiving mail. Measured
+        # from that point rather than over a fixed window, because a success
+        # early in the window says nothing about the silence after it.
+        last_ok = max((c.created_at for c in entered), default=None)
+        tail = [c for c in rows if last_ok is None or c.created_at > last_ok]
+        if len(tail) < min_run:
+            continue
+        first, last = (min(c.created_at for c in tail),
+                       max(c.created_at for c in tail))
+        if last - first < min_span:
+            continue
+        if last < cutoff:
+            continue
+        (regressed if entered else never).append((email, tail, last_ok))
 
-    print(f"Window: codes issued in the last {days} days "
+    print(f"Window: a run still going in the last {days} days "
           f"(since {_fmt(cutoff)})")
     print()
     print(f"WAS RECEIVING, NOW SILENT: {len(regressed)} address(es)")
-    print("  Entered a code at some point, then a run of codes with no "
+    print("  Entered a code before, then a run of codes since with no "
           "attempt against any of them.")
     if not regressed:
         print("  none")
     else:
-        print(f"  {'address':<44} {'recent':>7}  {'last entered a code':<21} "
-              f"domain")
-        for email, rows, recent, last_ok in sorted(regressed,
-                                                   key=lambda e: e[3]):
-            print(f"  {email:<44} {len(recent):>7}  {_fmt(last_ok):<21} "
-                  f"{email.rpartition('@')[2]}")
+        print(f"  {'address':<44} {'unused':>7}  {'last entered':<20} "
+              f"{'silent since':<20}")
+        for email, tail, last_ok in sorted(regressed,
+                                           key=lambda e: -len(e[1])):
+            print(f"  {email:<44} {len(tail):>7}  {_fmt(last_ok):<20} "
+                  f"{_fmt(min(c.created_at for c in tail)):<20}")
 
     print()
-    print(f"NEVER ENTERED ONE, ACTIVE IN WINDOW: {len(never)} address(es)")
+    print(f"NEVER ENTERED ONE, STILL ASKING: {len(never)} address(es)")
     print("  Mostly people the contact form was driven at, but a real new "
           "member looks the same.")
     dom = defaultdict(int)

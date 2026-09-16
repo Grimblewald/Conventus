@@ -16,6 +16,7 @@ Usage:
   uv run python scripts/mail_trail.py someone@example.org
   uv run python scripts/mail_trail.py --unreached [--domains]
   uv run python scripts/mail_trail.py --stalled [days]
+  uv run python scripts/mail_trail.py --health [days] [domain]
   uv run python scripts/mail_trail.py --abuse
 
 `--unreached` lists every address that was issued codes and never once typed
@@ -27,6 +28,11 @@ per-domain summary.
 sign-in has stopped working. `--unreached` skips anyone who ever entered a
 code, so a member who signed in for months and went dark last week does not
 appear there at all. This lists exactly those.
+
+`--health` answers the question those two raise: is the domain still
+receiving? One person stuck while their colleagues sign in the same week is a
+mailbox problem. A domain where everybody stopped at once is not. Pass a
+domain to look at just that one.
 
 `--abuse` asks the opposite question: not who failed to receive mail, but who
 was sent it without asking. Every verification code goes to an address typed
@@ -339,6 +345,78 @@ def stalled(days: int = 14) -> int:
     return 0
 
 
+def health(days: int = 21, only: str = "") -> int:
+    """Which recipient domains are still receiving, and which have gone quiet.
+
+    Separates a delivery problem from a mailbox problem. If mail to a domain
+    had stopped, nobody there would be entering codes; if one person is stuck
+    while their colleagues sign in the same week, the fault is at their end,
+    not in the sending.
+
+    An entered code is the proof, since nothing else on this side of the
+    network distinguishes a message that arrived from one that did not.
+    """
+    cutoff = _now() - timedelta(days=days)
+    codes = OTPCode.query.order_by(OTPCode.id).all()
+
+    domains: dict[str, list] = defaultdict(list)
+    for c in codes:
+        domain = (c.email or "").lower().rpartition("@")[2] or "(no domain)"
+        if only and domain != only.lower():
+            continue
+        domains[domain].append(c)
+
+    if not domains:
+        print(f"No codes have ever been issued to {only!r}."
+              if only else "No codes have ever been issued.")
+        return 0
+
+    rows = []
+    for domain, cs in domains.items():
+        entered = [c for c in cs if c.attempt_count]
+        recent = [c for c in cs if c.created_at >= cutoff]
+        recent_entered = [c for c in recent if c.attempt_count]
+        last_ok = max((c.created_at for c in entered), default=None)
+
+        if recent_entered:
+            verdict = "receiving"
+        elif not recent:
+            verdict = "idle — no traffic in window"
+        elif last_ok is None:
+            verdict = "never received one"
+        else:
+            verdict = "WENT QUIET"
+        rows.append((verdict, domain, len(cs), len(entered), last_ok,
+                     len(recent), len(recent_entered)))
+
+    order = {"WENT QUIET": 0, "never received one": 1, "receiving": 2,
+             "idle — no traffic in window": 3}
+    rows.sort(key=lambda r: (order[r[0]], -r[5]))
+
+    print(f"Window: last {days} days (since {_fmt(cutoff)})")
+    print()
+    print(f"  {'domain':<34} {'sent':>5} {'used':>5} {'recent':>7} "
+          f"{'used':>5}  {'last used':<20} verdict")
+    for verdict, domain, sent, used, last_ok, recent, recent_used in rows:
+        print(f"  {domain:<34} {sent:>5} {used:>5} {recent:>7} "
+              f"{recent_used:>5}  {_fmt(last_ok):<20} {verdict}")
+
+    quiet = [r for r in rows if r[0] == "WENT QUIET"]
+    print()
+    if quiet:
+        print(f"{len(quiet)} domain(s) were receiving and have entered none "
+              f"in the window. Those are worth")
+        print("asking about — everything else is either arriving or not "
+              "being tried.")
+    else:
+        print("No domain that ever received a code has gone quiet in the "
+              "window. A person stuck while")
+        print("their own domain is still receiving is a mailbox problem — a "
+              "junk rule, a full mailbox, a")
+        print("block they set once — not a sending problem.")
+    return 0
+
+
 def abuse() -> int:
     """Verification mail sent to people who never asked for it.
 
@@ -444,6 +522,14 @@ if __name__ == "__main__":
             raise SystemExit(unreached("--domains" in args))
         if args[0] == "--abuse":
             raise SystemExit(abuse())
+        if args[0] == "--health":
+            window, only = 21, ""
+            for extra in args[1:]:
+                if extra.isdigit():
+                    window = int(extra)
+                else:
+                    only = extra
+            raise SystemExit(health(window, only))
         if args[0] == "--stalled":
             window = 14
             if len(args) > 1:

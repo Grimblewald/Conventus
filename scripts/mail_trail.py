@@ -15,12 +15,18 @@ is printed: an unexpired one is a live credential.
 Usage:
   uv run python scripts/mail_trail.py someone@example.org
   uv run python scripts/mail_trail.py --unreached [--domains]
+  uv run python scripts/mail_trail.py --stalled [days]
   uv run python scripts/mail_trail.py --abuse
 
 `--unreached` lists every address that was issued codes and never once typed
 one back in. One such address is a person who gave up; a whole recipient
 domain of them is mail that is not arriving. `--domains` prints only the
 per-domain summary.
+
+`--stalled` is its counterpart, and the one to reach for when somebody says
+sign-in has stopped working. `--unreached` skips anyone who ever entered a
+code, so a member who signed in for months and went dark last week does not
+appear there at all. This lists exactly those.
 
 `--abuse` asks the opposite question: not who failed to receive mail, but who
 was sent it without asking. Every verification code goes to an address typed
@@ -32,7 +38,7 @@ from __future__ import annotations
 
 import sys
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -250,6 +256,75 @@ def unreached(domains_only: bool = False) -> int:
     return 0
 
 
+def stalled(days: int = 14) -> int:
+    """Addresses that were reaching codes and have stopped.
+
+    The counterpart to --unreached, which by construction cannot show this:
+    it skips anyone who ever entered a code, so somebody who signed in for
+    months and went dark last week is invisible there. That is the population
+    a delivery problem produces, and the one that grows quietly while the
+    remember-me cookies of everyone else run down.
+
+    Nothing here proves non-delivery. A run of codes with no attempt against
+    any of them is what non-delivery looks like from this side, and a date
+    that stops is what makes it worth asking about.
+    """
+    cutoff = _now() - timedelta(days=days)
+    codes = OTPCode.query.order_by(OTPCode.id).all()
+
+    by_addr: dict[str, list] = defaultdict(list)
+    for c in codes:
+        by_addr[(c.email or "").lower()].append(c)
+
+    regressed, never = [], []
+    for email, rows in by_addr.items():
+        rows.sort(key=lambda r: r.id)
+        recent = [c for c in rows if c.created_at >= cutoff]
+        if not recent or any(c.attempt_count for c in recent):
+            continue
+        entered = [c for c in rows if c.attempt_count]
+        if entered:
+            regressed.append((email, rows, recent, max(c.created_at
+                                                       for c in entered)))
+        else:
+            never.append((email, rows, recent))
+
+    print(f"Window: codes issued in the last {days} days "
+          f"(since {_fmt(cutoff)})")
+    print()
+    print(f"WAS RECEIVING, NOW SILENT: {len(regressed)} address(es)")
+    print("  Entered a code at some point, then a run of codes with no "
+          "attempt against any of them.")
+    if not regressed:
+        print("  none")
+    else:
+        print(f"  {'address':<44} {'recent':>7}  {'last entered a code':<21} "
+              f"domain")
+        for email, rows, recent, last_ok in sorted(regressed,
+                                                   key=lambda e: e[3]):
+            print(f"  {email:<44} {len(recent):>7}  {_fmt(last_ok):<21} "
+                  f"{email.rpartition('@')[2]}")
+
+    print()
+    print(f"NEVER ENTERED ONE, ACTIVE IN WINDOW: {len(never)} address(es)")
+    print("  Mostly people the contact form was driven at, but a real new "
+          "member looks the same.")
+    dom = defaultdict(int)
+    for email, _, _ in never:
+        dom[email.rpartition("@")[2] or "(no domain)"] += 1
+    for domain, n in sorted(dom.items(), key=lambda kv: -kv[1])[:15]:
+        print(f"    {domain:<40} {n:>5}")
+
+    print()
+    print("Read the first list first. An address there belongs to somebody "
+          "who got in before and")
+    print("cannot now, which is a change in delivery rather than a change of "
+          "mind — and unlike the")
+    print("second list it cannot be explained by the form being driven at "
+          "strangers.")
+    return 0
+
+
 def abuse() -> int:
     """Verification mail sent to people who never asked for it.
 
@@ -355,6 +430,15 @@ if __name__ == "__main__":
             raise SystemExit(unreached("--domains" in args))
         if args[0] == "--abuse":
             raise SystemExit(abuse())
+        if args[0] == "--stalled":
+            window = 14
+            if len(args) > 1:
+                try:
+                    window = int(args[1])
+                except ValueError:
+                    print(__doc__)
+                    raise SystemExit(2)
+            raise SystemExit(stalled(window))
         if len(args) != 1:
             print(__doc__)
             raise SystemExit(2)

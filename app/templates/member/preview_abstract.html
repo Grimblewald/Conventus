@@ -6,7 +6,7 @@
     <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:24px; gap:12px;">
       <div>
         <div class="eyebrow">{{ a.conference.date_range if a.conference else '' }}</div>
-        <span class="muted" style="font-size:14px;">Abstract preview</span>
+        <span class="muted" style="font-size:14px;">Abstract preview · {{ a.reference }}</span>
       </div>
       <div style="display:flex; gap:8px;">
         <a class="btn btn-ghost btn-sm" href="{{ url_for('member.submit_abstract', slug=a.conference.slug, edit=a.id) }}">Continue editing</a>

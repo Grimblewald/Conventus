@@ -64,6 +64,15 @@ class Abstract(db.Model):
                               back_populates="abstract")
 
     @property
+    def reference(self) -> str:
+        """The abstract's human-facing reference, e.g. ABS-000123.
+
+        Derived from the id for the same reasons as Registration.reference:
+        it exists from the first save and can never drift or collide.
+        """
+        return f"ABS-{self.id:06d}"
+
+    @property
     def review_scores(self) -> list[int]:
         """Submitted review scores, excluding pending/draft reviews."""
         return [r.score for r in self.reviews

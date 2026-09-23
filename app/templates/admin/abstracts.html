@@ -43,11 +43,12 @@
 {% if items %}
 <div style="overflow-x:auto;">
 <table class="table">
-  <thead><tr><th>Title</th><th>Conference</th><th>Reg</th><th>Author</th><th>Reviews</th><th>Status</th><th>Submitted</th></tr></thead>
+  <thead><tr><th>Ref</th><th>Title</th><th>Conference</th><th>Reg</th><th>Author</th><th>Reviews</th><th>Status</th><th>Submitted</th></tr></thead>
   <tbody>
     {% for a in items %}
     {% set review_count = a.reviews | selectattr('status', 'equalto', 'completed') | list | length %}
     <tr>
+      <td style="white-space:nowrap;">{{ a.reference }}</td>
       <td><a href="{{ url_for('admin.abstract_detail', aid=a.id) }}">{{ a.title }}</a></td>
       <td>{{ a.conference.title if a.conference else '?' }}</td>
       <td style="text-align:center;">

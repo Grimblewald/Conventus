@@ -57,6 +57,7 @@
 <table class="table">
   <thead>
     <tr>
+      <th>Ref</th>
       <th>Title</th>
       <th>Track</th>
       <th style="text-align:center;">Reviews</th>
@@ -69,6 +70,7 @@
     {% for a in abstracts %}
     {% set completed = a.reviews | selectattr('status', 'equalto', 'completed') | list %}
     <tr>
+      <td style="white-space:nowrap;">{{ a.reference }}</td>
       <td><a href="{{ url_for('admin.abstract_detail', aid=a.id) }}">{{ a.title }}</a></td>
       <td>{{ a.track or '—' }}</td>
       <td style="text-align:center;">
@@ -117,10 +119,11 @@
   Click <strong>assign</strong> to override the capacity limit for a specific reviewer.
 </p>
 <table class="table">
-  <thead><tr><th>Abstract</th><th>Assigned</th><th>At-capacity reviewers</th></tr></thead>
+  <thead><tr><th>Ref</th><th>Abstract</th><th>Assigned</th><th>At-capacity reviewers</th></tr></thead>
   <tbody>
     {% for a, count, overbooked in under_assigned %}
     <tr>
+      <td style="white-space:nowrap;">{{ a.reference }}</td>
       <td><a href="{{ url_for('admin.abstract_detail', aid=a.id) }}">{{ a.title }}</a></td>
       <td style="text-align:center;"><span class="status" data-v="pending">{{ count }}/{{ n_per_paper }}</span></td>
       <td>

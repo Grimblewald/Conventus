@@ -51,10 +51,11 @@
     <h3 style="margin-top:36px;">Abstracts</h3>
     {% if abstracts %}
       <table class="table">
-        <thead><tr><th>Conference</th><th>Reg</th><th>Title</th><th>Status</th><th>Submitted</th><th></th></tr></thead>
+        <thead><tr><th>Ref</th><th>Conference</th><th>Reg</th><th>Title</th><th>Status</th><th>Submitted</th><th></th></tr></thead>
         <tbody>
           {% for a in abstracts %}
           <tr>
+            <td style="white-space:nowrap;">{{ a.reference }}</td>
             <td>{{ a.conference.title }}</td>
             <td style="text-align:center;">
               {% set reg = a.registration %}

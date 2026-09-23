@@ -14,6 +14,7 @@
   </div>
 </div>
 <dl class="hero-meta">
+  <div><dt>Reference</dt><dd>{{ a.reference }}</dd></div>
   <div><dt>Conference</dt><dd>{{ a.conference.title if a.conference else '?' }}</dd></div>
   <div><dt>Author account</dt><dd>
     {% if a.author %}{{ a.author.email }}{% else %}<span class="muted">none (admin-entered)</span>{% endif %}

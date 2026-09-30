@@ -5,10 +5,24 @@ from datetime import datetime
 
 from ..extensions import db
 
-SPEAKER_STATUSES = ("plenary", "keynote", "invited", "accepted")
+# Oral and poster are separate decisions: a conference programmes them
+# differently and may choose to list only one of them publicly.
+ACCEPTED_STATUSES = ("accepted_oral", "accepted_poster")
+SPEAKER_STATUSES = ("plenary", "keynote", "invited", *ACCEPTED_STATUSES)
 SPEAKER_STATUS_ORDER = {s: i for i, s in enumerate(SPEAKER_STATUSES)}
-ALL_STATUSES = ("draft", "submitted", "accepted", "rejected", "revise",
-                "plenary", "keynote", "invited")
+ALL_STATUSES = ("draft", "submitted", *ACCEPTED_STATUSES, "rejected",
+                "revise", "plenary", "keynote", "invited")
+
+STATUS_LABELS = {
+    "accepted_oral": "Accepted (oral)",
+    "accepted_poster": "Accepted (poster)",
+}
+
+
+def status_label(status: str | None) -> str:
+    """How a status reads to people; the stored value is an identifier."""
+    return STATUS_LABELS.get(status, (status or "").capitalize())
+
 
 # Statuses an author may still change. Everything else has been decided, and a
 # decision must not be edited out from under the person who made it.
@@ -159,6 +173,10 @@ class Abstract(db.Model):
                 and conf is not None
                 and not conf.is_draft
                 and conf.accepts_abstracts)
+
+    @property
+    def status_label(self) -> str:
+        return status_label(self.status)
 
     @property
     def is_speaker(self) -> bool:

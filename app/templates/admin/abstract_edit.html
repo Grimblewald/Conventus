@@ -77,7 +77,7 @@ comes from the authors field below.</p>
     <label for="status">Status</label>
     <select class="select" id="status" name="status">
       {% for s in statuses %}
-        <option value="{{ s }}"{% if a and a.status == s %} selected{% endif %}>{{ s|capitalize }}</option>
+        <option value="{{ s }}"{% if a and a.status == s %} selected{% endif %}>{{ s|status_label }}</option>
       {% endfor %}
     </select>
   </div>

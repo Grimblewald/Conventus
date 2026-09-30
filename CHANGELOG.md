@@ -3,6 +3,30 @@
 ## [Unreleased]  **MIGRATION REQUIRED**
 
 ### Added
+- **The abstracts panel can hand over its whole filtered view as LaTeX.**
+  "Download selected" on Admin → Abstracts bundles every abstract matching
+  the current status/search/conference filter into a zip: one folder per
+  abstract, named by its reference (`ABS-000123/`), holding a .tex that
+  compiles as-is inside that folder along with its figures; one booklet .tex
+  per conference at the root that pulls the same fragments in with
+  `\subimport`; and a manifest. Unlike the booklet export, figures are sized
+  against the full page and abstracts may run over pages, so a large figure
+  is never squashed into the space left on one. Gated on the `abs.export`
+  permission, which until now existed in the catalogue but guarded nothing.
+- **Accepted abstracts are accepted as oral or as poster.** The single
+  "accepted" decision is replaced by **Accepted (oral)** and **Accepted
+  (poster)**, on the decision form, the admin filter, and the review page's
+  bulk accept. **MIGRATION:** any abstract still marked plain "accepted"
+  becomes oral — it was listed on the conference page, and oral is the
+  acceptance listed by default.
+- **Each conference chooses which speakers its page shows.** A new Speakers
+  section on the conference edit page sets, per status, whether it is listed
+  in the speaker grid and whether its abstract pages are public. Listing
+  implies public pages, since the grid links to them; pages can be public
+  without being listed. A status whose pages are not public answers 404 on
+  them, since abstract ids are sequential and an unlisted page would
+  otherwise be one guessed id away. Posters start hidden; everything else
+  starts as before. **MIGRATION:** adds `conferences.speaker_visibility`.
 - **The admin shows how much work is queued.** Confirmations and receipts are
   rendered after a request is answered, so a rush queues instead of holding the
   site up — but nothing said how deep that queue was, and the first sign of a

@@ -16,7 +16,7 @@ from flask_login import current_user
 from ...extensions import csrf, db, limiter
 from ...models import (
     Announcement, CommitteeMember, Conference, OTPCode, Page, PastBoard, User,
-    Abstract, SPEAKER_STATUSES,
+    Abstract,
     get_site_settings,
 )
 from ...services.mail import send_mail
@@ -95,7 +95,7 @@ def conference_detail(slug):
     speakers = sorted(
         Abstract.query
         .filter_by(conference_id=c.id)
-        .filter(Abstract.status.in_(SPEAKER_STATUSES))
+        .filter(Abstract.status.in_(c.grid_statuses()))
         .filter(Abstract.deleted_at.is_(None))
         .all(),
         key=lambda a: (a.speaker_sort_key, a.created_at),
@@ -355,7 +355,9 @@ def sponsor_upload(name):
 @public_bp.route("/abstracts/<int:aid>")
 def abstract_view(aid):
     a = Abstract.query.get_or_404(aid)
-    if not a.status or a.status not in SPEAKER_STATUSES:
+    # Ids are sequential, so unlisting a status in the grid alone would leave
+    # its pages one guessed number away.
+    if a.conference is None or a.status not in a.conference.page_statuses():
         abort(404)
 
     refs_with_meta: list[dict] = []

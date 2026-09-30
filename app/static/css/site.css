@@ -593,7 +593,8 @@ section.block.ink .table td {
   background: color-mix(in oklab, var(--c-accent) 10%, transparent);
   color: var(--c-accent);
 }
-.status[data-v="accepted"], .status[data-v="paid"] {
+.status[data-v="accepted"], .status[data-v="paid"],
+.status[data-v="accepted_oral"], .status[data-v="accepted_poster"] {
   background: #e3efe5; color: #2c5b3d; border-color: #c6dcc7;
 }
 .status[data-v="rejected"] {

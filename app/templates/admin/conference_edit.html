@@ -53,6 +53,38 @@
   </details>
 
   <!-- ============================================================ -->
+  <!-- Speakers                                                      -->
+  <!-- ============================================================ -->
+  <details class="edit-section">
+    <summary class="edit-section-summary">Speakers</summary>
+    <div class="edit-section-body">
+      <p class="muted" style="margin-top:0;">Which abstracts appear on the public conference page.
+        The speaker grid links to each abstract's page, so listing a status in the grid also makes its pages available.
+        A status can have its pages available without being listed, for sharing by direct link.</p>
+      <input type="hidden" name="speaker_visibility_form" value="1">
+      <table class="table" id="speaker-visibility">
+        <thead><tr><th>Status</th><th style="text-align:center;">Show in speaker grid</th><th style="text-align:center;">Abstract page available</th></tr></thead>
+        <tbody>
+          {% for s in speaker_statuses %}
+          {% set level = c.speaker_visibility_for(s) %}
+          <tr>
+            <td>{{ s|status_label }}</td>
+            <td style="text-align:center;">
+              <input type="checkbox" name="speaker_grid_{{ s }}" value="1" data-speaker-grid="{{ s }}"
+                     aria-label="Show {{ s|status_label }} in speaker grid" {% if level == 'grid' %}checked{% endif %}>
+            </td>
+            <td style="text-align:center;">
+              <input type="checkbox" name="speaker_page_{{ s }}" value="1" data-speaker-page="{{ s }}"
+                     aria-label="{{ s|status_label }} abstract pages available" {% if level in ('grid', 'page') %}checked{% endif %}>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+
+  <!-- ============================================================ -->
   <!-- Dates & Deadlines                                             -->
   <!-- ============================================================ -->
   <details class="edit-section">

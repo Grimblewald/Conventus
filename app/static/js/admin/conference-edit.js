@@ -28,6 +28,22 @@
       });
     }
 
+    // --- Speaker visibility: the grid links to abstract pages, so listing a
+    // status needs its pages available, and withdrawing the pages unlists it.
+    // The server enforces the same rule; this keeps the form honest.
+    var speakerTable = document.getElementById("speaker-visibility");
+    if (speakerTable) {
+      speakerTable.addEventListener("change", function (e) {
+        var box = e.target;
+        var status = box.dataset.speakerGrid || box.dataset.speakerPage;
+        if (!status) return;
+        var grid = speakerTable.querySelector('[data-speaker-grid="' + status + '"]');
+        var page = speakerTable.querySelector('[data-speaker-page="' + status + '"]');
+        if (box === grid && grid.checked && page) page.checked = true;
+        if (box === page && !page.checked && grid) grid.checked = false;
+      });
+    }
+
     // --- Price tiers ---
     var tierTmpl = document.getElementById("tier-row-tmpl");
     var tiersTbody = document.getElementById("tiers-tbody");

@@ -393,6 +393,9 @@ def _register_template_globals(app: Flask) -> None:
     app.add_template_filter(target_url, "target_url")
     app.add_template_filter(format_amount, "format_amount")
 
+    from .models.abstract import status_label
+    app.add_template_filter(status_label, "status_label")
+
     # The link-target picker's two halves: `split_target` turns a stored
     # target into (dropdown value, URL box value), and the sentinel tells the
     # template which dropdown value means "external".

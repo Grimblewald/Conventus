@@ -4,6 +4,16 @@ from __future__ import annotations
 from datetime import date, datetime
 
 from ..extensions import db
+from .abstract import SPEAKER_STATUSES
+
+# Per speaker status: "grid" lists it in the Speakers section and makes each
+# abstract page public, "page" makes the pages public without listing them,
+# "hidden" does neither. The grid links to the pages, so there is no level
+# that lists a speaker whose page is unavailable.
+SPEAKER_VISIBILITY_LEVELS = ("grid", "page", "hidden")
+# Posters are usually many and not what a speaker list is for, so a conference
+# lists them only once someone decides to.
+DEFAULT_SPEAKER_VISIBILITY = {"accepted_poster": "hidden"}
 
 
 def _countdown(until: date) -> str | None:
@@ -74,6 +84,9 @@ class Conference(db.Model):
 
     registration_form_schema = db.Column(db.JSON, default=None)
     abstract_form_schema = db.Column(db.JSON, default=None)
+    # {status: level}; a status missing here takes its default. See
+    # SPEAKER_VISIBILITY_LEVELS.
+    speaker_visibility = db.Column(db.JSON, default=None)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow,
@@ -118,6 +131,24 @@ class Conference(db.Model):
 
     def tracks_list(self) -> list[str]:
         return [t.strip() for t in (self.tracks or "").split("\n") if t.strip()]
+
+    def speaker_visibility_for(self, status: str) -> str:
+        if status not in SPEAKER_STATUSES:
+            return "hidden"
+        stored = (self.speaker_visibility or {}).get(status)
+        if stored in SPEAKER_VISIBILITY_LEVELS:
+            return stored
+        return DEFAULT_SPEAKER_VISIBILITY.get(status, "grid")
+
+    def grid_statuses(self) -> list[str]:
+        """Speaker statuses listed in the conference page's Speakers section."""
+        return [s for s in SPEAKER_STATUSES
+                if self.speaker_visibility_for(s) == "grid"]
+
+    def page_statuses(self) -> list[str]:
+        """Speaker statuses whose abstract pages are public."""
+        return [s for s in SPEAKER_STATUSES
+                if self.speaker_visibility_for(s) in ("grid", "page")]
 
     def auto_reopen(self) -> bool:
         changed = False

@@ -308,7 +308,7 @@ class TestBookletCompile:
             db.session.flush()
             for i in range(1, 4):
                 db.session.add(Abstract(
-                    conference_id=c.id, status="accepted",
+                    conference_id=c.id, status="accepted_oral",
                     title=f"Abstract {i}", authors=f"Author {i}|1|Uni {i}",
                     body="Body text. " * 60, presenting_author_index=0))
             db.session.commit()

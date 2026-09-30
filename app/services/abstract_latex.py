@@ -66,10 +66,28 @@ def convert_for_latex(src: Path, dst: Path) -> Path:
         return dst
 
 
+def copy_booklet_image(conference, col_name: str, label: str, *,
+                       uploads_root: Path, dest_dir: Path) -> str | None:
+    """Copy one booklet decoration image (header/footer/background) into a
+    job directory, transcoding as `convert_for_latex` requires.
+
+    Returns the filename a preamble should reference, or None when the
+    conference has no such image or the file has gone missing from disk.
+    """
+    filename = getattr(conference, col_name, None) if conference else None
+    if not filename:
+        return None
+    src = uploads_root / "conferences" / filename
+    if not src.exists():
+        return None
+    return convert_for_latex(src, dest_dir / f"{label}{src.suffix}").name
+
+
 def booklet_preamble(conference, inputs: list[str],
                       header_rel: str | None,
                       footer_rel: str | None,
-                      bg_rel: str | None) -> str:
+                      bg_rel: str | None,
+                      packages: tuple[str, ...] = ()) -> str:
     title_esc = _latex_escape(conference.title)
     date_esc = conference.date_range
 
@@ -91,6 +109,7 @@ def booklet_preamble(conference, inputs: list[str],
         "\\usepackage{parskip}",
         "\\usepackage{fancyhdr}",
     ]
+    pkgs.extend(f"\\usepackage{{{p}}}" for p in packages)
     if bg_rel:
         pkgs.append("\\usepackage[pages=all]{background}")
 
@@ -143,17 +162,54 @@ def booklet_preamble(conference, inputs: list[str],
     return "\n".join(pkgs)
 
 
+def standalone_preamble(fragment_input: str) -> str:
+    """A complete document that compiles one abstract fragment on its own.
+
+    The booklet's typography without its per-conference decoration: the
+    export exists to hand over the abstract, and the fancyhdr/background
+    furniture would not survive being shared between every wrapper in the
+    bundle anyway. hyperref must load — a fragment carries \\phantomsection
+    and \\href whether it ends up inside a booklet or alone.
+    """
+    return "\n".join([
+        "\\documentclass[11pt,a4paper]{article}",
+        "\\usepackage[margin=25.4mm]{geometry}",
+        "\\usepackage{helvet}",
+        "\\renewcommand{\\familydefault}{\\sfdefault}",
+        "\\usepackage{setspace}",
+        "\\setstretch{1.15}",
+        "\\usepackage{graphicx}",
+        "\\usepackage{hyperref}",
+        "\\usepackage{parskip}",
+        "",
+        "\\begin{document}",
+        fragment_input,
+        "\\end{document}",
+    ])
+
+
 def abstract_fragment(label: str, abstract,
                        has_header: bool = False,
-                       has_background: bool = False) -> str:
+                       has_background: bool = False,
+                       fit_single_page: bool = True,
+                       figure_dir: str | None = None) -> str:
     """Return LaTeX fragment matching the abstract preview page layout.
 
     Centred title (bold), centred authors with superscript affiliations
     and presenting author underlined, centred italic affiliations,
     career-stage / presentation-preference meta, justified body,
     figure filling remaining space, and numbered DOI references.
+
+    `fit_single_page=False` sizes the figure against the full page rather
+    than the space left on it and lets the abstract run over as many pages
+    as it needs — the LaTeX-bundle export sets this so a large figure is
+    never squashed; the booklet keeps the one-page-per-abstract squeeze.
+
+    `figure_dir` is where the figure sits relative to the compile directory:
+    `abstract_<label>` when omitted, as the booklet lays it out, and "" when
+    the figure sits beside the fragment itself.
     """
-    folder = f"abstract_{label}"
+    folder = f"abstract_{label}" if figure_dir is None else figure_dir
     title = _latex_escape(abstract.title)
 
     # The body keeps its own escaping pass rather than calling _latex_escape,
@@ -245,51 +301,64 @@ def abstract_fragment(label: str, abstract,
 
     if abstract.figure_filename:
         out = _out_ext(abstract.figure_filename)
-        # Room to keep clear for the reference block, so a figure that expands
-        # into the space left on the page does not orphan the references onto
-        # the next one.
-        reserve = f"{len(abstract.references or []) + 2}\\baselineskip" \
-            if abstract.references else "0pt"
+        figure = f"{folder}/figure{out}" if folder else f"figure{out}"
         lines.append("")
-        # The figure takes exactly the space left between the body and the
-        # references, which is what keeps an abstract to one page. A fixed
-        # height larger than the remainder would push the whole figure to the
-        # next page and leave the gap empty. An author whose text leaves little
-        # room gets a small figure, and can shorten the text if they would
-        # rather have a large one.
-        #
-        # \pagetotal only counts what the page builder has already taken, so
-        # the paragraph has to be ended and a breakpoint offered before the
-        # remaining space can be measured. \pagegoal is \maxdimen until the
-        # page builder has run at all, hence the clamp.
         lines.append("\\par")
         lines.append(f"\\vspace{{{FIGURE_SPACE_ABOVE}}}")
-        lines.append("\\penalty0")
-        lines.append("\\begingroup")
-        lines.append(f"\\sbox0{{\\includegraphics{{{folder}/figure{out}}}}}")
-        lines.append("\\dimen0=\\pagegoal")
-        lines.append("\\ifdim\\dimen0>\\textheight \\dimen0=\\textheight\\fi")
-        lines.append("\\advance\\dimen0 by -\\pagetotal")
-        lines.append(f"\\advance\\dimen0 by -{reserve}")
-        # A height of zero or less fails the compile, taking the booklet with it.
-        lines.append("\\ifdim\\dimen0<12pt \\dimen0=12pt\\fi")
-        # Never beyond the figure's own size: keepaspectratio scales to fill the
-        # box it is given, so an image smaller than the measure would otherwise
-        # be enlarged past its resolution.
-        lines.append("\\dimen2=\\dimexpr\\ht0+\\dp0\\relax")
-        lines.append("\\ifdim\\dimen0>\\dimen2 \\dimen0=\\dimen2\\fi")
-        lines.append(f"\\dimen4={FIGURE_MAX_WIDTH}")
-        lines.append("\\ifdim\\dimen4>\\wd0 \\dimen4=\\wd0\\fi")
-        # Frozen to literals: \includegraphics uses the scratch registers too.
-        lines.append("\\edef\\abstractfigureheight{\\the\\dimen0}")
-        lines.append("\\edef\\abstractfigurewidth{\\the\\dimen4}")
-        lines.append(
-            "\\centerline{\\includegraphics["
-            "width=\\abstractfigurewidth,"
-            "height=\\abstractfigureheight,"
-            "keepaspectratio"
-            f"]{{{folder}/figure{out}}}}}")
-        lines.append("\\endgroup")
+        if not fit_single_page:
+            # graphicx given both a width and a height with keepaspectratio
+            # scales into that box rather than filling it, so the figure is
+            # never distorted and may occupy a whole page, with the text
+            # flowing on over as many pages as it needs.
+            lines.append(
+                "\\centerline{\\includegraphics["
+                "width=\\textwidth,"
+                "height=\\textheight,"
+                "keepaspectratio"
+                f"]{{{figure}}}}}")
+        else:
+            # Room to keep clear for the reference block, so a figure that expands
+            # into the space left on the page does not orphan the references onto
+            # the next one.
+            reserve = f"{len(abstract.references or []) + 2}\\baselineskip" \
+                if abstract.references else "0pt"
+            # The figure takes exactly the space left between the body and the
+            # references, which is what keeps an abstract to one page. A fixed
+            # height larger than the remainder would push the whole figure to the
+            # next page and leave the gap empty. An author whose text leaves little
+            # room gets a small figure, and can shorten the text if they would
+            # rather have a large one.
+            #
+            # \pagetotal only counts what the page builder has already taken, so
+            # the paragraph has to be ended and a breakpoint offered before the
+            # remaining space can be measured. \pagegoal is \maxdimen until the
+            # page builder has run at all, hence the clamp.
+            lines.append("\\penalty0")
+            lines.append("\\begingroup")
+            lines.append(f"\\sbox0{{\\includegraphics{{{figure}}}}}")
+            lines.append("\\dimen0=\\pagegoal")
+            lines.append("\\ifdim\\dimen0>\\textheight \\dimen0=\\textheight\\fi")
+            lines.append("\\advance\\dimen0 by -\\pagetotal")
+            lines.append(f"\\advance\\dimen0 by -{reserve}")
+            # A height of zero or less fails the compile, taking the booklet with it.
+            lines.append("\\ifdim\\dimen0<12pt \\dimen0=12pt\\fi")
+            # Never beyond the figure's own size: keepaspectratio scales to fill the
+            # box it is given, so an image smaller than the measure would otherwise
+            # be enlarged past its resolution.
+            lines.append("\\dimen2=\\dimexpr\\ht0+\\dp0\\relax")
+            lines.append("\\ifdim\\dimen0>\\dimen2 \\dimen0=\\dimen2\\fi")
+            lines.append(f"\\dimen4={FIGURE_MAX_WIDTH}")
+            lines.append("\\ifdim\\dimen4>\\wd0 \\dimen4=\\wd0\\fi")
+            # Frozen to literals: \includegraphics uses the scratch registers too.
+            lines.append("\\edef\\abstractfigureheight{\\the\\dimen0}")
+            lines.append("\\edef\\abstractfigurewidth{\\the\\dimen4}")
+            lines.append(
+                "\\centerline{\\includegraphics["
+                "width=\\abstractfigurewidth,"
+                "height=\\abstractfigureheight,"
+                "keepaspectratio"
+                f"]{{{figure}}}}}")
+            lines.append("\\endgroup")
 
     refs = abstract.resolved_references
     if refs:
@@ -402,18 +471,15 @@ def render_abstract_pdf(abstract, *, uploads_root: Path) -> bytes:
     conference = abstract.conference
     job = Path(tempfile.mkdtemp(prefix="abstract-"))
     try:
-        def _copy(col_name: str, label: str) -> str | None:
-            filename = getattr(conference, col_name, None) if conference else None
-            if not filename:
-                return None
-            src = uploads_root / "conferences" / filename
-            if not src.exists():
-                return None
-            return convert_for_latex(src, job / f"{label}{src.suffix}").name
-
-        header_rel = _copy("booklet_header_filename", "header")
-        footer_rel = _copy("booklet_footer_filename", "footer")
-        bg_rel = _copy("booklet_background_filename", "background")
+        header_rel = copy_booklet_image(conference, "booklet_header_filename",
+                                        "header", uploads_root=uploads_root,
+                                        dest_dir=job)
+        footer_rel = copy_booklet_image(conference, "booklet_footer_filename",
+                                        "footer", uploads_root=uploads_root,
+                                        dest_dir=job)
+        bg_rel = copy_booklet_image(conference, "booklet_background_filename",
+                                    "background", uploads_root=uploads_root,
+                                    dest_dir=job)
 
         label = "001"
         sub = job / f"abstract_{label}"

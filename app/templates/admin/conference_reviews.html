@@ -17,7 +17,8 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label style="font-size:13px;">Threshold:</label>
     <input class="input" name="threshold" id="threshold-input" type="number" min="0" max="100" value="{{ threshold_info.value if threshold_info else 70 }}" style="width:70px;">
-    <button class="btn btn-primary btn-sm" name="action" value="accept" type="submit">Accept above</button>
+    <button class="btn btn-primary btn-sm" name="action" value="accept_oral" type="submit">Accept above (oral)</button>
+    <button class="btn btn-primary btn-sm" name="action" value="accept_poster" type="submit">Accept above (poster)</button>
     <button class="btn btn-ghost btn-sm" name="action" value="revise" type="submit">Revise below</button>
     <button class="btn btn-quiet btn-sm" name="action" value="reject" type="submit">Reject below</button>
   </form>

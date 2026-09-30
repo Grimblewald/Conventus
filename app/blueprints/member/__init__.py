@@ -20,6 +20,7 @@ from ...models import (
     Abstract, Conference, OTPCode, Registration, ReviewAssignment,
     record_payment_event,
 )
+from ...models.abstract import ACCEPTED_STATUSES
 from ...models.content import get_site_settings
 from ...security import audit
 from ...services.invoice import _reg_merchant_reference
@@ -854,7 +855,7 @@ def delete_abstract_request(aid):
     if a.deleted_at is not None:
         flash("This abstract has already been deleted.", "error")
         return redirect(url_for("member.dashboard"))
-    if a.status not in ("submitted", "accepted"):
+    if a.status not in ("submitted", *ACCEPTED_STATUSES):
         flash("This abstract can no longer be deleted.", "error")
         return redirect(url_for("member.dashboard"))
     code = f"{secrets.randbelow(1_000_000):06d}"
@@ -891,7 +892,7 @@ def delete_abstract_confirm(aid):
     if a.deleted_at is not None:
         flash("This abstract has already been deleted.", "error")
         return redirect(url_for("member.dashboard"))
-    if a.status not in ("submitted", "accepted"):
+    if a.status not in ("submitted", *ACCEPTED_STATUSES):
         flash("This abstract can no longer be deleted.", "error")
         return redirect(url_for("member.dashboard"))
     if request.method == "POST":

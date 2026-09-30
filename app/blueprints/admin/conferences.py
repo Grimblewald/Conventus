@@ -15,7 +15,8 @@ from flask_login import current_user
 from . import admin_bp
 from ...extensions import db
 from ...models import Abstract, Conference, ConferenceReviewer, OTPCode, OrganisingCommitteeMember, Registration, ReviewAssignment, Sponsor, SponsorTier, SubEvent, User
-from ...models.abstract import ALL_STATUSES, SPEAKER_STATUSES
+from ...models.abstract import (ACCEPTED_STATUSES, ALL_STATUSES,
+                                SPEAKER_STATUSES, status_label)
 from ...models.conference import PriceTier
 from ...security import requires_permission, audit
 from ...services.jinja_filters import parse_cents
@@ -25,7 +26,8 @@ from ...services.uploads import (
     UploadError, save_image, save_pdf, save_figure, remove_upload,
 )
 from ...services.abstract_latex import (abstract_fragment, booklet_preamble,
-                                        convert_for_latex)
+                                        convert_for_latex, copy_booklet_image,
+                                        standalone_preamble)
 from ...services.citations import fetch_metadata, format_reference_compact, normalize_doi
 
 
@@ -131,7 +133,8 @@ _DATE_FIELDS = (
 @requires_permission("conf.edit")
 def conference_edit(cid):
     c = Conference.query.get_or_404(cid)
-    return render_template("admin/conference_edit.html", c=c)
+    return render_template("admin/conference_edit.html", c=c,
+                           speaker_statuses=SPEAKER_STATUSES)
 
 
 # ---------------------------------------------------------------------------
@@ -176,6 +179,16 @@ def conference_save(cid):
         for fld in _DATE_FIELDS:
             raw = (request.form.get(fld) or "").strip()
             setattr(c, fld, date.fromisoformat(raw) if raw else None)
+
+        # An unticked checkbox posts nothing, so without the marker a form
+        # that lacks this section would read as "hide every speaker".
+        if request.form.get("speaker_visibility_form"):
+            c.speaker_visibility = {
+                s: ("grid" if request.form.get(f"speaker_grid_{s}")
+                    else "page" if request.form.get(f"speaker_page_{s}")
+                    else "hidden")
+                for s in SPEAKER_STATUSES
+            }
 
         # Hero image
         f = request.files.get("hero_image")
@@ -677,13 +690,12 @@ def conference_delete_confirm(cid):
 # Abstract review (shared with committee permission `abs.review`)
 # ---------------------------------------------------------------------------
 
-@admin_bp.route("/abstracts")
-@requires_permission("abs.review")
-def abstracts():
-    status = request.args.get("status", "submitted")
-    search = (request.args.get("search") or "").strip()
-    conf_id = request.args.get("conference_id", type=int)
+def _filtered_abstracts(status: str, search: str, conf_id: int | None):
+    """The query behind the /admin/abstracts panel's filters.
 
+    Shared by the list view and the LaTeX-bundle export so the download can
+    never drift from what is on screen. Returns the query, not its rows.
+    """
     q = Abstract.query.filter(Abstract.deleted_at.is_(None))
     if status != "all":
         q = q.filter_by(status=status)
@@ -701,10 +713,20 @@ def abstracts():
     if conf_id:
         q = q.filter(Abstract.conference_id == conf_id)
 
-    items = q.options(
+    return q.options(
         db.joinedload(Abstract.registration),
         db.joinedload(Abstract.author),
-    ).order_by(Abstract.created_at.desc()).all()
+    ).order_by(Abstract.created_at.desc())
+
+
+@admin_bp.route("/abstracts")
+@requires_permission("abs.review")
+def abstracts():
+    status = request.args.get("status", "submitted")
+    search = (request.args.get("search") or "").strip()
+    conf_id = request.args.get("conference_id", type=int)
+
+    items = _filtered_abstracts(status, search, conf_id).all()
 
     conferences = (Conference.query
                    .filter(Conference.deleted_at.is_(None))
@@ -713,6 +735,114 @@ def abstracts():
     return render_template("admin/abstracts.html", items=items, status=status,
                            search=search, conf_id=conf_id,
                            conferences=conferences)
+
+
+@admin_bp.route("/abstracts/download", methods=["POST"])
+@requires_permission("abs.export")
+def abstracts_download():
+    """The current abstracts-panel filter as a LaTeX bundle.
+
+    One folder per abstract, named by its reference, holding a document
+    that compiles as-is inside that folder, the fragment it inputs, and the
+    converted images. At the root, one booklet .tex per conference in the
+    selection pulls in the same fragments, plus a manifest.
+
+    Unlike the booklet export, figures are set against the full page and an
+    abstract may run over pages, so a large figure is never squashed into
+    the space left on one. Conference decoration stays out: it belongs to
+    the booklet design panel.
+    """
+    import csv
+    import io
+    import tempfile
+    import zipfile
+
+    status = request.form.get("status", "submitted")
+    search = (request.form.get("search") or "").strip()
+    conf_id = request.form.get("conference_id", type=int)
+
+    back = url_for("admin.abstracts", status=status,
+                   search=search or None, conference_id=conf_id or None)
+    items = _filtered_abstracts(status, search, conf_id).all()
+    if not items:
+        flash("Nothing matches the current filter, so there is nothing to "
+              "download.", "error")
+        return redirect(back)
+
+    uploads_root = Path(current_app.config["UPLOAD_FOLDER"])
+
+    # Programme order inside each conference (oldest first, as the booklet
+    # does); conferences in the order the panel's filter dropdown lists them.
+    conf_ids = list(dict.fromkeys(a.conference_id for a in items))
+    confs = (Conference.query
+             .filter(Conference.id.in_(conf_ids))
+             .order_by(Conference.start_date.desc())
+             .all())
+    ordered: list[tuple[Conference, Abstract]] = []
+    inputs_by_conf: dict[int, list[str]] = {c.id: [] for c in confs}
+    for c in confs:
+        ordered.extend((c, a) for a in sorted(
+            (a for a in items if a.conference_id == c.id),
+            key=lambda a: a.created_at))
+
+    buf = io.BytesIO()
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp)
+        for c, a in ordered:
+            folder = a.reference
+            sub = src / folder
+            sub.mkdir(parents=True, exist_ok=True)
+            # Figure paths relative to the folder, so the document inside it
+            # compiles where it stands; the booklet reaches the same fragment
+            # through \subimport, which resolves them against the folder too.
+            (sub / "abstract.tex").write_text(
+                abstract_fragment(folder, a, fit_single_page=False,
+                                  figure_dir=""),
+                encoding="utf-8")
+            (sub / f"{folder}.tex").write_text(
+                standalone_preamble("\\input{abstract.tex}"),
+                encoding="utf-8")
+            inputs_by_conf[c.id].append(
+                f"\\subimport{{{folder}/}}{{abstract.tex}}")
+
+            for attr, name in (("figure_filename", "figure"),
+                               ("profile_picture_filename", "profile")):
+                filename = getattr(a, attr, None)
+                if not filename:
+                    continue
+                fig_src = uploads_root / "abstracts" / filename.split("/", 1)[-1]
+                if fig_src.exists():
+                    convert_for_latex(fig_src, sub / f"{name}{fig_src.suffix}")
+
+        for c in confs:
+            (src / f"booklet-{c.slug}.tex").write_text(
+                booklet_preamble(c, inputs_by_conf[c.id], None, None, None,
+                                 packages=("import",)),
+                encoding="utf-8")
+
+        with (src / "manifest.csv").open("w", newline="", encoding="utf-8") as fh:
+            w = csv.writer(fh)
+            w.writerow(["reference", "id", "conference", "status", "title",
+                        "authors", "track", "tex"])
+            for c, a in ordered:
+                w.writerow([a.reference, a.id, c.slug, status_label(a.status),
+                            a.title, a.authors, a.track or "",
+                            f"{a.reference}/{a.reference}.tex"])
+
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for f in sorted(src.rglob("*")):
+                if f.is_file():
+                    zf.write(f, f.relative_to(src).as_posix())
+
+    audit.record("abstract.exported",
+                 summary=f"Exported {len(ordered)} abstracts as a LaTeX "
+                         f"bundle (status={status}, search={search or '-'}, "
+                         f"conference_id={conf_id or 'any'})")
+    stamp = datetime.utcnow().strftime("%Y%m%d")
+    scope = confs[0].slug if len(confs) == 1 else (status or "all")
+    buf.seek(0)
+    return send_file(buf, mimetype="application/zip", as_attachment=True,
+                     download_name=f"abstracts-{scope}-{stamp}.zip")
 
 
 @admin_bp.route("/abstracts/<int:aid>", methods=["GET", "POST"])
@@ -749,7 +879,11 @@ def abstract_detail(aid):
                 flash("Reviewer assigned.", "success")
             return redirect(url_for("admin.abstract_detail", aid=a.id))
 
-        a.status = (request.form.get("status") or a.status).strip()
+        status = (request.form.get("status") or a.status).strip()
+        if status not in ALL_STATUSES:
+            flash(f"Unknown status '{status}'.", "error")
+            return redirect(url_for("admin.abstract_detail", aid=a.id))
+        a.status = status
         a.reviewer_notes = (request.form.get("reviewer_notes") or "").strip()
         a.decided_by_id = current_user.id
         a.decided_at = datetime.utcnow()
@@ -1316,7 +1450,8 @@ def conference_reviews(cid):
                            threshold_info=threshold_info,
                            scored_count=len(scored),
                            already_accepted=sum(
-                               1 for a in abstracts if a.status == "accepted"))
+                               1 for a in abstracts
+                               if a.status in ACCEPTED_STATUSES))
 
 
 @admin_bp.route("/conferences/<int:cid>/accept-overflow", methods=["POST"])
@@ -1358,11 +1493,11 @@ def conference_bulk_decision(cid):
     threshold = int(request.form.get("threshold", 70))
     action = (request.form.get("action") or "").strip()
 
-    if action not in ("accept", "reject", "revise"):
+    accept_as = {"accept_oral": "accepted_oral",
+                 "accept_poster": "accepted_poster"}
+    if action not in (*accept_as, "reject", "revise"):
         flash("Invalid action.", "error")
         return redirect(url_for("admin.conference_reviews", cid=c.id))
-
-    status_map = {"accept": "accepted", "reject": "rejected", "revise": "revise"}
 
     changed = 0
     abstracts = (Abstract.query
@@ -1377,8 +1512,8 @@ def conference_bulk_decision(cid):
         completed = [r for r in a.reviews if r.status == "completed"]
         if len(completed) < (c.reviewers_per_paper or 2):
             continue
-        if action == "accept" and ms >= threshold:
-            a.status = "accepted"
+        if action in accept_as and ms >= threshold:
+            a.status = accept_as[action]
             changed += 1
         elif action == "reject" and ms < threshold:
             a.status = "rejected"
@@ -1388,7 +1523,8 @@ def conference_bulk_decision(cid):
             changed += 1
 
     db.session.commit()
-    verb = {"accept": "Accepted", "reject": "Rejected", "revise": "Sent for revision"}
+    verb = {"accept_oral": "Accepted (oral)", "accept_poster": "Accepted (poster)",
+            "reject": "Rejected", "revise": "Sent for revision"}
     flash(f"{verb.get(action, 'Updated')} {changed} abstracts.", "success")
     return redirect(url_for("admin.conference_reviews", cid=c.id))
 
@@ -1473,20 +1609,12 @@ def conference_compile_booklet(cid):
     with tempfile.TemporaryDirectory() as tmp:
         src = Path(tmp)
 
-        def _copy_booklet_image(col_name: str, label: str) -> str | None:
-            filename = getattr(c, col_name, None)
-            if not filename:
-                return None
-            img_src = uploads_root / "conferences" / filename
-            if not img_src.exists():
-                return None
-            dst = src / f"{label}{img_src.suffix}"
-            result = convert_for_latex(img_src, dst)
-            return result.name
-
-        header_rel = _copy_booklet_image("booklet_header_filename", "header")
-        footer_rel = _copy_booklet_image("booklet_footer_filename", "footer")
-        bg_rel = _copy_booklet_image("booklet_background_filename", "background")
+        header_rel = copy_booklet_image(c, "booklet_header_filename", "header",
+                                        uploads_root=uploads_root, dest_dir=src)
+        footer_rel = copy_booklet_image(c, "booklet_footer_filename", "footer",
+                                        uploads_root=uploads_root, dest_dir=src)
+        bg_rel = copy_booklet_image(c, "booklet_background_filename", "background",
+                                    uploads_root=uploads_root, dest_dir=src)
 
         inputs: list[str] = []
         for i, a in enumerate(abstracts, 1):

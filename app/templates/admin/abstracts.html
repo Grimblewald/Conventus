@@ -10,9 +10,9 @@
 
 <div style="margin-bottom:14px;">
   <div style="display:flex; gap:8px; margin-bottom:10px;">
-    {% for s in ['submitted', 'draft', 'accepted', 'rejected', 'revise', 'plenary', 'keynote', 'invited', 'all'] %}
+    {% for s in ['submitted', 'draft', 'accepted_oral', 'accepted_poster', 'rejected', 'revise', 'plenary', 'keynote', 'invited', 'all'] %}
       <a class="btn btn-{% if status == s %}primary{% else %}ghost{% endif %} btn-sm"
-         href="{{ url_for('admin.abstracts', status=s, search=search, conference_id=conf_id) }}">{{ s|capitalize }}</a>
+         href="{{ url_for('admin.abstracts', status=s, search=search, conference_id=conf_id) }}">{{ s|status_label }}</a>
     {% endfor %}
   </div>
   {% if status == 'draft' %}
@@ -38,6 +38,17 @@
     <a class="btn btn-quiet btn-sm" href="{{ url_for('admin.abstracts', status=status) }}">Clear</a>
     {% endif %}
   </form>
+  {% if can('abs.export') %}
+  <form method="post" action="{{ url_for('admin.abstracts_download') }}"
+        style="display:flex; gap:8px; align-items:center; margin-top:10px; flex-wrap:wrap;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="status" value="{{ status }}">
+    <input type="hidden" name="search" value="{{ search }}">
+    <input type="hidden" name="conference_id" value="{{ conf_id or '' }}">
+    <button class="btn btn-ghost btn-sm" type="submit"{% if not items %} disabled{% endif %}>Download selected (.zip)</button>
+    <span class="muted">A LaTeX bundle of the {{ items|length }} abstract{{ 's' if items|length != 1 else '' }} matching this filter: one folder per abstract, named by its reference, with a .tex that compiles as-is and its figures; plus a booklet file per conference and a manifest.</span>
+  </form>
+  {% endif %}
 </div>
 
 {% if items %}
@@ -71,7 +82,7 @@
           <span class="muted">—</span>
         {% endif %}
       </td>
-      <td><span class="status" data-v="{{ a.status }}">{{ a.status }}</span></td>
+      <td><span class="status" data-v="{{ a.status }}">{{ a.status|status_label }}</span></td>
       <td>{{ a.created_at.strftime('%-d %b %Y') }}</td>
     </tr>
     {% endfor %}

@@ -87,6 +87,7 @@ def test_fresh_database_upgrades_to_head(db_path):
     assert "gst_registered" in _table_columns(db_path, "financial_identity")
     assert "speaker_bio" in _table_columns(db_path, "abstracts")
     assert "abstract_receipt_email" in _table_columns(db_path, "conferences")
+    assert "speaker_visibility" in _table_columns(db_path, "conferences")
 
 
 def test_create_all_bootstrapped_database_upgrades_from_the_baseline(db_path):
@@ -227,3 +228,39 @@ with app.app_context():
                 "SELECT name FROM sqlite_master WHERE type='table'")}
     finally:
         conn.close()
+
+
+def test_plain_accepted_abstracts_become_oral(db_path):
+    """The 20649c8aa1d5 data migration: "accepted" no longer exists as a
+    status, and a row still carrying it would match no filter or listing."""
+    import sqlite3
+
+    seed = _run([sys.executable, "-c", """
+from datetime import date
+from app import create_app
+from app.extensions import db
+from app.models import Abstract, Conference
+app = create_app()
+with app.app_context():
+    db.create_all()
+    c = Conference(slug='c', title='C', start_date=date(2026, 9, 1),
+                   end_date=date(2026, 9, 3))
+    db.session.add(c)
+    db.session.flush()
+    for status in ('accepted', 'plenary'):
+        db.session.add(Abstract(conference_id=c.id, status=status,
+                                title=status, authors='A|1|U', body='B'))
+    db.session.commit()
+"""], db_path)
+    assert seed.returncode == 0, f"stdout={seed.stdout}\nstderr={seed.stderr}"
+
+    assert _flask_db(db_path, "stamp", BASELINE).returncode == 0
+    up = _flask_db(db_path, "upgrade")
+    assert up.returncode == 0, f"stdout={up.stdout}\nstderr={up.stderr}"
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        rows = dict(conn.execute("SELECT title, status FROM abstracts"))
+    finally:
+        conn.close()
+    assert rows == {"accepted": "accepted_oral", "plenary": "plenary"}

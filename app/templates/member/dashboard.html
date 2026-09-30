@@ -70,7 +70,7 @@
               {% endif %}
             </td>
             <td>{{ a.title }}</td>
-            <td><span class="status" data-v="{{ a.status }}">{{ a.status }}</span></td>
+            <td><span class="status" data-v="{{ a.status }}">{{ a.status|status_label }}</span></td>
             <td>{{ a.created_at.strftime('%-d %b %Y') }}</td>
             <td>
               {% if a.is_editable %}
@@ -87,7 +87,7 @@
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                   <button class="btn btn-quiet btn-sm" type="submit">Discard</button>
                 </form>
-              {% elif a.status in ('submitted', 'accepted') %}
+              {% elif a.status in ('submitted', 'accepted_oral', 'accepted_poster') %}
                 <form method="post" action="{{ url_for('member.delete_abstract_request', aid=a.id) }}"
                       data-confirm="Request a confirmation code to delete this abstract?"
                       style="display:inline; margin-left:4px;">

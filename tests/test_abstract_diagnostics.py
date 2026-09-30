@@ -295,7 +295,7 @@ class TestEditingAfterSubmission:
                                                    app, conference):
         """Saving one used to set it back to 'submitted', discarding the
         decision while leaving decided_by pointing at whoever made it."""
-        aid = self._abstract(app, conference, "accepted")
+        aid = self._abstract(app, conference, "accepted_oral")
 
         resp = member_client.get(f"/conferences/{conference}/abstract?edit={aid}",
                                  follow_redirects=True)
@@ -309,7 +309,7 @@ class TestEditingAfterSubmission:
         }, follow_redirects=True)
         with app.app_context():
             a = Abstract.query.get(aid)
-            assert a.status == "accepted"
+            assert a.status == "accepted_oral"
             assert a.title == "A submitted piece of work"
 
     def test_editing_closes_with_submissions(self, seeded, member_client, app,

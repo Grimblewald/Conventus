@@ -46,6 +46,10 @@
               {% if field.type == 'textarea' %}
                 <label for="{{ fkey }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
                 <textarea class="textarea" id="{{ fkey }}" name="{{ fkey }}"{% if field.required and not field.condition %} required{% endif %}>{{ fval }}</textarea>
+              {% elif field.type == 'billing-address' %}
+                <label for="{{ fkey }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
+                <textarea class="textarea" id="{{ fkey }}" name="{{ fkey }}" rows="4" aria-describedby="{{ fkey }}-help"{% if field.required and not field.condition %} required{% endif %}>{{ fval }}</textarea>
+                <div class="help" id="{{ fkey }}-help">This will display in invoices and receipts sent.</div>
               {% elif field.type == 'select' %}
                 <label for="{{ fkey }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
                 <select class="select" id="{{ fkey }}" name="{{ fkey }}"{% if field.required and not field.condition %} required{% endif %}>

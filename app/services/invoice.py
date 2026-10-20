@@ -22,6 +22,7 @@ from ..models import (
     get_site_settings, get_document_template, get_financial_identity,
 )
 from .documents import RenderError, render_document
+from .form_renderer import billing_address
 from .jinja_filters import format_amount
 from .mail import send_mail
 
@@ -462,16 +463,33 @@ def _registration_vars(reg: Registration, kind: str,
         "site_name": site.site_name,
         "registration_id": str(reg.id),
         **_business_vars(amount),
+        # After the business vars, which blank it for every document.
+        "recipient_address": billing_address(conf.registration_form_schema,
+                                             reg.custom_data),
     })
 
 
 def _manual_receipt_vars(reference: str, recipient: str,
                          amount_cents: int) -> dict:
     """Real document variables for a manual invoice's receipt (paid via the
-    durable link). The invoice's own reference fills {transaction_id}."""
+    durable link). The invoice's own reference fills {transaction_id}.
+
+    Who it is billed to comes from the invoice as issued: the ledger only
+    keeps the recipient's email, so without the snapshot the receipt would
+    print the email as the name and drop the address.
+    """
+    import json
+
+    from ..models import IssuedDocument
+
     site = get_site_settings()
+    issued = (IssuedDocument.query
+              .filter_by(kind="invoice", reference=reference)
+              .order_by(IssuedDocument.issued_at.desc(), IssuedDocument.id.desc())
+              .first())
+    billed = json.loads(issued.vars_json) if issued else {}
     return _finalise_issuer_text({
-        "user_name": recipient,
+        "user_name": billed.get("user_name") or recipient,
         "user_email": recipient,
         "conference_title": "",
         "conference_dates": "",
@@ -485,6 +503,8 @@ def _manual_receipt_vars(reference: str, recipient: str,
         "site_name": site.site_name,
         "registration_id": "N/A",
         **_business_vars(amount_cents),
+        "recipient_abn": billed.get("recipient_abn", ""),
+        "recipient_address": billed.get("recipient_address", ""),
     })
 
 

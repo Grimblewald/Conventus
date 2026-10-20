@@ -11,7 +11,27 @@ from pathlib import Path
 from markupsafe import Markup
 
 
+FIELD_TYPES = ("text", "email", "number", "tel", "textarea", "select", "radio",
+               "checkbox", "checkbox-group", "country", "registration-tier",
+               "sub-event", "billing-address")
+
 _countries_cache = None
+
+
+def billing_address(schema: dict | None, data: dict | None) -> str:
+    """The registrant's billing address, for invoices and receipts.
+
+    Found by field type rather than key, so it works whatever an admin named
+    the field in the form builder.
+    """
+    if not schema or not data:
+        return ""
+    for section in schema.get("sections", []):
+        for field in section.get("fields", []):
+            if field.get("type") == "billing-address":
+                value = data.get(field.get("key", ""))
+                return value.strip() if isinstance(value, str) else ""
+    return ""
 
 
 def _load_countries() -> list[dict]:

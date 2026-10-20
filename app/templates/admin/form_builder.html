@@ -45,7 +45,7 @@
             <div class="field">
               <label>Type</label>
               <select class="select select-sm" name="field_type_{{ si }}[]">
-                {% for t in ['text','email','number','tel','textarea','select','radio','checkbox','checkbox-group','country','registration-tier','sub-event'] %}
+                {% for t in field_types %}
                   <option value="{{ t }}" {% if field.type == t %}selected{% endif %}>{{ t }}</option>
                 {% endfor %}
               </select>
@@ -177,7 +177,7 @@
       <div class="field">
         <label>Type</label>
         <select class="select select-sm" name="field_type_0[]">
-          {% for t in ['text','email','number','tel','textarea','select','radio','checkbox','checkbox-group','country','registration-tier','sub-event'] %}
+          {% for t in field_types %}
             <option value="{{ t }}">{{ t }}</option>
           {% endfor %}
         </select>

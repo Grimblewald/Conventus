@@ -8,6 +8,7 @@ from . import admin_bp
 from ...extensions import db
 from ...models import Conference, FormTemplate
 from ...security import requires_permission, audit
+from ...services.form_renderer import FIELD_TYPES
 
 
 @admin_bp.route("/conferences/<int:cid>/form-builder/<form_type>",
@@ -100,7 +101,8 @@ def form_builder(cid, form_type):
 
     return render_template("admin/form_builder.html",
                            c=c, form_type=form_type, schema=schema,
-                           templates=templates, sub_events=c.sub_events)
+                           templates=templates, sub_events=c.sub_events,
+                           field_types=FIELD_TYPES)
 
 
 def _save_schema_from_form(conference, form_type):

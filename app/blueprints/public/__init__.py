@@ -319,9 +319,15 @@ def contact_resend():
 
 # ---------------------------------------------------------------------------
 # Served uploads — keep behind sensible checks.
+#
+# Exempt from the default rate limit, which is counted per route: one view of
+# a conference page asks for every speaker portrait from the same route, so a
+# single visitor went over it and saw broken images — and everyone on a venue
+# network shares that one budget.
 # ---------------------------------------------------------------------------
 
 @public_bp.route("/uploads/site/<path:name>")
+@limiter.exempt
 def site_upload(name):
     """Site-wide images (logo, favicon, hero, OG) — always public."""
     folder = Path(current_app.config["UPLOAD_FOLDER"]) / "site"
@@ -329,6 +335,7 @@ def site_upload(name):
 
 
 @public_bp.route("/uploads/committee/<path:name>")
+@limiter.exempt
 def committee_upload(name):
     """Committee portraits — public."""
     folder = Path(current_app.config["UPLOAD_FOLDER"]) / "committee"
@@ -336,6 +343,7 @@ def committee_upload(name):
 
 
 @public_bp.route("/uploads/conferences/<path:name>")
+@limiter.exempt
 def conference_upload(name):
     """Conference assets (hero, booklet) — public."""
     folder = Path(current_app.config["UPLOAD_FOLDER"]) / "conferences"
@@ -343,6 +351,7 @@ def conference_upload(name):
 
 
 @public_bp.route("/uploads/sponsors/<path:name>")
+@limiter.exempt
 def sponsor_upload(name):
     folder = Path(current_app.config["UPLOAD_FOLDER"]) / "sponsors"
     return send_from_directory(folder, name)
@@ -380,6 +389,7 @@ def abstract_view(aid):
 
 
 @public_bp.route("/uploads/abstracts/<path:name>")
+@limiter.exempt
 def abstract_upload(name):
     """Abstract profile pictures — public (used by speaker cards)."""
     folder = Path(current_app.config["UPLOAD_FOLDER"]) / "abstracts"

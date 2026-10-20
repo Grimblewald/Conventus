@@ -27,12 +27,13 @@ def restore_legacy_zip(zf, *, sqlite_path: Path, uploads_root: Path,
     """Restore a legacy-layout archive. Returns human-readable warnings."""
     import shutil
 
+    from .backup_archive import restore_sqlite_db
+
     warnings = ["legacy backup layout (pre-2026-07) — consider re-creating "
                 "this backup in the current format after restoring"]
     names = set(zf.namelist())
 
-    sqlite_path.parent.mkdir(parents=True, exist_ok=True)
-    sqlite_path.write_bytes(zf.read("instance/app.db"))
+    restore_sqlite_db(zf.read("instance/app.db"), sqlite_path)
 
     for entry in names:
         if (entry.startswith("instance/") and entry != "instance/app.db"

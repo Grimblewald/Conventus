@@ -71,6 +71,20 @@ def _sqlite_copy(src: Path, dst: Path) -> None:
     s.close()
 
 
+def restore_sqlite_db(data: bytes, dest: Path) -> None:
+    """Write a database image over the live SQLite file.
+
+    Through the backup API, not a file replace: the live database runs in WAL
+    mode, and a -wal file left beside a replaced database is replayed over it
+    on the next open, silently undoing the restore.
+    """
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / "restore.db"
+        src.write_bytes(data)
+        _sqlite_copy(src, dest)
+
+
 def _pg_env(url: str) -> tuple[str, dict]:
     from urllib.parse import unquote, urlparse
     url = url.replace("postgresql+psycopg://", "postgresql://")
@@ -360,11 +374,7 @@ def _restore_v2(zf, names: set[str], url: str,
             warnings.append("manifest.json unreadable — continuing anyway")
 
     if "app.db" in names and is_sqlite(url):
-        db_dest = sqlite_path(url)
-        db_dest.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(delete=False) as tmp:
-            tmp.write(zf.read("app.db"))
-        shutil.move(tmp.name, str(db_dest))
+        restore_sqlite_db(zf.read("app.db"), sqlite_path(url))
     elif "app.sql" in names and not is_sqlite(url):
         with tempfile.NamedTemporaryFile(suffix=".sql", delete=False) as tmp:
             tmp.write(zf.read("app.sql"))

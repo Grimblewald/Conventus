@@ -98,6 +98,42 @@ def test_restore_snapshots_the_current_db_first(isolated_app, tmp_path):
     assert marker in versions
 
 
+def test_restore_survives_pending_wal_frames(isolated_app, tmp_path):
+    """The live database runs in WAL mode. Frames still sitting in its -wal
+    file when the restore lands must not be replayed over the archive's
+    database — that silently undid a restore of real data."""
+    import sqlite3
+
+    from app.services.backup_archive import build_backup_zip, restore_backup_zip
+
+    with isolated_app.app_context():
+        live = _sqlite_file(isolated_app)
+
+        conn = sqlite3.connect(str(live))
+        conn.execute("PRAGMA user_version = 111")
+        conn.commit()
+        conn.close()
+        archive = build_backup_zip(tmp_path / "out")
+
+        # Held open with checkpointing off, so the change stays in the WAL
+        # rather than being folded into the main file.
+        held = sqlite3.connect(str(live))
+        held.execute("PRAGMA journal_mode = wal")
+        held.execute("PRAGMA wal_autocheckpoint = 0")
+        held.execute("PRAGMA user_version = 222")
+        held.commit()
+        assert Path(f"{live}-wal").stat().st_size > 0
+
+        restore_backup_zip(archive)
+
+        check = sqlite3.connect(str(live))
+        restored = check.execute("PRAGMA user_version").fetchone()[0]
+        check.close()
+        held.close()
+
+    assert restored == 111
+
+
 def test_invalid_archive_is_rejected(isolated_app, tmp_path):
     import zipfile
     from app.services.backup_archive import validate_backup_zip

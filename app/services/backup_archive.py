@@ -9,6 +9,7 @@ Layout (format 2):
   instance/.setup-complete  setup flag
   instance/setup-pw         setup password file
   uploads/...               every uploaded file
+  financial-assets/...      letterhead logo and signature for documents
   env/.env                  ONLY in password-protected full backups
 
 Archives with a password are AES-256 encrypted (pyzipper); extract with
@@ -31,6 +32,8 @@ from datetime import datetime
 from pathlib import Path
 
 from flask import current_app
+
+from .documents import financial_assets_dir
 
 log = logging.getLogger(__name__)
 
@@ -198,6 +201,15 @@ def build_backup_zip(backup_dir: Path, *, include_env: bool = False,
                 for f in sorted(uploads_root.rglob("*")):
                     if f.is_file():
                         zf.write(f, f"uploads/{f.relative_to(uploads_root)}")
+
+            # Kept out of uploads so they are never web-served, which also
+            # kept them out of backups: a restored site issued documents with
+            # no logo or signature.
+            assets_root = financial_assets_dir()
+            if assets_root.exists():
+                for f in sorted(assets_root.rglob("*")):
+                    if f.is_file():
+                        zf.write(f, f"financial-assets/{f.relative_to(assets_root)}")
 
             if include_env:
                 env_path = _project_root() / ".env"
@@ -392,6 +404,20 @@ def _restore_v2(zf, names: set[str], url: str,
         dest = uploads_root / Path(entry).relative_to("uploads")
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(zf.read(entry))
+
+    # Replaced only when the archive carries them, so restoring a backup made
+    # before they were included leaves the current logo and signature alone.
+    asset_entries = [n for n in names
+                     if n.startswith("financial-assets/") and not n.endswith("/")]
+    if asset_entries:
+        assets_root = financial_assets_dir()
+        if assets_root.exists():
+            shutil.rmtree(assets_root)
+        assets_root.mkdir(parents=True, exist_ok=True)
+        for entry in asset_entries:
+            dest = assets_root / Path(entry).relative_to("financial-assets")
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_bytes(zf.read(entry))
 
     for flag in (".setup-complete", "setup-pw"):
         entry = f"instance/{flag}"

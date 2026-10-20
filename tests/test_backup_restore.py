@@ -26,6 +26,7 @@ def isolated_app(tmp_path, monkeypatch):
     class Cfg(DevelopmentConfig):
         SQLALCHEMY_DATABASE_URI = f"sqlite:///{db_path}"
         UPLOAD_FOLDER = str(tmp_path / "uploads")
+        FINANCIAL_ASSETS_DIR = str(tmp_path / "financial-assets")
         TESTING = True
         WTF_CSRF_ENABLED = False
 
@@ -132,6 +133,48 @@ def test_restore_survives_pending_wal_frames(isolated_app, tmp_path):
         held.close()
 
     assert restored == 111
+
+
+def test_document_logo_and_signature_round_trip(isolated_app, tmp_path):
+    """They live outside uploads so they are never web-served; a backup that
+    left them behind restored a site whose documents had neither."""
+    from app.services.backup_archive import build_backup_zip, restore_backup_zip
+
+    assets = Path(isolated_app.config["FINANCIAL_ASSETS_DIR"])
+    assets.mkdir(parents=True, exist_ok=True)
+    (assets / "logo.png").write_bytes(b"logo-bytes")
+    (assets / "signature.png").write_bytes(b"signature-bytes")
+
+    with isolated_app.app_context():
+        archive = build_backup_zip(tmp_path / "out")
+        (assets / "logo.png").unlink()
+        (assets / "signature.png").write_bytes(b"replaced since")
+        restore_backup_zip(archive)
+
+    assert (assets / "logo.png").read_bytes() == b"logo-bytes"
+    assert (assets / "signature.png").read_bytes() == b"signature-bytes"
+
+
+def test_an_archive_without_assets_leaves_them_alone(isolated_app, tmp_path):
+    """Backups made before assets were included must not wipe the current ones."""
+    import zipfile
+
+    from app.services.backup_archive import build_backup_zip, restore_backup_zip
+
+    assets = Path(isolated_app.config["FINANCIAL_ASSETS_DIR"])
+    with isolated_app.app_context():
+        archive = build_backup_zip(tmp_path / "out")
+    older = tmp_path / "older.zip"
+    with zipfile.ZipFile(archive) as src, zipfile.ZipFile(older, "w") as dst:
+        for item in src.infolist():
+            if not item.filename.startswith("financial-assets/"):
+                dst.writestr(item, src.read(item))
+
+    assets.mkdir(parents=True, exist_ok=True)
+    (assets / "logo.png").write_bytes(b"current logo")
+    with isolated_app.app_context():
+        restore_backup_zip(older)
+    assert (assets / "logo.png").read_bytes() == b"current logo"
 
 
 def test_invalid_archive_is_rejected(isolated_app, tmp_path):

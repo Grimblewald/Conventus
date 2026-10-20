@@ -8,7 +8,8 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from flask import (
-    current_app, flash, redirect, render_template, request, send_file, url_for,
+    abort, current_app, flash, redirect, render_template, request, send_file,
+    url_for,
 )
 from flask_login import current_user
 
@@ -16,7 +17,7 @@ from . import admin_bp
 from ...extensions import db
 from ...models import Abstract, Conference, ConferenceReviewer, OTPCode, OrganisingCommitteeMember, Registration, ReviewAssignment, Sponsor, SponsorTier, SubEvent, User
 from ...models.abstract import (ACCEPTED_STATUSES, ALL_STATUSES,
-                                SPEAKER_STATUSES, status_label)
+                                SPEAKER_STATUSES)
 from ...models.conference import PriceTier
 from ...security import requires_permission, audit
 from ...services.jinja_filters import parse_cents
@@ -26,8 +27,8 @@ from ...services.uploads import (
     UploadError, save_image, save_pdf, save_figure, remove_upload,
 )
 from ...services.abstract_latex import (abstract_fragment, booklet_preamble,
-                                        convert_for_latex, copy_booklet_image,
-                                        standalone_preamble)
+                                        copy_abstract_images,
+                                        copy_booklet_image)
 from ...services.citations import fetch_metadata, format_reference_compact, normalize_doi
 
 
@@ -740,22 +741,12 @@ def abstracts():
 @admin_bp.route("/abstracts/download", methods=["POST"])
 @requires_permission("abs.export")
 def abstracts_download():
-    """The current abstracts-panel filter as a LaTeX bundle.
+    """Request the current abstracts-panel filter as a LaTeX bundle.
 
-    One folder per abstract, named by its reference, holding a document
-    that compiles as-is inside that folder, the fragment it inputs, and the
-    converted images. At the root, one booklet .tex per conference in the
-    selection pulls in the same fragments, plus a manifest.
-
-    Unlike the booklet export, figures are set against the full page and an
-    abstract may run over pages, so a large figure is never squashed into
-    the space left on one. Conference decoration stays out: it belongs to
-    the booklet design panel.
+    Nothing is built here: the bundle is built in the background and the
+    requester is emailed a link to it (see services.abstract_export).
     """
-    import csv
-    import io
-    import tempfile
-    import zipfile
+    from ...services.abstract_export import request_export
 
     status = request.form.get("status", "submitted")
     search = (request.form.get("search") or "").strip()
@@ -769,80 +760,41 @@ def abstracts_download():
               "download.", "error")
         return redirect(back)
 
-    uploads_root = Path(current_app.config["UPLOAD_FOLDER"])
-
-    # Programme order inside each conference (oldest first, as the booklet
-    # does); conferences in the order the panel's filter dropdown lists them.
-    conf_ids = list(dict.fromkeys(a.conference_id for a in items))
-    confs = (Conference.query
-             .filter(Conference.id.in_(conf_ids))
-             .order_by(Conference.start_date.desc())
-             .all())
-    ordered: list[tuple[Conference, Abstract]] = []
-    inputs_by_conf: dict[int, list[str]] = {c.id: [] for c in confs}
-    for c in confs:
-        ordered.extend((c, a) for a in sorted(
-            (a for a in items if a.conference_id == c.id),
-            key=lambda a: a.created_at))
-
-    buf = io.BytesIO()
-    with tempfile.TemporaryDirectory() as tmp:
-        src = Path(tmp)
-        for c, a in ordered:
-            folder = a.reference
-            sub = src / folder
-            sub.mkdir(parents=True, exist_ok=True)
-            # Figure paths relative to the folder, so the document inside it
-            # compiles where it stands; the booklet reaches the same fragment
-            # through \subimport, which resolves them against the folder too.
-            (sub / "abstract.tex").write_text(
-                abstract_fragment(folder, a, fit_single_page=False,
-                                  figure_dir=""),
-                encoding="utf-8")
-            (sub / f"{folder}.tex").write_text(
-                standalone_preamble("\\input{abstract.tex}"),
-                encoding="utf-8")
-            inputs_by_conf[c.id].append(
-                f"\\subimport{{{folder}/}}{{abstract.tex}}")
-
-            for attr, name in (("figure_filename", "figure"),
-                               ("profile_picture_filename", "profile")):
-                filename = getattr(a, attr, None)
-                if not filename:
-                    continue
-                fig_src = uploads_root / "abstracts" / filename.split("/", 1)[-1]
-                if fig_src.exists():
-                    convert_for_latex(fig_src, sub / f"{name}{fig_src.suffix}")
-
-        for c in confs:
-            (src / f"booklet-{c.slug}.tex").write_text(
-                booklet_preamble(c, inputs_by_conf[c.id], None, None, None,
-                                 packages=("import",)),
-                encoding="utf-8")
-
-        with (src / "manifest.csv").open("w", newline="", encoding="utf-8") as fh:
-            w = csv.writer(fh)
-            w.writerow(["reference", "id", "conference", "status", "title",
-                        "authors", "track", "tex"])
-            for c, a in ordered:
-                w.writerow([a.reference, a.id, c.slug, status_label(a.status),
-                            a.title, a.authors, a.track or "",
-                            f"{a.reference}/{a.reference}.tex"])
-
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            for f in sorted(src.rglob("*")):
-                if f.is_file():
-                    zf.write(f, f.relative_to(src).as_posix())
+    confs = {a.conference_id for a in items}
+    scope = items[0].conference.slug if len(confs) == 1 else (status or "all")
+    stamp = datetime.utcnow().strftime("%Y%m%d")
+    filters = (f"status={status}, search={search or '-'}, "
+               f"conference_id={conf_id or 'any'}")
+    request_export(current_user, items,
+                   download_name=f"abstracts-{scope}-{stamp}.zip",
+                   description=filters)
 
     audit.record("abstract.exported",
-                 summary=f"Exported {len(ordered)} abstracts as a LaTeX "
-                         f"bundle (status={status}, search={search or '-'}, "
-                         f"conference_id={conf_id or 'any'})")
-    stamp = datetime.utcnow().strftime("%Y%m%d")
-    scope = confs[0].slug if len(confs) == 1 else (status or "all")
-    buf.seek(0)
-    return send_file(buf, mimetype="application/zip", as_attachment=True,
-                     download_name=f"abstracts-{scope}-{stamp}.zip")
+                 summary=f"Requested {len(items)} abstracts as a LaTeX "
+                         f"bundle ({filters})")
+    flash(f"Preparing your export of {len(items)} abstract"
+          f"{'s' if len(items) != 1 else ''}. A download link will be emailed "
+          f"to {current_user.email} when it is ready.", "success")
+    return redirect(back)
+
+
+@admin_bp.route("/abstracts/exports/<token>")
+@requires_permission("abs.export")
+def abstract_export_download(token):
+    """The emailed link to a built export. Works only for whoever asked."""
+    from ...services.abstract_export import open_grant
+
+    state, grant, path = open_grant(token, current_user.id)
+    if state == "missing":
+        abort(404)
+    if state != "ok":
+        reason = ("has expired" if state == "expired"
+                  else "is no longer available")
+        flash(f"That export link {reason}. Request a new one from the filter "
+              f"below.", "error")
+        return redirect(url_for("admin.abstracts"))
+    return send_file(path, mimetype="application/zip", as_attachment=True,
+                     download_name=grant["download_name"])
 
 
 @admin_bp.route("/abstracts/<int:aid>", methods=["GET", "POST"])
@@ -1626,18 +1578,7 @@ def conference_compile_booklet(cid):
                                       has_background=bg_rel is not None)
             (sub / f"abstract_{label}.tex").write_text(frag, encoding="utf-8")
             inputs.append(f"\\input{{abstract_{label}/abstract_{label}.tex}}")
-
-            if a.figure_filename:
-                bare = a.figure_filename.split("/", 1)[-1]
-                fig_src = uploads_root / "abstracts" / bare
-                if fig_src.exists():
-                    convert_for_latex(fig_src, sub / f"figure{fig_src.suffix}")
-
-            if a.profile_picture_filename:
-                bare = a.profile_picture_filename.split("/", 1)[-1]
-                pic_src = uploads_root / "abstracts" / bare
-                if pic_src.exists():
-                    convert_for_latex(pic_src, sub / f"profile{pic_src.suffix}")
+            copy_abstract_images(a, uploads_root=uploads_root, dest_dir=sub)
 
         preamble = booklet_preamble(c, inputs, header_rel, footer_rel, bg_rel)
         (src / "booklet.tex").write_text(preamble, encoding="utf-8")

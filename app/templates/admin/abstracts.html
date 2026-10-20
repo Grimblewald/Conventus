@@ -46,7 +46,7 @@
     <input type="hidden" name="search" value="{{ search }}">
     <input type="hidden" name="conference_id" value="{{ conf_id or '' }}">
     <button class="btn btn-ghost btn-sm" type="submit"{% if not items %} disabled{% endif %}>Download selected (.zip)</button>
-    <span class="muted">A LaTeX bundle of the {{ items|length }} abstract{{ 's' if items|length != 1 else '' }} matching this filter: one folder per abstract, named by its reference, with a .tex that compiles as-is and its figures; plus a booklet file per conference and a manifest.</span>
+    <span class="muted">A LaTeX bundle of the {{ items|length }} abstract{{ 's' if items|length != 1 else '' }} matching this filter: one folder per abstract, named by its reference, with a .tex that compiles as-is and its figures; plus a booklet file per conference and a manifest. It is prepared in the background and a download link is emailed to you.</span>
   </form>
   {% endif %}
 </div>

@@ -334,6 +334,42 @@ class TestBookletCompile:
             f"three abstracts share {len(set(targets))} link target(s): "
             f"{sorted(set(t.decode() for t in targets))}")
 
+    def test_latex_zip_carries_converted_images(self, seeded, admin_client,
+                                                app, db):
+        """Each abstract's figure and profile picture land in its folder under
+        the names the fragment uses, WEBP transcoded to PNG."""
+        import io
+        import secrets
+        import zipfile
+        from pathlib import Path
+
+        from PIL import Image
+
+        tag = secrets.token_hex(4)
+        uploads = Path(app.config["UPLOAD_FOLDER"]) / "abstracts"
+        uploads.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (8, 8), "red").save(uploads / f"fig_{tag}.png", "PNG")
+        Image.new("RGB", (8, 8), "blue").save(uploads / f"pic_{tag}.webp", "WEBP")
+        with app.app_context():
+            c = Conference(slug=f"booklet-img-{tag}", title="Images",
+                           start_date=date(2027, 5, 1), end_date=date(2027, 5, 3))
+            db.session.add(c)
+            db.session.flush()
+            db.session.add(Abstract(
+                user_id=None, conference_id=c.id, status="keynote",
+                title="With images", authors="I. Mage|1|Uni", body="Body.",
+                figure_filename=f"abstracts/fig_{tag}.png",
+                profile_picture_filename=f"pic_{tag}.webp"))
+            db.session.commit()
+            cid = c.id
+
+        resp = admin_client.post(f"/admin/conferences/{cid}/compile-booklet",
+                                 data={"booklet_action": "latex"})
+        assert resp.status_code == 200, resp.data[:400]
+        names = set(zipfile.ZipFile(io.BytesIO(resp.data)).namelist())
+        assert "abstract_001/figure.png" in names
+        assert "abstract_001/profile.png" in names
+
     def test_missing_tectonic_is_reported_not_crashed(self, seeded, admin_client,
                                                       booklet_conference, app):
         import shutil

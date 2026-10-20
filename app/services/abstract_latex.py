@@ -83,6 +83,22 @@ def copy_booklet_image(conference, col_name: str, label: str, *,
     return convert_for_latex(src, dest_dir / f"{label}{src.suffix}").name
 
 
+def copy_abstract_images(abstract, *, uploads_root: Path, dest_dir: Path) -> None:
+    """Copy an abstract's figure and profile picture into a job directory as
+    `figure.<ext>` and `profile.<ext>`, the names `abstract_fragment` uses,
+    transcoding as `convert_for_latex` requires. A file gone missing from
+    disk is skipped, as the fragment then renders without it.
+    """
+    for attr, name in (("figure_filename", "figure"),
+                       ("profile_picture_filename", "profile")):
+        filename = getattr(abstract, attr, None)
+        if not filename:
+            continue
+        src = uploads_root / "abstracts" / filename.split("/", 1)[-1]
+        if src.exists():
+            convert_for_latex(src, dest_dir / f"{name}{src.suffix}")
+
+
 def booklet_preamble(conference, inputs: list[str],
                       header_rel: str | None,
                       footer_rel: str | None,
@@ -490,14 +506,7 @@ def render_abstract_pdf(abstract, *, uploads_root: Path) -> bytes:
                               has_background=bg_rel is not None),
             encoding="utf-8")
 
-        for attr, name in (("figure_filename", "figure"),
-                           ("profile_picture_filename", "profile")):
-            filename = getattr(abstract, attr, None)
-            if not filename:
-                continue
-            src = uploads_root / "abstracts" / filename.split("/", 1)[-1]
-            if src.exists():
-                convert_for_latex(src, sub / f"{name}{src.suffix}")
+        copy_abstract_images(abstract, uploads_root=uploads_root, dest_dir=sub)
 
         # No table of contents and no title page: this is the abstract, not a
         # one-entry booklet.

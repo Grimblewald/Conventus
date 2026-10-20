@@ -138,15 +138,19 @@ class Abstract(db.Model):
         return url
 
     @property
+    def author_list(self):
+        """The authors and their numbered affiliations (services.authors)."""
+        from ..services.authors import parse
+
+        return parse(self.authors, self.presenting_author_index)
+
+    @property
     def presenting_author(self) -> tuple[str, str]:
-        if not self.authors or not self.authors.strip():
+        authors = self.author_list
+        a = authors.presenting_author
+        if a is None:
             return ("", "")
-        lines = self.authors.strip().split("\n")
-        idx = max(0, min(self.presenting_author_index or 0, len(lines) - 1))
-        parts = lines[idx].split("|")
-        name = parts[0].strip() if parts else ""
-        affil = parts[2].strip() if len(parts) > 2 else ""
-        return (name, affil)
+        return (a.name, "; ".join(authors.affiliations_of(a)))
 
     @property
     def bio_paragraphs(self) -> list[str]:

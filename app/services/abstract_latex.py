@@ -255,22 +255,16 @@ def abstract_fragment(label: str, abstract,
             return ".png" if ext in {".webp", ".tif", ".tiff"} else ext
         return ext
 
-    presenting_idx = abstract.presenting_author_index or 0
-    author_line, affil_line = parse_authors(abstract.authors, presenting_idx)
+    authors = abstract.author_list
+    author_line, affil_line = latex_authors(authors)
 
     lines: list[str] = []
 
     # Build TOC text: title + first author et al.
     toc_text = title
-    first_author = ""
-    if abstract.authors:
-        first_line = abstract.authors.strip().split("\n")[0]
-        first_name = first_line.split("|")[0].strip()
-        if first_name:
-            first_author = _latex_escape(first_name)
-    if first_author:
-        total = len([ln for ln in abstract.authors.strip().split("\n") if ln.strip()])
-        if total > 1:
+    if authors.authors:
+        first_author = _latex_escape(authors.authors[0].name)
+        if len(authors.authors) > 1:
             toc_text = f"{title} --- {first_author} \\textit{{et al.}}"
         else:
             toc_text = f"{title} --- {first_author}"
@@ -406,56 +400,24 @@ def abstract_fragment(label: str, abstract,
     return "\n".join(lines)
 
 
-def parse_authors(raw: str, presenting_idx: int = 0) -> tuple[str, str]:
-    """Parse pipe-delimited author rows into LaTeX-formatted lines.
+def latex_authors(authors) -> tuple[str, str]:
+    """An AuthorList (services.authors) as LaTeX: ``(author_line, affil_line)``.
 
-    Returns ``(author_line, affil_line)``.  Author names carry
-    ``\\textsuperscript{…}`` affiliation markers.  The presenting author
-    (by index) is wrapped in ``\\underline{…}``.
+    Author names carry ``\\textsuperscript{…}`` affiliation markers, "1,2"
+    for an author with several. The presenting author is wrapped in
+    ``\\underline{…}``.
     """
-    if not raw or not raw.strip():
-        return ("", "")
-
-    authors: list[tuple[str, str, str]] = []
-    affil_map: dict[str, str] = {}
-    seen_affils: set[str] = set()
-
-    for line in raw.strip().split("\n"):
-        line = line.strip()
-        if not line:
-            continue
-        parts = line.split("|")
-        name = parts[0].strip() if len(parts) > 0 else ""
-        idx = parts[1].strip() if len(parts) > 1 else ""
-        affil = parts[2].strip() if len(parts) > 2 else ""
-        if name:
-            authors.append((name, idx, affil))
-            if idx and affil and affil not in seen_affils:
-                seen_affils.add(affil)
-                affil_map[idx] = affil
-
-    if not authors:
-        return ("", "")
-
-    author_names: list[str] = []
-    for i, (name, idx, _affil) in enumerate(authors):
-        name_esc = _latex_escape(name)
-        if idx:
-            tag = f"{name_esc}\\textsuperscript{{{idx}}}"
-        else:
-            tag = name_esc
-        if i == presenting_idx:
+    names: list[str] = []
+    for i, a in enumerate(authors.authors):
+        tag = _latex_escape(a.name)
+        if a.affiliations:
+            tag += f"\\textsuperscript{{{','.join(map(str, a.affiliations))}}}"
+        if i == authors.presenting:
             tag = f"\\underline{{{tag}}}"
-        author_names.append(tag)
-    author_line = ", ".join(author_names)
-
-    affil_parts: list[str] = []
-    for idx in sorted(affil_map.keys(), key=int):
-        affil_esc = _latex_escape(affil_map[idx])
-        affil_parts.append(f"\\textsuperscript{{{idx}}}{affil_esc}")
-    affil_line = "\\quad ".join(affil_parts)
-
-    return (author_line, affil_line)
+        names.append(tag)
+    affils = [f"\\textsuperscript{{{i}}}{_latex_escape(text)}"
+              for i, text in enumerate(authors.affiliations, 1)]
+    return (", ".join(names), "\\quad ".join(affils))
 
 
 # ---------------------------------------------------------------------------

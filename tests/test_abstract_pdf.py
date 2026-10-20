@@ -200,6 +200,7 @@ class TestFigureSizing:
         # References reach the renderer through the model's resolving accessor.
         # Borrowed rather than reimplemented, so the stub cannot drift from it.
         a.resolved_references = Abstract.resolved_references.fget(a)
+        a.author_list = Abstract.author_list.fget(a)
         return abstract_fragment("001", a)
 
     def test_the_height_comes_from_the_space_left_on_the_page(self):

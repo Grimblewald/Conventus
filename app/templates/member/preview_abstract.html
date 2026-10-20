@@ -57,37 +57,21 @@
     <h1 style="text-align:center; margin-bottom:8px;">{{ a.title }}</h1>
 
     <!-- Authors (centred, presenting underlined) -->
-    {% set author_lines = a.authors.strip().split('\n') %}
+    {% set al = a.author_list %}
     <p style="text-align:center; font-size:1.05rem; margin-bottom:4px;">
-      {% set author_lines = a.authors.strip().split('\n') %}
-      {% for line in author_lines %}
-        {% set parts = line.split('|') %}
-        {% set name = parts[0].strip() if parts else '' %}
-        {% set idx = parts[1].strip() if parts|length > 1 else '' %}
-        {% set affil = parts[2].strip() if parts|length > 2 else '' %}
-        {% if name %}
-          {% if loop.index0 == (a.presenting_author_index or 0) %}<strong><u>{% endif %}
-          {{ name }}{% if idx %}<sup>{{ idx }}</sup>{% endif %}
-          {% if loop.index0 == (a.presenting_author_index or 0) %}</u></strong>{% endif %}
-          {% if not loop.last %}, {% endif %}
-        {% endif %}
+      {% for author in al.authors %}
+        {% if loop.index0 == al.presenting %}<strong><u>{% endif %}
+        {{ author.name }}{% if author.affiliations %}<sup>{{ author.affiliations|join(',') }}</sup>{% endif %}
+        {% if loop.index0 == al.presenting %}</u></strong>{% endif %}
+        {% if not loop.last %}, {% endif %}
       {% endfor %}
     </p>
 
     <!-- Affiliations (centred, italic, superscript) -->
-    {% set affil_map = {} %}
-    {% for line in author_lines %}
-      {% set parts = line.split('|') %}
-      {% set idx = parts[1].strip() if parts|length > 1 else '' %}
-      {% set affil = parts[2].strip() if parts|length > 2 else '' %}
-      {% if idx and affil and idx not in affil_map %}
-        {% set _ = affil_map.update({idx: affil}) %}
-      {% endif %}
-    {% endfor %}
-    {% if affil_map %}
+    {% if al.affiliations %}
     <p style="text-align:center; font-size:0.92rem; font-style:italic; margin-bottom:4px;">
-      {% for idx in affil_map.keys()|sort %}
-        <sup>{{ idx }}</sup>{{ affil_map[idx] }}
+      {% for affil in al.affiliations %}
+        <sup>{{ loop.index }}</sup>{{ affil }}
         {% if not loop.last %}&emsp;{% endif %}
       {% endfor %}
     </p>

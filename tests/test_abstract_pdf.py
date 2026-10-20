@@ -194,7 +194,8 @@ class TestFigureSizing:
         a = SimpleNamespace(
             title="A title", authors="Jane Doe|1|Uni", body="Some body text.",
             custom_data={}, references=None, figure_filename="fig.png",
-            profile_picture_filename=None, presenting_author_index=0)
+            profile_picture_filename=None, presenting_author_index=0,
+            author_data=None)
         for k, v in overrides.items():
             setattr(a, k, v)
         # References reach the renderer through the model's resolving accessor.

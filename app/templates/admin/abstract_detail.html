@@ -40,7 +40,7 @@
 </dl>
 <h3>Authors</h3>
 <p>
-  {{ a.authors | fmt_authors }}
+  {{ a.author_list | fmt_authors }}
   {% set pa = a.presenting_author %}
   {% if pa[0] %}
     <br><small class="muted">Presenting author: <strong>{{ pa[0] }}</strong>{% if pa[1] %}, {{ pa[1] }}{% endif %}</small>

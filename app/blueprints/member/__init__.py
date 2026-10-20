@@ -29,6 +29,7 @@ from ...services.payments import (
     initiate_payment, payments_open_to_members, send_payment_email,
     send_registration_confirmation,
 )
+from ...services.authors import from_form as authors_from_form, to_legacy
 from ...services.uploads import UploadError, remove_upload, save_figure, save_image
 from ...services.form_renderer import validate_form
 from ...services.citations import (fetch_metadata, format_reference, is_doi,
@@ -486,7 +487,8 @@ def submit_abstract(slug):
         is_draft = action in ("draft", "preview")
 
         title = (request.form.get("title") or "").strip()
-        authors = (request.form.get("authors") or "").strip()
+        author_list, author_errors = authors_from_form(request.form)
+        authors = to_legacy(author_list) if author_list else ""
         body = (request.form.get("body") or "").strip()
         track = (request.form.get("track") or "").strip()
         ptype = (request.form.get("presentation_type") or "Either").strip()
@@ -523,14 +525,7 @@ def submit_abstract(slug):
                 ref_keys.add(key)
                 seen_dois.add(doi)
 
-        presenting_author_index = 0
-        try:
-            presenting_author_index = int(
-                request.form.get("presenting_author_index", "0") or "0")
-        except ValueError:
-            pass
-
-        errors: list[str] = list(errors_early)
+        errors: list[str] = list(errors_early) + author_errors
 
         if not is_draft:
             errors.extend(submission_errors(
@@ -582,7 +577,7 @@ def submit_abstract(slug):
             a = Abstract(user_id=current_user.id, conference_id=c.id)
         revision = a.status == "submitted"
         a.title = title
-        a.authors = authors
+        a.set_authors(author_list)
         a.body = body
         a.track = track
         a.presentation_type = ptype
@@ -590,7 +585,6 @@ def submit_abstract(slug):
         a.coi = coi
         a.website_url = website_url
         a.custom_data = custom_data if custom_data else None
-        a.presenting_author_index = presenting_author_index
         a.references = references if references else None
         if not is_draft:
             a.status = "submitted"
@@ -698,16 +692,15 @@ def submit_abstract(slug):
     # GET — pre-fill form for editing
     form_data: dict = {}
     if draft:
+        # Authors are not here: the author editor reads them from the draft.
         form_data = {
             "title": draft.title,
-            "authors": draft.authors,
             "body": draft.body,
             "track": draft.track,
             "presentation_type": draft.presentation_type,
             "keywords": draft.keywords,
             "coi": draft.coi,
             "website_url": draft.website_url,
-            "presenting_author_index": draft.presenting_author_index,
             **{k: v for k, v in (draft.custom_data or {}).items()},
         }
 

@@ -45,18 +45,8 @@ comes from the authors field below.</p>
     <input class="input" id="title" name="title" required value="{{ a.title if a else '' }}">
   </div>
 
-  <div class="field">
-    <label for="authors">Authors <span class="req">*</span></label>
-    <textarea class="input" id="authors" name="authors" rows="4" required
-              placeholder="Jane Doe|1|Example University">{{ a.authors if a else '' }}</textarea>
-    <div class="help">One author per line: <code>Name|affiliation number|Affiliation</code>. Repeat the same number for shared affiliations.</div>
-  </div>
-
-  <div class="field">
-    <label for="presenting_author_index">Presenting author (line number, first line = 0)</label>
-    <input class="input" id="presenting_author_index" name="presenting_author_index"
-           type="number" min="0" value="{{ a.presenting_author_index or 0 if a else 0 }}" style="max-width:120px;">
-  </div>
+  {% set author_initial = author_editor_initial(request.form.get('author_data'), a) %}
+  {% include "_author_editor.html" %}
 
   <div class="field">
     <label for="track">Track</label>
@@ -149,4 +139,8 @@ comes from the authors field below.</p>
     <a class="btn btn-ghost" href="{{ url_for('admin.abstract_detail', aid=a.id) if a and a.id else url_for('admin.abstracts') }}">Cancel</a>
   </div>
 </form>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ static_url('js/author-editor.js') }}"></script>
 {% endblock %}

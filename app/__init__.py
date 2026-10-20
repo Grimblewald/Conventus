@@ -361,10 +361,10 @@ def _register_template_globals(app: Flask) -> None:
         return render(text or "")
 
     @app.template_filter("fmt_authors")
-    def format_authors(text: str) -> str:
-        """Render pipe-delimited author rows as HTML."""
-        from .services.authors import parse, to_html
-        return to_html(parse(text))
+    def format_authors(authors) -> str:
+        """Authors as HTML: an AuthorList, or stored pipe-delimited text."""
+        from .services.authors import AuthorList, parse, to_html
+        return to_html(authors if isinstance(authors, AuthorList) else parse(authors))
 
     from .services.jinja_filters import target_url, format_amount
     app.add_template_filter(target_url, "target_url")
@@ -372,6 +372,9 @@ def _register_template_globals(app: Flask) -> None:
 
     from .models.abstract import status_label
     app.add_template_filter(status_label, "status_label")
+
+    from .services.authors import editor_initial
+    app.jinja_env.globals["author_editor_initial"] = editor_initial
 
     # The link-target picker's two halves: `split_target` turns a stored
     # target into (dropdown value, URL box value), and the sentinel tells the

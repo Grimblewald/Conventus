@@ -88,6 +88,7 @@ def test_fresh_database_upgrades_to_head(db_path):
     assert "speaker_bio" in _table_columns(db_path, "abstracts")
     assert "abstract_receipt_email" in _table_columns(db_path, "conferences")
     assert "speaker_visibility" in _table_columns(db_path, "conferences")
+    assert "author_data" in _table_columns(db_path, "abstracts")
 
 
 def test_create_all_bootstrapped_database_upgrades_from_the_baseline(db_path):
@@ -264,3 +265,50 @@ with app.app_context():
     finally:
         conn.close()
     assert rows == {"accepted": "accepted_oral", "plenary": "plenary"}
+
+
+def test_author_text_is_backfilled_into_structure(db_path):
+    """The 4ff2950cc305 data migration, including the hand-typed shape that
+    crashed rendering: "1,2" with the two affiliations joined by ";"."""
+    import json
+    import sqlite3
+
+    seed = _run([sys.executable, "-c", """
+from datetime import date
+from app import create_app
+from app.extensions import db
+from app.models import Abstract, Conference
+app = create_app()
+with app.app_context():
+    db.create_all()
+    c = Conference(slug='c', title='C', start_date=date(2026, 9, 1),
+                   end_date=date(2026, 9, 3))
+    db.session.add(c)
+    db.session.flush()
+    db.session.add(Abstract(conference_id=c.id, status='submitted', title='multi',
+                            body='B', presenting_author_index=1,
+                            authors='Jane Doe|1|Uni A\\nJohn Roe|1,2|Uni A; Uni B'))
+    db.session.add(Abstract(conference_id=c.id, status='submitted', title='done',
+                            body='B', authors='Old|1|Old',
+                            author_data={'affiliations': ['Kept'], 'presenting': 0,
+                                         'authors': [{'name': 'Kept', 'affiliations': [1]}]}))
+    db.session.commit()
+"""], db_path)
+    assert seed.returncode == 0, f"stdout={seed.stdout}\nstderr={seed.stderr}"
+
+    assert _flask_db(db_path, "stamp", BASELINE).returncode == 0
+    up = _flask_db(db_path, "upgrade")
+    assert up.returncode == 0, f"stdout={up.stdout}\nstderr={up.stderr}"
+
+    conn = sqlite3.connect(str(db_path))
+    try:
+        rows = {t: json.loads(d) for t, d in
+                conn.execute("SELECT title, author_data FROM abstracts")}
+    finally:
+        conn.close()
+    assert rows["multi"] == {
+        "affiliations": ["Uni A", "Uni B"], "presenting": 1,
+        "authors": [{"name": "Jane Doe", "affiliations": [1]},
+                    {"name": "John Roe", "affiliations": [1, 2]}]}
+    # Rows that already carry structure are left as they are.
+    assert rows["done"]["authors"] == [{"name": "Kept", "affiliations": [1]}]

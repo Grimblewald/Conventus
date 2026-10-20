@@ -858,8 +858,13 @@ def abstract_detail(aid):
 def _apply_abstract_form(a: Abstract) -> list[str]:
     """Copy the posted edit form onto `a`. Returns validation errors."""
     errors: list[str] = []
+    from ...services.authors import from_form as authors_from_form
+
     a.title = (request.form.get("title") or "").strip()
-    a.authors = (request.form.get("authors") or "").strip()
+    author_list, author_errors = authors_from_form(request.form)
+    errors.extend(author_errors)
+    if author_list:
+        a.set_authors(author_list)
     a.body = (request.form.get("body") or "").strip()
     a.track = (request.form.get("track") or "").strip()
     a.presentation_type = (request.form.get("presentation_type") or "Either").strip()
@@ -882,12 +887,6 @@ def _apply_abstract_form(a: Abstract) -> list[str]:
             a.status = status
         else:
             errors.append(f"Unknown status '{status}'.")
-
-    try:
-        a.presenting_author_index = int(
-            request.form.get("presenting_author_index", "0") or "0")
-    except ValueError:
-        a.presenting_author_index = 0
 
     # References — one DOI (or doi.org URL) per line
     refs: list[dict] = []

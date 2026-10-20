@@ -1,0 +1,21 @@
+{# Authors and affiliations, shared by the member submission form and the admin
+   abstract editor. Needs js/author-editor.js. Posts one field, author_data,
+   which services.authors.clean validates. Expects `author_initial` from
+   author_editor_initial(). #}
+<fieldset class="toggle-fieldset" data-author-editor>
+  <legend>Authors &amp; Affiliations</legend>
+  <noscript><p class="help" style="color:var(--c-accent);">Entering authors needs JavaScript.</p></noscript>
+
+  <h4 style="margin:4px 0 2px;">Affiliations</h4>
+  <p class="help">Add each affiliation once: institution, city and country. They are numbered in the order listed.</p>
+  <ol data-affil-list style="padding-left:0; list-style:none; margin:8px 0;"></ol>
+  <button type="button" class="btn btn-ghost btn-sm" data-add-affil>+ Add affiliation</button>
+
+  <h4 style="margin:18px 0 2px;">Authors</h4>
+  <p class="help">Tick every affiliation each author belongs to, and choose who presents. The presenting author is underlined in the programme.</p>
+  <div data-author-list style="margin:8px 0;"></div>
+  <button type="button" class="btn btn-ghost btn-sm" data-add-author>+ Add author</button>
+
+  <input type="hidden" name="author_data" data-author-output>
+  <script type="application/json" data-author-initial>{{ author_initial | tojson }}</script>
+</fieldset>

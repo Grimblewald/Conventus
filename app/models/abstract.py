@@ -50,6 +50,10 @@ class Abstract(db.Model):
     keywords = db.Column(db.String(300), default="")
     coi = db.Column(db.Text, default="")
     custom_data = db.Column(db.JSON, default=None)
+    # Authors and affiliations as validated structure (services.authors).
+    # `authors` and `presenting_author_index` are written alongside it by
+    # set_authors and kept for text search and older readers.
+    author_data = db.Column(db.JSON, default=None)
     presenting_author_index = db.Column(db.Integer, default=0)
     references = db.Column(db.JSON, default=None)
 
@@ -139,10 +143,25 @@ class Abstract(db.Model):
 
     @property
     def author_list(self):
-        """The authors and their numbered affiliations (services.authors)."""
-        from ..services.authors import parse
+        """The authors and their numbered affiliations (services.authors).
 
+        From the stored structure; an abstract saved before there was one is
+        read from its text.
+        """
+        from ..services.authors import from_data, parse
+
+        if self.author_data:
+            return from_data(self.author_data)
         return parse(self.authors, self.presenting_author_index)
+
+    def set_authors(self, authors) -> None:
+        """The one way to change an abstract's authors, so the structure and
+        the text kept beside it cannot disagree."""
+        from ..services.authors import to_data, to_legacy
+
+        self.author_data = to_data(authors)
+        self.authors = to_legacy(authors)
+        self.presenting_author_index = authors.presenting
 
     @property
     def presenting_author(self) -> tuple[str, str]:

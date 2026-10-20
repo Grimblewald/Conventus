@@ -18,32 +18,8 @@
         <input class="input" id="title" name="title" required value="{{ form.title or '' }}" placeholder="15 words or fewer">
       </div>
 
-      <!-- Authors + Affiliations — dynamic rows -->
-      <fieldset class="toggle-fieldset">
-        <legend>Authors &amp; Affiliations</legend>
-        <p class="help">Enter each author with their affiliation. Affiliations should include institution, city and country. The presenting author will be underlined in the final program.</p>
-        <div id="author-rows"></div>
-        <div class="field" style="margin-top:8px;">
-          <label for="presenting-author-select">Presenting author</label>
-          <select class="select" id="presenting-author-select" name="presenting_author_index">
-            <option value="">— select —</option>
-          </select>
-        </div>
-        <button type="button" class="btn btn-ghost btn-sm" id="add-author-btn" style="margin-top:8px;">+ Add another author</button>
-        <input type="hidden" name="authors" id="authors-hidden">
-      </fieldset>
-
-      <template id="author-row-tmpl">
-        <div class="author-row" style="display:flex; gap:8px; align-items:start; margin-bottom:8px; flex-wrap:wrap;">
-          <input class="input input-sm" data-author-name value="" placeholder="Full name" style="flex:2; min-width:160px;">
-          <select class="select select-sm" data-author-affil style="flex:2; min-width:160px;">
-            <option value="">— Affiliation —</option>
-            <option value="__new__">+ Add new…</option>
-          </select>
-          <input class="input input-sm" data-author-affil-new value="" placeholder="New affiliation" style="display:none; flex:2; min-width:160px;">
-          <button type="button" class="btn btn-quiet btn-sm js-remove-author" title="Remove author" style="flex:0 0 auto;">×</button>
-        </div>
-      </template>
+      {% set author_initial = author_editor_initial(form.get('author_data'), draft) %}
+      {% include "_author_editor.html" %}
 
       <!-- Custom fields from abstract schema (career stage, presentation pref, etc.) -->
       {% if abstract_schema and abstract_schema.sections %}
@@ -206,9 +182,6 @@
         <button class="btn btn-primary" type="submit" id="btn-submit">
           {% if already_submitted %}Save changes{% else %}Submit abstract{% endif %}</button>
       </div>
-      {% if form.authors %}
-      <script type="application/json" id="authors-data">{{ form.authors | tojson }}</script>
-      {% endif %}
       {% if draft and draft.references %}
       <script type="application/json" id="references-data">{{ draft.references | tojson }}</script>
       {% endif %}
@@ -250,6 +223,7 @@
 
 {% block scripts %}
 <script src="{{ static_url('js/member/conditional.js') }}"></script>
+<script src="{{ static_url('js/author-editor.js') }}"></script>
 <script src="{{ static_url('js/member/abstract.js') }}"></script>
 <script src="{{ static_url('js/image-dimensions.js') }}"></script>
 {% endblock %}

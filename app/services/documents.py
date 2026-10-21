@@ -205,6 +205,7 @@ def assemble_tex(kind: str, tpl, vars_: dict, *, has_logo: bool = False,
         "flag_receipt": _flag("isreceipt", kind == "receipt"),
         "flag_adjustment": _flag("isadjustment", kind == "adjustment"),
         "flag_invoice": _flag("isinvoice", kind == "invoice"),
+        "flag_replaces": _flag("replaces", bool(v.get("replaces_note"))),
         "logo_file": RawLatex(logo_name),
         "signature_file": RawLatex(signature_name),
         # RawLatex-aware like every other value: the invoice title comes from
@@ -242,6 +243,7 @@ def assemble_tex(kind: str, tpl, vars_: dict, *, has_logo: bool = False,
         "gst_rate": esc("gst_rate") if v.get("gst_rate") else "10",
         "payment_instructions": esc("payment_instructions"),
         "payment_link": esc("payment_link"),
+        "replaces_note": esc("replaces_note"),
         "pdf_body": body_tex,
     }
 

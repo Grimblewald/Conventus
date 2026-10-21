@@ -36,3 +36,11 @@ class IssuedDocument(db.Model):
     content_hash = db.Column(db.String(64), default="")
     issued_at = db.Column(db.DateTime, default=datetime.utcnow,
                           nullable=False, index=True)
+    # A corrected document points at the one it replaces, which stays on file:
+    # nothing here is ever edited, so every version that was sent can be shown.
+    replaces_id = db.Column(db.Integer, db.ForeignKey("issued_documents.id"),
+                            nullable=True, index=True)
+    reason = db.Column(db.Text, default="")
+
+    replaces = db.relationship("IssuedDocument", remote_side=[id],
+                               backref="replaced_by")

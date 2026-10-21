@@ -598,7 +598,8 @@ def _safe_ref(reference: str) -> str:
 
 
 def _record_issued(kind: str, vars_: dict, *, reference: str, recipient: str,
-                   amount_cents: int | None) -> None:
+                   amount_cents: int | None, replaces_id: int | None = None,
+                   reason: str = ""):
     """Append an IssuedDocument snapshot for a real send that just attached a
     PDF (plan §12, ATO 5-year retention). Captures the EXACT resolved variables
     and the render-affecting template fields used, so `regenerate_document` can
@@ -615,7 +616,7 @@ def _record_issued(kind: str, vars_: dict, *, reference: str, recipient: str,
         # travels in vars_ (resolved from the financial identity at send
         # time), so the variable snapshot alone pins the tax treatment.
         template_json = json.dumps({"pdf_body": tpl.pdf_body or ""})
-        db.session.add(IssuedDocument(
+        row = IssuedDocument(
             kind=kind,
             reference=reference or "",
             recipient=recipient or "",
@@ -623,14 +624,19 @@ def _record_issued(kind: str, vars_: dict, *, reference: str, recipient: str,
             vars_json=json.dumps({k: str(v) for k, v in vars_.items()}),
             template_json=template_json,
             content_hash=tpl.content_hash,
-        ))
+            replaces_id=replaces_id,
+            reason=reason,
+        )
+        db.session.add(row)
         db.session.commit()
+        return row
     except Exception:
         log.exception("Failed to record issued document (%s / %s)", kind, reference)
         try:
             db.session.rollback()
         except Exception:
             pass
+        return None
 
 
 def _send_rendered(kind: str, vars_: dict, to: str, subject_prefix: str = "",
@@ -662,6 +668,106 @@ def _send_rendered(kind: str, vars_: dict, to: str, subject_prefix: str = "",
         cc=cc,
         attachments=[attachment] if attachment else None,
     )
+
+
+# ---------------------------------------------------------------------------
+# Corrections: a sent receipt reissued under the settings as they stand.
+# ---------------------------------------------------------------------------
+
+class AlreadyReplaced(Exception):
+    """The document has been reissued since it was chosen; only the newest
+    version of a document is ever corrected, so nothing was sent."""
+
+
+def current_document(issued):
+    """The newest document of the same kind for the same payment."""
+    from ..models import IssuedDocument
+
+    return (IssuedDocument.query
+            .filter_by(kind=issued.kind, reference=issued.reference)
+            .order_by(IssuedDocument.issued_at.desc(), IssuedDocument.id.desc())
+            .first())
+
+
+def _registration_of(old_vars: dict):
+    raw = str(old_vars.get("registration_id") or "")
+    return Registration.query.get(int(raw)) if raw.isdigit() else None
+
+
+def reissue_vars(issued) -> dict:
+    """The variables for a corrected copy of *issued*.
+
+    What happened is kept from the original: the amount, the payment date, the
+    references and what it was for. How it is taxed and who issued it come
+    from the financial identity as it stands, and who it is billed to from the
+    registration as it stands — those are what a correction corrects.
+    """
+    import json
+
+    from .jinja_filters import parse_cents
+
+    old = json.loads(issued.vars_json or "{}")
+    amount = issued.amount if issued.amount is not None else parse_cents(
+        old.get("amount") or "0")
+    vars_ = {**old, **_business_vars(amount)}
+    # _business_vars blanks the per-recipient fields; a manual invoice's
+    # receipt has no registration to take them from, so they carry over.
+    for key in ("recipient_abn", "recipient_address", "due_date"):
+        vars_[key] = old.get(key, "")
+    reg = _registration_of(old)
+    if reg is not None and reg.user is not None:
+        vars_["user_name"] = reg.user.full_name or reg.user.email
+        vars_["user_email"] = reg.user.email
+        vars_["recipient_address"] = billing_address(
+            reg.conference.registration_form_schema, reg.custom_data)
+    vars_["amount"] = format_amount(amount)
+    vars_["replaces_note"] = (f"Replaces the {_DOC_NAMES.get(issued.kind, 'document')} "
+                              f"issued {issued.issued_at:%-d %B %Y}.")
+    return _finalise_issuer_text(vars_)
+
+
+def reissue_document(issued, *, reason: str):
+    """Email a corrected copy of *issued* and file it as its replacement.
+
+    Only the newest version of a document can be corrected, so a second click,
+    or a run that overlaps another, sends nothing (AlreadyReplaced). Returns
+    the new IssuedDocument, or None when the mail could not be sent, in which
+    case nothing is recorded and the original stays current. RenderError
+    propagates for the caller to report.
+    """
+    current = current_document(issued)
+    if current is None or current.id != issued.id:
+        raise AlreadyReplaced(issued.id)
+
+    vars_ = reissue_vars(issued)
+    to = vars_.get("user_email") or issued.recipient
+    doc_name = _DOC_NAMES.get(issued.kind, "document")
+    attachment = _render_attachment(issued.kind, vars_,
+                                    vars_.get("transaction_id") or issued.reference)
+    body = (f"Dear {vars_.get('user_name') or to},\n\n"
+            f"Please find attached a corrected {doc_name} "
+            f"{vars_.get('transaction_id') or issued.reference}. It replaces the "
+            f"{doc_name} sent on {issued.issued_at:%-d %B %Y}, which should no "
+            f"longer be used.\n\n{reason.strip()}\n\n"
+            f"{vars_.get('business_legal_name') or ''}")
+    ok = _send_rendered(issued.kind, vars_, to=to,
+                        subject_override=f"Corrected {doc_name} "
+                                         f"{vars_.get('transaction_id') or issued.reference}",
+                        body_override=body, attachment=attachment)
+    if not ok:
+        return None
+
+    new = _record_issued(issued.kind, vars_, reference=issued.reference,
+                         recipient=to, amount_cents=issued.amount,
+                         replaces_id=issued.id, reason=reason.strip())
+    reg = _registration_of(vars_)
+    record_payment_event(
+        merchant_reference=issued.reference,
+        registration_id=reg.id if reg else None,
+        event_type="document.reissued",
+        amount=issued.amount,
+        note=f"{doc_name} reissued to {to}: {reason.strip()}"[:400])
+    return new
 
 
 # ---------------------------------------------------------------------------

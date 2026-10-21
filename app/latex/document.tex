@@ -14,7 +14,7 @@
 %     flag_recipient_address, flag_due_date, flag_business_number,
 %     flag_business_address, flag_contact_email, flag_signatory,
 %     flag_payment_instructions, flag_payment_link, flag_pdf_body,
-%     flag_invoice, flag_receipt, flag_adjustment
+%     flag_invoice, flag_receipt, flag_adjustment, flag_replaces
 %   Asset filenames — raw basenames of files copied into the job dir:
 %     logo_file, signature_file
 %   Text values — LaTeX-escaped (unless RawLatex):
@@ -24,7 +24,7 @@
 %     conference_title, conference_dates, tier_name, transaction_id,
 %     registration_id, payment_date, due_date, currency_symbol, currency_code,
 %     amount, gst_amount, amount_ex_gst, gst_rate, payment_instructions,
-%     payment_link, pdf_body
+%     payment_link, pdf_body, replaces_note
 %
 % Packages are limited to those verified warm in the tectonic cache:
 % geometry, fontenc, helvet, graphicx, array, tabularx, xcolor.
@@ -59,6 +59,7 @@
 \newif\ifisinvoice  @@flag_invoice@@
 \newif\ifisreceipt  @@flag_receipt@@
 \newif\ifisadjustment @@flag_adjustment@@
+\newif\ifreplaces   @@flag_replaces@@
 
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{5pt}
@@ -102,6 +103,8 @@
   {\bfseries\numberlabel:} \mbox{@@transaction_id@@}\\
   {\bfseries\datelabel:} @@payment_date@@%
   \ifisinvoice\ifduedate\\{\bfseries Due Date:} @@due_date@@\fi\fi
+  % A corrected document says so, and which one it corrects.
+  \ifreplaces\\[4pt]{\small\color{muted}@@replaces_note@@}\fi
 \end{minipage}\hfill
 \begin{minipage}[t]{0.50\linewidth}
   \vspace{0pt}

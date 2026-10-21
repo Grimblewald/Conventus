@@ -13,6 +13,26 @@
   against the full page and abstracts may run over pages, so a large figure
   is never squashed into the space left on one. Gated on the `abs.export`
   permission, which until now existed in the catalogue but guarded nothing.
+  The zip is built in the background and the requester is emailed a link that
+  only they can use, signed in, for 48 hours; an unchanged selection is never
+  built twice. Building in the request held a worker for as long as the
+  citation lookups and image conversion took — half a minute for a full
+  conference.
+- **A billing address prints on invoices and receipts.** A new form-builder
+  field type, `billing-address`, placed in a conference's registration form
+  (beside Payment method, say) renders as a text box noting that it appears on
+  invoices and receipts. Registration invoices, receipts and adjustment notes
+  print it as the recipient's address. A manual invoice's receipt now bills the
+  name, ABN and address the invoice was issued to, instead of printing the
+  recipient's email as their name and dropping the address.
+- **Authors and affiliations are entered as a list, not typed as text.** The
+  member submission form and the admin abstract editor share one editor: a
+  numbered list of affiliations, then each author with a ticked box per
+  affiliation they belong to and a choice of presenter. Several affiliations
+  per author are supported throughout — pages, PDFs, booklet, export.
+  Validated on the server, with messages that say which row to fix.
+  **MIGRATION:** adds `abstracts.author_data` and fills it from the existing
+  author text.
 - **Accepted abstracts are accepted as oral or as poster.** The single
   "accepted" decision is replaced by **Accepted (oral)** and **Accepted
   (poster)**, on the decision form, the admin filter, and the review page's
@@ -72,6 +92,25 @@
   about the toolchain opt back in with a `real_latex` marker. 227s to 92s.
 
 ### Fixed
+- **Restoring a backup restores it.** The restore moved the archive's database
+  over the live one and left the old write-ahead log beside it, which SQLite
+  replayed on the next open — the restore came back as the database it
+  replaced. The database is now written through SQLite's backup API.
+- **Backups carry the document logo and signature.** They live outside the
+  uploads folder so they are never served on the web, which also kept them out
+  of every backup; a restored site issued documents with neither.
+- **Speaker portraits load.** The default rate limit counts per route, and a
+  conference page asks for every portrait from the same one, so a single visit
+  to a page with 34 speakers broke four of them and a reload broke most. Served
+  uploads are no longer rate limited; pages and forms still are.
+- **An author with two affiliations no longer breaks the abstract.** Typed as
+  "1,2", it raised while rendering, taking out that abstract's PDF, the booklet,
+  the export, and the admin and review pages that list its authors.
+- **Author names are escaped where they are listed.** Names and affiliations
+  went into the page unescaped on the public abstract page, the admin abstract
+  page and the review form, so markup in a name rendered as markup.
+- **Assigning an overflow reviewer to the wrong conference answers 404**
+  rather than failing with a server error.
 - **A DOI pasted the way journals print it no longer breaks the abstract.**
   Reference lists write "DOI: 10.1126/…", so that is what an author copies —
   and the label went into the Crossref request untouched, where the space in it

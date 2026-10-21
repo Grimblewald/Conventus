@@ -25,6 +25,18 @@
   print it as the recipient's address. A manual invoice's receipt now bills the
   name, ABN and address the invoice was issued to, instead of printing the
   recipient's email as their name and dropping the address.
+- **Receipts sent with wrong settings can be reissued.** Financial → Reissue
+  Receipts lists the current version of each sent receipt and adjustment
+  note — filtered by date and by whether it shows GST — previews the
+  corrected PDF, and after an emailed confirmation code sends each recipient
+  a corrected copy with a note. A correction keeps the amount, payment date
+  and references, takes GST and issuer details from Financial Identity as it
+  stands and the bill-to from the registration as it stands, and says which
+  receipt it replaces. Nothing is overwritten: every version is listed on the
+  member's dashboard and the admin registration page, and each downloads as
+  sent. A paid registrant who changes their billing address gets their
+  receipt reissued automatically, at most once a day. **MIGRATION:** adds
+  `issued_documents.replaces_id` and `reason`.
 - **Authors and affiliations are entered as a list, not typed as text.** The
   member submission form and the admin abstract editor share one editor: a
   numbered list of affiliations, then each author with a ticked box per

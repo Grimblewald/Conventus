@@ -674,6 +674,27 @@ def _send_rendered(kind: str, vars_: dict, to: str, subject_prefix: str = "",
 # Corrections: a sent receipt reissued under the settings as they stand.
 # ---------------------------------------------------------------------------
 
+def registration_documents(reg) -> list:
+    """Every receipt and adjustment note sent for *reg*, newest first, every
+    version kept — what the dashboard and the admin page list.
+
+    A registration's documents are filed under the merchant reference of the
+    payment they belong to, and each checkout attempt mints a new one, so all
+    of its references are searched.
+    """
+    from ..models import IssuedDocument
+
+    refs = {e.merchant_reference for e in
+            PaymentEvent.query.filter(PaymentEvent.registration_id == reg.id)
+            if e.merchant_reference}
+    refs |= {f"reg_{reg.id}", reg.reference}
+    return (IssuedDocument.query
+            .filter(IssuedDocument.reference.in_(refs),
+                    IssuedDocument.kind.in_(("receipt", "adjustment")))
+            .order_by(IssuedDocument.issued_at.desc(), IssuedDocument.id.desc())
+            .all())
+
+
 class AlreadyReplaced(Exception):
     """The document has been reissued since it was chosen; only the newest
     version of a document is ever corrected, so nothing was sent."""

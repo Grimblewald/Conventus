@@ -69,8 +69,11 @@ def dashboard():
         .order_by(ReviewAssignment.created_at.desc())
         .all()
     )
+    from ...services.invoice import registration_documents
+    documents = {r.id: registration_documents(r) for r in regs}
     return render_template("member/dashboard.html",
-                           regs=regs, abstracts=abs_, my_reviews=my_reviews)
+                           regs=regs, abstracts=abs_, my_reviews=my_reviews,
+                           documents=documents)
 
 
 @member_bp.route("/profile", methods=["GET", "POST"])
@@ -1066,6 +1069,32 @@ def registration_document(reg_id, kind):
     return send_file(BytesIO(pdf), mimetype="application/pdf",
                      as_attachment=True,
                      download_name=f"{kind}-{_safe_ref(reg.reference)}.pdf")
+
+
+@member_bp.route("/registrations/<int:reg_id>/documents/<int:doc_id>")
+@login_required
+def registration_issued_document(reg_id, doc_id):
+    """One version of a receipt the member was sent, as it was sent."""
+    from ...services.documents import RenderError, regenerate_cached
+    from ...services.invoice import _safe_ref, registration_documents
+
+    reg = Registration.query.get_or_404(reg_id)
+    if reg.user_id != current_user.id or reg.deleted_at is not None:
+        abort(403)
+    doc = next((d for d in registration_documents(reg) if d.id == doc_id), None)
+    if doc is None:
+        abort(404)
+    try:
+        pdf = regenerate_cached(doc)
+    except RenderError as e:
+        current_app.logger.warning("Document %s failed for reg %s: %s",
+                                   doc_id, reg_id, e)
+        flash("That document could not be produced just now. Please try again "
+              "shortly, or contact us if it keeps happening.", "error")
+        return redirect(url_for("member.dashboard"))
+    return send_file(BytesIO(pdf), mimetype="application/pdf", as_attachment=True,
+                     download_name=f"{doc.kind}-{_safe_ref(reg.reference)}-"
+                                   f"{doc.issued_at:%Y%m%d}.pdf")
 
 
 @member_bp.route("/pay/<int:reg_id>")

@@ -1,0 +1,27 @@
+{# Every receipt and adjustment note sent for a registration, newest first.
+   Shared by the member dashboard and the admin registration page. #}
+{% macro document_history(docs, reg, admin=False) %}
+<ul style="margin:6px 0 0; padding-left:18px; font-size:13px;">
+  {% for d in docs %}
+  <li style="margin-bottom:4px;">
+    {% set label = d.kind|capitalize ~ ' issued ' ~ d.issued_at.strftime('%-d %b %Y') %}
+    {% if admin %}
+      {% if can('financial.manage') %}
+      <form method="post" action="{{ url_for('admin.financial_download_issued_document', doc_id=d.id) }}" style="display:inline;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-quiet btn-sm" type="submit" style="padding:0;">{{ label }}</button>
+      </form>
+      {% else %}{{ label }}{% endif %}
+    {% else %}
+      <a href="{{ url_for('member.registration_issued_document', reg_id=reg.id, doc_id=d.id) }}">{{ label }}</a>
+    {% endif %}
+    {% if d.replaced_by %}
+      <span class="muted">— replaced {{ d.replaced_by[0].issued_at.strftime('%-d %b %Y') }}</span>
+    {% else %}
+      <strong>— current</strong>
+    {% endif %}
+    {% if d.replaces_id and d.reason %}<div class="muted">Correction: {{ d.reason }}</div>{% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% endmacro %}

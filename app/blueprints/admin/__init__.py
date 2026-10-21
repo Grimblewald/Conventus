@@ -358,11 +358,13 @@ def registration_detail(reg_id):
     schema = conference.registration_form_schema if conference else None
     sub_events_list = conference.sub_events if conference else []
     from ...models.payment_event import PAYMENT_EMAIL_EVENT, event_counts
+    from ...services.invoice import registration_documents
 
     return render_template(
         "admin/registration_detail.html",
         reg=reg, conference=conference,
         schema=schema, sub_events_list=sub_events_list,
+        documents=registration_documents(reg),
         emails_sent=event_counts([reg.id], PAYMENT_EMAIL_EVENT).get(reg.id, 0),
         receipts_sent=event_counts([reg.id], "document.sent").get(reg.id, 0),
     )

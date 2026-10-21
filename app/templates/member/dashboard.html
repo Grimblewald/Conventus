@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_document_history.html" import document_history with context %}
 {% block title %}Dashboard · {{ site.site_name }}{% endblock %}
 {% block content %}
 <section class="block">
@@ -41,6 +42,16 @@
               {% endif %}
             </td>
           </tr>
+          {% if documents.get(r.id) %}
+          <tr>
+            <td colspan="5" style="padding-top:0;">
+              <details>
+                <summary class="muted" style="font-size:13px;">Receipts sent ({{ documents[r.id]|length }})</summary>
+                {{ document_history(documents[r.id], r) }}
+              </details>
+            </td>
+          </tr>
+          {% endif %}
           {% endfor %}
         </tbody>
       </table>

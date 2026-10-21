@@ -1,4 +1,5 @@
 {% extends "admin/_base.html" %}
+{% from "_document_history.html" import document_history with context %}
 {% block title %}Registration · {{ reg.user.email if reg.user else '?' }} · Admin{% endblock %}
 {% block admin %}
 <div class="section-head">
@@ -114,6 +115,14 @@
   </div>
   {% endif %}
 </div>
+
+{% if documents %}
+<div class="card" style="margin-top:12px;">
+  <h4 style="margin-top:0;">Documents sent</h4>
+  <p class="muted" style="margin:0;">Every version is kept. The member sees the same list on their dashboard.</p>
+  {{ document_history(documents, reg, admin=True) }}
+</div>
+{% endif %}
 
 {% if reg.dietary or reg.accessibility %}
 <div class="card" style="margin-top:12px;">

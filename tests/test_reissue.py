@@ -232,6 +232,68 @@ def test_old_documents_still_rebuild_without_the_note(seed_templates, mailbox,
     assert "Replaces the" not in compiled[-1]
 
 
+# --- every version stays visible ----------------------------------------------
+
+def _login_as_owner(app, client, rid):
+    from app.models import Registration
+    with app.app_context():
+        uid = db.session.get(Registration, rid).user_id
+    with client.session_transaction() as sess:
+        sess["_user_id"] = str(uid)
+        sess["_fresh"] = True
+
+
+class TestHistory:
+    def test_the_member_sees_and_can_fetch_every_version(self, seed_templates,
+                                                         client, mailbox, compiled):
+        from app.models import IssuedDocument
+        from app.services.invoice import reissue_document
+        app = seed_templates
+        rid, iid, _ = _paid_reg_with_gst_receipt(app)
+        with app.app_context():
+            new = reissue_document(db.session.get(IssuedDocument, iid), reason=REASON)
+            new_id = new.id
+        _login_as_owner(app, client, rid)
+
+        page = client.get("/dashboard").get_data(as_text=True)
+        assert "Receipts sent (2)" in page
+        assert "— current" in page and "— replaced" in page
+        assert REASON in page
+
+        old_pdf = client.get(f"/registrations/{rid}/documents/{iid}")
+        new_pdf = client.get(f"/registrations/{rid}/documents/{new_id}")
+        assert old_pdf.mimetype == new_pdf.mimetype == "application/pdf"
+        assert old_pdf.data != new_pdf.data
+
+    def test_another_member_cannot_fetch_them(self, seed_templates, member_client,
+                                              mailbox, compiled):
+        app = seed_templates
+        rid, iid, _ = _paid_reg_with_gst_receipt(app)
+        assert member_client.get(
+            f"/registrations/{rid}/documents/{iid}").status_code == 403
+
+    def test_a_document_of_another_registration_is_not_reachable(
+            self, seed_templates, client, mailbox, compiled):
+        app = seed_templates
+        rid, _iid, _ = _paid_reg_with_gst_receipt(app)
+        _other_rid, other_iid, _ = _paid_reg_with_gst_receipt(app)
+        _login_as_owner(app, client, rid)
+        assert client.get(
+            f"/registrations/{rid}/documents/{other_iid}").status_code == 404
+
+    def test_the_admin_page_lists_them(self, seed_templates, admin_client, mailbox,
+                                       compiled):
+        from app.models import IssuedDocument
+        from app.services.invoice import reissue_document
+        app = seed_templates
+        rid, iid, _ = _paid_reg_with_gst_receipt(app)
+        with app.app_context():
+            reissue_document(db.session.get(IssuedDocument, iid), reason=REASON)
+        page = admin_client.get(f"/admin/registrations/{rid}").get_data(as_text=True)
+        assert "Documents sent" in page
+        assert page.count("Receipt issued") == 2
+
+
 # --- the admin tool -----------------------------------------------------------
 
 def _code(mailbox) -> str:

@@ -294,6 +294,102 @@ class TestHistory:
         assert page.count("Receipt issued") == 2
 
 
+# --- a member changing their billing address ----------------------------------
+
+@pytest.fixture
+def members_paid_registration(seed_templates, mailbox, compiled):
+    """The member_client's own paid registration, with a receipt sent while GST
+    was on, on a conference still taking registrations."""
+    from datetime import timedelta
+
+    from app.models import (Conference, IssuedDocument, Registration, User,
+                            record_payment_event)
+    from app.models.conference import PriceTier
+    from app.services.invoice import send_invoice_email
+    app = seed_templates
+    tag = secrets.token_hex(4)
+    schema = {"sections": [{"key": "p", "label": "P", "fields": [
+        {"key": "tier-select", "type": "registration-tier", "label": "Tier",
+         "required": True},
+        {"key": "bill", "type": "billing-address", "label": "Billing address"}]}]}
+    with app.app_context():
+        u = User.query.filter_by(email="member@test.example.org").first()
+        if u is None:
+            u = User(email="member@test.example.org", full_name="Member User",
+                     role_name="member")
+            db.session.add(u)
+            db.session.flush()
+        c = Conference(slug=f"addr-{tag}", title="Physics 2026",
+                       start_date=date.today() + timedelta(days=30),
+                       end_date=date.today() + timedelta(days=32),
+                       is_accepting_registrations=True, is_draft=False,
+                       registration_form_schema=schema)
+        db.session.add(c)
+        db.session.flush()
+        db.session.add(PriceTier(conference_id=c.id, name="Standard", amount=55000,
+                                 display_order=0))
+        reg = Registration(user_id=u.id, conference_id=c.id, tier_name="Standard",
+                           amount=55000, status="paid", transaction_id=f"TXN-{tag}")
+        db.session.add(reg)
+        db.session.commit()
+        reg.charge_to(55000, reason="Standard")
+        record_payment_event(registration_id=reg.id, transaction_id=f"TXN-{tag}",
+                             merchant_reference=reg.reference,
+                             event_type="payment.captured", amount=55000)
+        _set_gst(True)
+        send_invoice_email(reg)
+        _set_gst(False)
+        iid = IssuedDocument.query.order_by(IssuedDocument.id.desc()).first().id
+        mailbox.clear()
+        return c.slug, reg.id, iid
+
+
+def _save(client, slug, address):
+    return client.post(f"/conferences/{slug}/register",
+                       data={"tier": "Standard", "bill": address},
+                       follow_redirects=True)
+
+
+class TestAddressChange:
+    def test_a_new_address_reissues_and_emails_the_receipt(
+            self, members_paid_registration, member_client, mailbox, app):
+        from app.models import IssuedDocument
+        slug, rid, iid = members_paid_registration
+        page = _save(member_client, slug, ADDRESS)
+        assert b"reissued with the new billing address" in page.data
+        with app.app_context():
+            new = IssuedDocument.query.filter_by(replaces_id=iid).one()
+            assert json.loads(new.vars_json)["recipient_address"] == ADDRESS
+            assert json.loads(new.vars_json)["gst_applies"] == ""
+        assert [m["to"] for m in mailbox] == ["member@test.example.org"]
+
+    def test_a_second_change_the_same_day_is_refused(
+            self, members_paid_registration, member_client, mailbox, app):
+        from app.models import IssuedDocument, Registration
+        slug, rid, _iid = members_paid_registration
+        _save(member_client, slug, ADDRESS)
+        mailbox.clear()
+        db.session.expire_all()
+        page = _save(member_client, slug, "Somewhere else entirely")
+        assert b"once a day" in page.data
+        assert mailbox == []
+        with app.app_context():
+            reg = db.session.get(Registration, rid)
+            assert reg.custom_data["bill"] == ADDRESS
+            from app.services.invoice import registration_documents
+            assert sum(1 for d in registration_documents(reg) if d.replaces_id) == 1
+
+    def test_saving_the_same_address_sends_nothing(
+            self, members_paid_registration, member_client, mailbox, app):
+        slug, _rid, _iid = members_paid_registration
+        _save(member_client, slug, ADDRESS)
+        mailbox.clear()
+        db.session.expire_all()
+        page = _save(member_client, slug, ADDRESS)
+        assert b"reissued" not in page.data
+        assert mailbox == []
+
+
 # --- the admin tool -----------------------------------------------------------
 
 def _code(mailbox) -> str:

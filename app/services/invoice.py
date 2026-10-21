@@ -695,6 +695,38 @@ def registration_documents(reg) -> list:
             .all())
 
 
+ADDRESS_REASON = ("Reissued because the billing address on your registration "
+                  "was updated.")
+
+
+def address_reissued_recently(reg) -> bool:
+    """Whether an address change reissued this registration's receipt within
+    the last day. Each change emails a new tax document, so they are limited
+    to one a day."""
+    from datetime import timedelta
+
+    since = datetime.utcnow() - timedelta(days=1)
+    return any(d.replaces_id and d.reason == ADDRESS_REASON and d.issued_at >= since
+               for d in registration_documents(reg))
+
+
+def current_registration_document(reg):
+    """The receipt or adjustment note a member currently holds, or None."""
+    docs = registration_documents(reg)
+    return docs[0] if docs and current_document(docs[0]).id == docs[0].id else None
+
+
+def reissue_for_address(reg) -> None:
+    """Background job: reissue the current receipt with the new address."""
+    doc = current_registration_document(reg)
+    if doc is None:
+        return
+    try:
+        reissue_document(doc, reason=ADDRESS_REASON)
+    except AlreadyReplaced:
+        log.info("Address reissue for reg %s skipped: already replaced", reg.id)
+
+
 class AlreadyReplaced(Exception):
     """The document has been reissued since it was chosen; only the newest
     version of a document is ever corrected, so nothing was sent."""

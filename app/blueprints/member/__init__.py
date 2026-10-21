@@ -23,7 +23,10 @@ from ...models import (
 from ...models.abstract import ACCEPTED_STATUSES
 from ...models.content import get_site_settings
 from ...security import audit
-from ...services.invoice import _reg_merchant_reference
+from ...services.invoice import (
+    _reg_merchant_reference, address_reissued_recently,
+    current_registration_document, reissue_for_address,
+)
 from ...services.mail import send_mail
 from ...services.payments import (
     initiate_payment, payments_open_to_members, send_payment_email,
@@ -31,7 +34,8 @@ from ...services.payments import (
 )
 from ...services.authors import from_form as authors_from_form, to_legacy
 from ...services.uploads import UploadError, remove_upload, save_figure, save_image
-from ...services.form_renderer import validate_form
+from ...services.form_renderer import (billing_address, billing_address_key,
+                                      validate_form)
 from ...services.citations import (fetch_metadata, format_reference, is_doi,
                                    normalize_doi)
 
@@ -250,6 +254,23 @@ def register_conf(slug):
                                        c=c, tiers=tiers, existing=existing,
                                        schema=schema, sub_events=sub_events)
 
+        # A paid registration's address is printed on a receipt already sent,
+        # so changing it reissues that receipt — at most once a day, since each
+        # change emails a new tax document.
+        reissue_address = False
+        if existing is not None and existing.status in ("paid", "refunded"):
+            key = billing_address_key(schema)
+            if key and (billing_address(schema, custom_data)
+                        != billing_address(schema, existing.custom_data)):
+                if address_reissued_recently(existing):
+                    custom_data[key] = (existing.custom_data or {}).get(key, "")
+                    flash("Your billing address was not changed. It can be "
+                          "changed once a day after payment, because each "
+                          "change reissues your receipt. Please try again "
+                          "tomorrow.", "warning")
+                else:
+                    reissue_address = current_registration_document(existing) is not None
+
         reg = existing or Registration(user_id=current_user.id, conference_id=c.id)
         # The price is struck when the tier is chosen and then left alone. It
         # used to be re-derived on every save, which meant a member who paid
@@ -341,6 +362,12 @@ def register_conf(slug):
                       "success")
             else:
                 flash("Registration updated.", "success")
+        if reissue_address:
+            from ...services.tasks import run_later_for
+            run_later_for(Registration, reg.id, reissue_for_address)
+            flash("Your receipt has been reissued with the new billing address "
+                  "and emailed to you. Earlier versions stay on your dashboard.",
+                  "success")
         return redirect(url_for("member.dashboard"))
 
     # The lock is enforced on POST regardless; passing it to the GET is what

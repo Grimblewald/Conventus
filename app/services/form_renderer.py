@@ -18,20 +18,24 @@ FIELD_TYPES = ("text", "email", "number", "tel", "textarea", "select", "radio",
 _countries_cache = None
 
 
-def billing_address(schema: dict | None, data: dict | None) -> str:
-    """The registrant's billing address, for invoices and receipts.
+def billing_address_key(schema: dict | None) -> str | None:
+    """The key of the form's billing-address field, if it has one.
 
     Found by field type rather than key, so it works whatever an admin named
     the field in the form builder.
     """
-    if not schema or not data:
-        return ""
-    for section in schema.get("sections", []):
+    for section in (schema or {}).get("sections", []):
         for field in section.get("fields", []):
             if field.get("type") == "billing-address":
-                value = data.get(field.get("key", ""))
-                return value.strip() if isinstance(value, str) else ""
-    return ""
+                return field.get("key", "")
+    return None
+
+
+def billing_address(schema: dict | None, data: dict | None) -> str:
+    """The registrant's billing address, for invoices and receipts."""
+    key = billing_address_key(schema)
+    value = (data or {}).get(key) if key else None
+    return value.strip() if isinstance(value, str) else ""
 
 
 def _load_countries() -> list[dict]:

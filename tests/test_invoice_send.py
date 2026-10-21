@@ -761,6 +761,11 @@ class TestRegistrationTierChange:
             rid = reg.id
             reg.status = "cancelled"      # as the payment.cancelled webhook sets it
             db.session.commit()
+        # pytest-flask keeps one request context open for the test, so the
+        # client's requests share a session that still holds this row as the
+        # dashboard last loaded it. Unexpired, the save below sets "pending"
+        # over a stale "pending", sees no change, and writes nothing.
+        db.session.expire_all()
 
         member_client.post(f"/conferences/{slug}/register",
                            data={"tier": paid}, follow_redirects=True)

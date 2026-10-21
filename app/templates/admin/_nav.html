@@ -73,6 +73,7 @@
     <li><a href="{{ url_for('admin.financial_document', kind='adjustment') }}" {% if request.endpoint == 'admin.financial_document' and request.view_args.get('kind') == 'adjustment' %}class="active"{% endif %}>Adjustment Note</a></li>
     <li><a href="{{ url_for('admin.financial_send_invoice') }}" {% if request.endpoint == 'admin.financial_send_invoice' %}class="active"{% endif %}>Send Invoice</a></li>
     <li><a href="{{ url_for('admin.financial_transactions') }}" {% if request.endpoint == 'admin.financial_transactions' %}class="active"{% endif %}>Transactions</a></li>
+    <li><a href="{{ url_for('admin.financial_reissue') }}" {% if request.endpoint and request.endpoint.startswith('admin.financial_reissue') %}class="active"{% endif %}>Reissue Receipts</a></li>
   </ul>
   {% endif %}
 

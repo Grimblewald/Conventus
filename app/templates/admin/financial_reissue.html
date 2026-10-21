@@ -1,0 +1,80 @@
+{% extends "admin/_base.html" %}
+{% block title %}Reissue Receipts · {{ site.site_name }} Admin{% endblock %}
+{% block admin %}
+<div class="section-head">
+  <div>
+    <div class="eyebrow">Financial</div>
+    <h2>Reissue receipts</h2>
+  </div>
+</div>
+
+<p class="muted" style="max-width:760px;">
+  Corrects receipts and adjustment notes that were sent with settings that were
+  wrong at the time. Each selected document is regenerated with the current
+  Financial Identity (GST, issuer details) and the registrant's current billing
+  address, emailed to them with the note below, and marked as replacing the
+  original. The original stays on file. Amounts, payment dates and references
+  never change. Only the current version of each document is listed.
+</p>
+
+<form method="get" style="display:flex; gap:8px; align-items:end; flex-wrap:wrap; margin:16px 0;">
+  <div class="field" style="margin:0;">
+    <label for="gst">Show</label>
+    <select class="select" id="gst" name="gst">
+      <option value="shown"{% if gst == 'shown' %} selected{% endif %}>Documents showing GST</option>
+      <option value="any"{% if gst == 'any' %} selected{% endif %}>All documents</option>
+    </select>
+  </div>
+  <div class="field" style="margin:0;">
+    <label for="from">Issued from</label>
+    <input class="input" id="from" name="from" type="date" value="{{ start }}">
+  </div>
+  <div class="field" style="margin:0;">
+    <label for="to">to</label>
+    <input class="input" id="to" name="to" type="date" value="{{ end }}">
+  </div>
+  <button class="btn btn-ghost btn-sm" type="submit">Filter</button>
+</form>
+
+{% if rows %}
+<form method="post" action="{{ url_for('admin.financial_reissue_request') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div style="overflow-x:auto;">
+  <table class="table">
+    <thead><tr>
+      <th><input type="checkbox" data-select-all aria-label="Select all"></th>
+      <th>Reference</th><th>Kind</th><th>Sent to</th><th>Issued</th>
+      <th style="text-align:right;">Amount</th><th>GST shown</th><th></th>
+    </tr></thead>
+    <tbody>
+      {% for d, shows_gst in rows %}
+      <tr>
+        <td><input type="checkbox" name="doc_id" value="{{ d.id }}" checked aria-label="Reissue {{ d.reference }}"></td>
+        <td style="white-space:nowrap;">{{ d.reference }}</td>
+        <td>{{ d.kind }}{% if d.replaces_id %} <span class="muted">(already a correction)</span>{% endif %}</td>
+        <td>{{ d.recipient }}</td>
+        <td style="white-space:nowrap;">{{ d.issued_at.strftime('%-d %b %Y') }}</td>
+        <td style="text-align:right;">{{ site.currency_symbol }}{{ d.amount | format_amount }}</td>
+        <td>{{ 'yes' if shows_gst else 'no' }}</td>
+        <td><a class="link" href="{{ url_for('admin.financial_reissue_preview', doc_id=d.id) }}">Preview</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  <div class="field" style="max-width:760px; margin-top:16px;">
+    <label for="reason">Note to recipients</label>
+    <textarea class="textarea" id="reason" name="reason" rows="4" required>{{ reason }}</textarea>
+    <div class="help">Included in each email, and kept on file with the corrected document.</div>
+  </div>
+  <button class="btn btn-primary" type="submit">Continue — a confirmation code will be emailed to you</button>
+</form>
+{% else %}
+<p class="muted">Nothing matches this filter.</p>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ static_url('js/admin/select-all.js') }}"></script>
+{% endblock %}

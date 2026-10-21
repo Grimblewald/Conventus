@@ -34,7 +34,8 @@ def seed_templates(app):
 def mailbox(monkeypatch):
     box: list[dict] = []
     for target in ("app.services.invoice.send_mail", "app.services.mail.send_mail",
-                   "app.services.payments.send_mail"):
+                   "app.services.payments.send_mail",
+                   "app.blueprints.admin.financial.send_mail"):
         monkeypatch.setattr(target, lambda **kw: box.append(kw) or True)
     return box
 
@@ -229,3 +230,89 @@ def test_old_documents_still_rebuild_without_the_note(seed_templates, mailbox,
         docs.regenerate_document(db.session.get(IssuedDocument, iid))
     assert "\\replacesfalse" in compiled[-1]
     assert "Replaces the" not in compiled[-1]
+
+
+# --- the admin tool -----------------------------------------------------------
+
+def _code(mailbox) -> str:
+    import re
+    return re.search(r"Confirmation code: (\d{6})", mailbox[-1]["body"]).group(1)
+
+
+class TestAdminTool:
+    def test_it_lists_receipts_showing_gst(self, seed_templates, admin_client,
+                                           mailbox, compiled):
+        app = seed_templates
+        _rid, iid, email = _paid_reg_with_gst_receipt(app)
+        page = admin_client.get("/admin/financial/reissue?gst=shown")
+        assert f'name="doc_id" value="{iid}"'.encode() in page.data
+        assert email.encode() in page.data
+
+    def test_preview_sends_and_records_nothing(self, seed_templates, admin_client,
+                                               mailbox, compiled):
+        from app.models import IssuedDocument
+        app = seed_templates
+        _rid, iid, _ = _paid_reg_with_gst_receipt(app)
+        mailbox.clear()
+        with app.app_context():
+            before = IssuedDocument.query.count()
+        resp = admin_client.get(f"/admin/financial/reissue/{iid}/preview")
+        assert resp.mimetype == "application/pdf"
+        assert "Replaces the receipt issued" in compiled[-1]
+        assert mailbox == []
+        with app.app_context():
+            assert IssuedDocument.query.count() == before
+
+    def test_nothing_reaches_registrants_without_the_code(self, seed_templates,
+                                                          admin_client, mailbox,
+                                                          compiled):
+        app = seed_templates
+        _rid, iid, email = _paid_reg_with_gst_receipt(app)
+        mailbox.clear()
+        admin_client.post("/admin/financial/reissue/request",
+                          data={"doc_id": [str(iid)], "reason": REASON})
+        assert [m["to"] for m in mailbox] == ["admin@test.example.org"]
+        assert "Confirm reissuing" in mailbox[0]["subject"]
+
+        page = admin_client.post("/admin/financial/reissue/confirm",
+                                 data={"code": "000000"}, follow_redirects=True)
+        assert b"match, or it has expired" in page.data
+        assert all(m["to"] != email for m in mailbox)
+
+    def test_the_right_code_reissues_and_emails(self, seed_templates, admin_client,
+                                                mailbox, compiled):
+        from app.models import IssuedDocument
+        app = seed_templates
+        _rid, iid, email = _paid_reg_with_gst_receipt(app)
+        mailbox.clear()   # the original receipt, sent while setting up
+        admin_client.post("/admin/financial/reissue/request",
+                          data={"doc_id": [str(iid)], "reason": REASON})
+        page = admin_client.get("/admin/financial/reissue/confirm")
+        assert b"cannot be unsent" in page.data and email.encode() in page.data
+
+        admin_client.post("/admin/financial/reissue/confirm",
+                          data={"code": _code(mailbox)}, follow_redirects=True)
+        to_member = [m for m in mailbox if m["to"] == email]
+        assert len(to_member) == 1 and REASON in to_member[0]["body"]
+        with app.app_context():
+            assert IssuedDocument.query.filter_by(replaces_id=iid).count() == 1
+        # Corrected, so it no longer shows GST and drops off the list.
+        page = admin_client.get("/admin/financial/reissue?gst=shown")
+        assert f'name="doc_id" value="{iid}"'.encode() not in page.data
+
+    def test_a_used_code_cannot_send_again(self, seed_templates, admin_client,
+                                           mailbox, compiled):
+        app = seed_templates
+        _rid, iid, email = _paid_reg_with_gst_receipt(app)
+        admin_client.post("/admin/financial/reissue/request",
+                          data={"doc_id": [str(iid)], "reason": REASON})
+        code = _code(mailbox)
+        admin_client.post("/admin/financial/reissue/confirm", data={"code": code})
+        sent = len([m for m in mailbox if m["to"] == email])
+        admin_client.post("/admin/financial/reissue/confirm", data={"code": code})
+        assert len([m for m in mailbox if m["to"] == email]) == sent
+
+    def test_members_cannot_reach_it(self, seeded, member_client):
+        assert member_client.get("/admin/financial/reissue").status_code == 403
+        assert member_client.post("/admin/financial/reissue/request",
+                                  data={"doc_id": ["1"], "reason": "x"}).status_code == 403

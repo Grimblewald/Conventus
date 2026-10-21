@@ -1170,6 +1170,193 @@ def financial_test_payment_cancel(ref):
     return redirect(url_for("admin.financial_transactions"))
 
 
+# ---------------------------------------------------------------------------
+# Reissue: correct receipts sent under settings that were wrong at the time.
+# ---------------------------------------------------------------------------
+
+_REISSUE_KINDS = ("receipt", "adjustment")
+_REISSUE_PENDING = "reissue_pending"
+_REISSUE_DEFAULT_REASON = (
+    "The original showed GST, which was included in error: we are not "
+    "registered for GST. The amount you paid is unchanged and nothing further "
+    "is owed.")
+
+
+def _parse_day(raw):
+    try:
+        return datetime.strptime((raw or "").strip(), "%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def _reissue_candidates(gst: str, start, end):
+    """Sent receipts and adjustment notes that are still the current version
+    for their payment, filtered by issue date and by whether they show GST."""
+    import json
+
+    from ...models import IssuedDocument
+    from ...services.invoice import current_document
+
+    q = IssuedDocument.query.filter(IssuedDocument.kind.in_(_REISSUE_KINDS))
+    if start:
+        q = q.filter(IssuedDocument.issued_at >= start)
+    if end:
+        q = q.filter(IssuedDocument.issued_at < end + timedelta(days=1))
+    out = []
+    for d in q.order_by(IssuedDocument.issued_at.desc(), IssuedDocument.id.desc()):
+        shows_gst = json.loads(d.vars_json or "{}").get("gst_applies") == "1"
+        if gst == "shown" and not shows_gst:
+            continue
+        # Current across all dates, not just this window: a document corrected
+        # since is no longer the one anybody holds.
+        if current_document(d).id != d.id:
+            continue
+        out.append((d, shows_gst))
+    return out
+
+
+@admin_bp.route("/financial/reissue")
+@requires_permission("financial.manage")
+def financial_reissue():
+    gst = request.args.get("gst", "shown")
+    start = _parse_day(request.args.get("from"))
+    end = _parse_day(request.args.get("to"))
+    return render_template(
+        "admin/financial_reissue.html",
+        rows=_reissue_candidates(gst, start, end), gst=gst,
+        start=request.args.get("from", ""), end=request.args.get("to", ""),
+        reason=_REISSUE_DEFAULT_REASON)
+
+
+@admin_bp.route("/financial/reissue/<int:doc_id>/preview")
+@requires_permission("financial.manage")
+def financial_reissue_preview(doc_id):
+    """The corrected document as it would be sent. Sends and records nothing."""
+    from io import BytesIO
+
+    from ...models import IssuedDocument
+    from ...services.documents import RenderError, render_document
+    from ...services.invoice import _safe_ref, reissue_vars
+
+    issued = db.session.get(IssuedDocument, doc_id)
+    if issued is None or issued.kind not in _REISSUE_KINDS:
+        flash("That document could not be found.", "error")
+        return redirect(url_for("admin.financial_reissue"))
+    try:
+        pdf = render_document(issued.kind, reissue_vars(issued))
+    except RenderError as e:
+        flash(f"The corrected document could not be generated: {e}", "error")
+        return redirect(url_for("admin.financial_reissue"))
+    return send_file(BytesIO(pdf), mimetype="application/pdf", as_attachment=True,
+                     download_name=f"corrected-{issued.kind}-"
+                                   f"{_safe_ref(issued.reference)}.pdf")
+
+
+@admin_bp.route("/financial/reissue/request", methods=["POST"])
+@requires_permission("financial.manage")
+def financial_reissue_request():
+    """Hold the selection and email the admin a code; nothing is sent to
+    registrants until the code comes back."""
+    from flask import session
+
+    from ...models import IssuedDocument
+    from ...services.invoice import current_document
+
+    reason = (request.form.get("reason") or "").strip()
+    ids = []
+    for raw in request.form.getlist("doc_id"):
+        d = db.session.get(IssuedDocument, int(raw)) if raw.isdigit() else None
+        if d is not None and d.kind in _REISSUE_KINDS and current_document(d).id == d.id:
+            ids.append(d.id)
+    if not ids:
+        flash("Select at least one document to reissue.", "error")
+        return redirect(url_for("admin.financial_reissue"))
+    if not reason:
+        flash("Write the note that goes to recipients.", "error")
+        return redirect(url_for("admin.financial_reissue"))
+
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    ttl = current_app.config["OTP_TTL_SECONDS"]
+    if not send_mail(to=current_user.email,
+                     subject="Confirm reissuing documents",
+                     body=(f"You asked to reissue {len(ids)} document(s), each "
+                           f"emailed to its recipient.\n\n"
+                           f"Confirmation code: {code}\n\n"
+                           f"This code expires in {ttl // 60} minutes. If you "
+                           f"didn't request this, ignore this email.")):
+        flash("Failed to send the confirmation email. Please try again.", "error")
+        return redirect(url_for("admin.financial_reissue"))
+    db.session.add(OTPCode(email=current_user.email.lower(), code=code,
+                           purpose="financial_reissue",
+                           expires_at=datetime.utcnow() + timedelta(seconds=ttl),
+                           ip=request.remote_addr))
+    db.session.commit()
+    session[_REISSUE_PENDING] = {"ids": ids, "reason": reason}
+    return redirect(url_for("admin.financial_reissue_confirm"))
+
+
+def _reissue_job(doc_id: int, reason: str):
+    def job():
+        import logging
+
+        from ...models import IssuedDocument
+        from ...services.invoice import AlreadyReplaced, reissue_document
+
+        issued = db.session.get(IssuedDocument, doc_id)
+        if issued is None:
+            return
+        try:
+            if reissue_document(issued, reason=reason) is None:
+                logging.getLogger(__name__).error(
+                    "Reissue of document %s: mail not sent", doc_id)
+        except AlreadyReplaced:
+            logging.getLogger(__name__).info(
+                "Reissue of document %s skipped: already replaced", doc_id)
+    return job
+
+
+@admin_bp.route("/financial/reissue/confirm", methods=["GET", "POST"])
+@requires_permission("financial.manage")
+def financial_reissue_confirm():
+    from flask import session
+
+    from ...models import IssuedDocument
+    from ...services.tasks import run_later
+
+    pending = session.get(_REISSUE_PENDING)
+    if not pending:
+        return redirect(url_for("admin.financial_reissue"))
+    docs = [d for d in (db.session.get(IssuedDocument, i) for i in pending["ids"]) if d]
+
+    if request.method == "POST":
+        entered = (request.form.get("code") or "").strip().replace(" ", "")
+        otp = (OTPCode.query
+               .filter_by(email=current_user.email.lower(), code=entered,
+                          purpose="financial_reissue", consumed_at=None)
+               .order_by(OTPCode.id.desc()).first())
+        if not (otp and otp.is_valid()):
+            flash("That code didn't match, or it has expired.", "error")
+            return render_template("admin/financial_reissue_confirm.html",
+                                   docs=docs, reason=pending["reason"])
+        otp.consumed_at = datetime.utcnow()
+        db.session.commit()
+        session.pop(_REISSUE_PENDING, None)
+        for d in docs:
+            run_later(_reissue_job(d.id, pending["reason"]))
+        audit.record("financial.documents_reissued",
+                     target_kind="issued_document",
+                     target_id=",".join(str(d.id) for d in docs)[:120],
+                     summary=(f"{current_user.email} reissued {len(docs)} "
+                              f"document(s): {pending['reason']}")[:400])
+        flash(f"Reissuing {len(docs)} document(s). Each is emailed as it is "
+              f"generated; any that fail stay in this list to try again.",
+              "success")
+        return redirect(url_for("admin.financial_reissue"))
+
+    return render_template("admin/financial_reissue_confirm.html",
+                           docs=docs, reason=pending["reason"])
+
+
 @admin_bp.route("/financial/document/<ref>/send-pending", methods=["POST"])
 @requires_permission("financial.manage")
 def financial_send_pending_document(ref):

@@ -1,0 +1,39 @@
+{% extends "admin/_base.html" %}
+{% block title %}Confirm Reissue · {{ site.site_name }} Admin{% endblock %}
+{% block admin %}
+<div class="section-head">
+  <div>
+    <div class="eyebrow">Financial</div>
+    <h2>Confirm reissue</h2>
+  </div>
+</div>
+
+<div class="card" style="padding:24px; max-width:640px;">
+  <p style="background:#fff3cd; padding:12px; border-radius:6px;">
+    <strong>Warning:</strong> this emails <strong>{{ docs|length }}</strong>
+    {{ 'person' if docs|length == 1 else 'people' }} a corrected document. It
+    cannot be unsent. Each correction is kept on file beside the original.
+  </p>
+  <p><strong>Note to recipients:</strong></p>
+  <blockquote style="margin:0 0 16px; padding-left:12px; border-left:3px solid var(--c-card-border);">{{ reason }}</blockquote>
+  <details style="margin-bottom:16px;">
+    <summary>Recipients ({{ docs|length }})</summary>
+    <ul>
+      {% for d in docs %}<li>{{ d.reference }} — {{ d.recipient }}</li>{% endfor %}
+    </ul>
+  </details>
+  <p>A confirmation code has been sent to <strong>{{ current_user.email }}</strong>.</p>
+
+  <form method="POST" style="margin-top:16px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field" style="margin-bottom:16px;">
+      <label for="code"><strong>Confirmation code</strong></label>
+      <input type="text" id="code" name="code" class="input" maxlength="6" placeholder="6-digit code" autocomplete="off">
+    </div>
+    <div style="display:flex; gap:8px;">
+      <button type="submit" class="btn btn-primary">Reissue and email</button>
+      <a href="{{ url_for('admin.financial_reissue') }}" class="btn btn-ghost">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

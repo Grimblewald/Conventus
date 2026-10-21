@@ -13,7 +13,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 os.environ.setdefault("FLASK_ENV", "development")
 os.environ.setdefault("SECRET_KEY", "test-key-do-not-use-in-production")
-os.environ.setdefault("MAIL_BACKEND", "console")
+# Forced, not defaulted: a shell or .env with MAIL_BACKEND=smtp would otherwise
+# let the suite email real people. Subprocess tests inherit it.
+os.environ["MAIL_BACKEND"] = "console"
 os.environ.setdefault("RATELIMIT_STORAGE_URI", "memory://")
 os.environ.setdefault("RATELIMIT_ENABLED", "false")
 
@@ -22,6 +24,18 @@ BaseConfig.RATELIMIT_ENABLED = False
 DevelopmentConfig.RATELIMIT_ENABLED = False
 
 from app.extensions import db as _db
+
+
+@pytest.fixture(autouse=True)
+def no_real_mail(monkeypatch):
+    """Fail any test that reaches an SMTP server, whatever the backend says."""
+    import smtplib
+
+    def _refuse(*args, **kwargs):
+        raise RuntimeError("a test tried to open an SMTP connection")
+
+    monkeypatch.setattr(smtplib, "SMTP", _refuse)
+    monkeypatch.setattr(smtplib, "SMTP_SSL", _refuse)
 
 
 @pytest.fixture(autouse=True)

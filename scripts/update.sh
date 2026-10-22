@@ -1,221 +1,28 @@
 #!/usr/bin/env bash
-# update.sh — site update with timestamped, non-destructive backups.
+# Update the site, or put the previous version back.
 #
-# Usage:
-#   scripts/update.sh              # snapshot → pull → migrate → restart
-#   scripts/update.sh --revert     # roll back code + DB to the last snapshot
-#   scripts/update.sh --revert --yes   # ... without the confirmation prompt
+#   scripts/update.sh                  restore point → pull → dependencies → migrate → restart
+#   scripts/update.sh --revert         put back the newest restore point (asks first)
+#   scripts/update.sh --revert --yes   ... without asking
+#   scripts/update.sh list             list restore points
 #
-# Every run writes a NEW timestamped snapshot under var/backups/<UTC>/
-# (app.db + the git HEAD it went with); snapshots are never overwritten, and
-# the newest ten are kept. --revert restores the most recent snapshot, but
-# ALWAYS copies the current database aside first (a *-pre-revert snapshot), so
-# a revert can itself be undone and no state is ever destroyed irrecoverably.
+# The work is done by scripts/site_update.py — the same code Admin → Update
+# runs — which uses only Python's standard library and never imports the app,
+# so --revert works even when the new version will not start.
 set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BACKUP_DIR="$PROJECT_ROOT/var/backups"
-DB="$PROJECT_ROOT/instance/app.db"
-SERVICE="cloudflared-launch.service"
-PORT="${PORT:-5005}"
-KEEP="${UPDATE_KEEP_SNAPSHOTS:-10}"
-
-RED='\033[0;31m'; GREEN='\033[0;32m'; CYAN='\033[0;36m'; YELLOW='\033[0;33m'; NC='\033[0m'
-info()  { echo -e "${CYAN}→${NC} $*"; }
-ok()    { echo -e "${GREEN}✓${NC} $*"; }
-warn()  { echo -e "${YELLOW}⚠${NC} $*"; }
-err()   { echo -e "${RED}✗${NC} $*"; exit 1; }
-
-cd "$PROJECT_ROOT"
-
-# systemd runs with a minimal env — make uv findable.
+# systemd runs with a minimal environment — make uv findable.
 export PATH="$HOME/.local/bin:$HOME/.cargo/bin:$PATH"
 
-# Write a snapshot of the current DB + git HEAD into a fresh timestamped dir.
-# Never clobbers: the directory name carries a UTC timestamp (plus an optional
-# label). Echoes the snapshot path.
-take_snapshot() {
-    local label="${1:-}"
-    local stamp; stamp="$(date -u +%Y%m%d-%H%M%S)"
-    local dir="$BACKUP_DIR/${stamp}${label:+-$label}"
-    # A same-second second snapshot must not merge into the first.
-    local n=1
-    while [ -e "$dir" ]; do dir="$BACKUP_DIR/${stamp}${label:+-$label}-$n"; n=$((n+1)); done
-    mkdir -p "$dir"
-    if [ -f "$DB" ]; then
-        # Use sqlite's own backup when available so an in-flight write can't
-        # produce a torn copy; fall back to cp otherwise.
-        if command -v sqlite3 >/dev/null 2>&1; then
-            sqlite3 "$DB" ".backup '$dir/app.db'" 2>/dev/null || cp "$DB" "$dir/app.db"
-        else
-            cp "$DB" "$dir/app.db"
-        fi
-    fi
-    git rev-parse HEAD > "$dir/git-head" 2>/dev/null || true
-    echo "$dir"
-}
-
-# Safety copies set aside BEFORE a destructive action, by this script
-# (-pre-revert) and by the admin panel's archive restore (-pre-restore, see
-# app/services/backup_archive.py::_safety_snapshot). Both record a live state
-# that was about to be overwritten, which makes them the opposite of a rollback
-# target: reverting *to* one would roll forward into the state someone chose to
-# leave. They are also the only copy of that state, so pruning must spare them.
-# Matches the same-second collision forms (<stamp>-pre-revert-2/) too.
-_is_safety_copy() {
-    case "${1%/}" in
-        *-pre-revert|*-pre-revert-[0-9]*|*-pre-restore|*-pre-restore-[0-9]*) return 0;;
-    esac
-    return 1
-}
-
-# Newest update snapshot that actually holds a database, skipping safety
-# copies. Prints nothing and still SUCCEEDS when there is none — a bare
-# `[ -f ... ] && ...` as the last statement would return 1, and under
-# `set -e` that kills the script mid-revert with no message at all.
-latest_snapshot() {
-    local d
-    for d in $(ls -1dr "$BACKUP_DIR"/*/ 2>/dev/null); do
-        if _is_safety_copy "$d"; then continue; fi
-        if [ -f "$d/app.db" ]; then
-            echo "${d%/}"
-            return 0
-        fi
-    done
-    return 0
-}
-
-prune_snapshots() {
-    # Keep the newest $KEEP update snapshots; safety copies are never pruned.
-    local d
-    ls -1dr "$BACKUP_DIR"/*/ 2>/dev/null | while read -r d; do
-        if _is_safety_copy "$d"; then continue; fi
-        echo "$d"
-    done | tail -n +"$((KEEP+1))" | while read -r d; do
-        [ -n "$d" ] && rm -rf "$d"
-    done
-    # Nothing to prune is a normal outcome, not a failure to abort the run on.
-    return 0
-}
-
-# ──────────────────────────────────────────────────────────────────────
-# Revert  (--revert [--yes])
-# ──────────────────────────────────────────────────────────────────────
-if [ "${1:-}" = "--revert" ]; then
-    ASSUME_YES=0
-    [ "${2:-}" = "--yes" ] && ASSUME_YES=1
-
-    SNAP="$(latest_snapshot)"
-    # Legacy single-slot layout (pre-2026-07 update.sh) — restore from it if
-    # no timestamped snapshot exists yet.
-    if [ -z "$SNAP" ] && [ -f "$BACKUP_DIR/db.bak" ]; then
-        SNAP="__legacy__"
-    fi
-    [ -z "$SNAP" ] && err "No snapshot with a database found under $BACKUP_DIR — nothing to revert to."
-
-    if [ "$SNAP" = "__legacy__" ]; then
-        SNAP_DB="$BACKUP_DIR/db.bak"
-        SNAP_HEAD_FILE="$BACKUP_DIR/git-head"
-        SNAP_DESC="legacy backup ($(date -u -r "$SNAP_DB" +%Y-%m-%d\ %H:%M:%S 2>/dev/null || echo unknown\ time) UTC)"
-    else
-        SNAP_DB="$SNAP/app.db"
-        SNAP_HEAD_FILE="$SNAP/git-head"
-        SNAP_DESC="$(basename "$SNAP") ($(date -u -r "$SNAP_DB" +%Y-%m-%d\ %H:%M:%S 2>/dev/null || echo unknown\ time) UTC)"
-    fi
-
-    warn "Reverting will replace the current database and code with: $SNAP_DESC"
-    warn "Any data written since that snapshot will be rolled back."
-    if [ "$ASSUME_YES" -ne 1 ]; then
-        printf "Continue? [y/N] "
-        read -r reply
-        [ "$reply" = "y" ] || [ "$reply" = "Y" ] || err "Revert cancelled — nothing changed."
-    fi
-
-    # Safety net: preserve the CURRENT live DB before overwriting it, so this
-    # revert is itself reversible. This is the guarantee the old script lacked.
-    if [ -f "$DB" ]; then
-        SAFE="$(take_snapshot pre-revert)"
-        ok "Current database preserved at ${SAFE#$PROJECT_ROOT/} before rollback."
-    fi
-
-    cp "$SNAP_DB" "$DB"
-    ok "Database restored from $SNAP_DESC."
-
-    if [ -f "$SNAP_HEAD_FILE" ] && [ -s "$SNAP_HEAD_FILE" ]; then
-        git reset --hard "$(cat "$SNAP_HEAD_FILE")"
-        ok "Code reset to $(cat "$SNAP_HEAD_FILE")."
-    else
-        info "No git HEAD recorded in the snapshot — leaving code as-is."
-    fi
-
-    info "Restarting service…"
-    fuser -k "$PORT/tcp" 2>/dev/null || true
-    sleep 1
-    systemctl --user restart "$SERVICE"
-    ok "Revert complete."
-    exit 0
-fi
-
-# ──────────────────────────────────────────────────────────────────────
-# Update  (default)
-# ──────────────────────────────────────────────────────────────────────
-mkdir -p "$BACKUP_DIR"
-
-# 1. Snapshot current state (timestamped — never overwrites a prior snapshot).
-info "Snapshotting current state…"
-SNAP="$(take_snapshot)"
-ok "Snapshot saved to ${SNAP#$PROJECT_ROOT/}"
-[ -f "$SNAP/app.db" ] || info "No app.db found — snapshot records code only."
-prune_snapshots
-
-# 2. Pull
-info "Pulling updates…"
-if ! git pull; then
-    err "git pull failed. Your snapshot is at ${SNAP#$PROJECT_ROOT/}."
-fi
-ok "Pull succeeded."
-
-# git may strip the +x bit on conflict.
-chmod +x scripts/*.sh 2>/dev/null || true
-
-# 3. Migrate database
-info "Applying database migrations…"
-# The app factory suppresses db.create_all() when booted by the `flask db`
-# CLI (see app/__init__.py::_running_migration_cli), so the commands below see
-# the true pre-migration schema — pending create_table's don't collide with
-# tables create_all would otherwise pre-create from the new models.
-# If the DB was restored from a raw backup the alembic_version table may be
-# missing; stamp the baseline so only incremental migrations run.
-if ! uv run flask db current 2>/dev/null | grep -q '^[0-9a-f]'; then
-    uv run flask db stamp 4a1b2c3d4e5f
-fi
-uv run flask db upgrade
-ok "Migrations applied."
-
-# 3b. tectonic presence check — the PDF document system (invoices, receipts,
-# adjustment notes) and the abstract booklet have no plain-format fallback, so a
-# missing tectonic must be loud. Never auto-installs, never fails the update.
-if ! command -v tectonic >/dev/null 2>&1 && [ ! -x "$HOME/.local/bin/tectonic" ]; then
-    echo ""
-    warn "tectonic not found. PDF documents (invoices/receipts/adjustment"
-    echo "  notes) and the abstract booklet PDF cannot be generated until it's"
-    echo "  installed. Run:"
-    echo "    scripts/install-tectonic.sh"
-    echo ""
-fi
-
-# 4. Restart
-info "Restarting service…"
-fuser -k "$PORT/tcp" 2>/dev/null || true
-sleep 1
-systemctl --user restart "$SERVICE"
-sleep 2
-
-# 5. Verify
-if systemctl --user is-active --quiet "$SERVICE"; then
-    ok "Service is running."
-    echo ""
-    echo "  Roll back this update:  scripts/update.sh --revert"
+if command -v python3 >/dev/null 2>&1; then
+    PY=(python3)
 else
-    err "Service failed to start. Check: journalctl --user -u $SERVICE --no-pager -n 20"
+    PY=(uv run --no-sync python)
 fi
+
+case "${1:-}" in
+    "")       exec "${PY[@]}" scripts/site_update.py update ;;
+    --revert) shift; exec "${PY[@]}" scripts/site_update.py revert "$@" ;;
+    *)        exec "${PY[@]}" scripts/site_update.py "$@" ;;
+esac

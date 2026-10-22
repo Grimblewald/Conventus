@@ -1,38 +1,43 @@
 # Keeping a deployment up to date
 
-There are two supported update paths. Both back up first, pull the latest
-code, apply database migrations, and restart the service — you never run
-migrations by hand in normal operation.
+Both ways of updating run the same code, `scripts/site_update.py`: write a
+restore point (the database, copied safely while the site runs, and the git
+commit), pull the new version, install dependencies, apply database
+migrations, restart. You never run migrations by hand in normal operation.
+Restore points live in `var/backups/`; they are never overwritten and the
+newest ten are kept.
 
-## Path 1 — from the admin panel (recommended)
+## From the admin panel
 
 **Admin → System → Update.** The page shows whether a newer commit is
 available (set `UPDATE_REMOTE_URL` in `.env` to enable the check). Clicking
-Update emails you a confirmation code; entering it runs `git pull`, applies
-migrations, and queues a service restart. You land on a "site is
-restarting" page that polls every couple of seconds and returns you to the
-admin overview when the site is back — usually well under a minute.
+Update emails you a confirmation code; entering it runs the update and queues
+a service restart. You land on a "site is restarting" page that polls every
+couple of seconds and returns you to the admin overview when the site is back
+— usually well under a minute. If a step fails, nothing after it runs and the
+page shows the output. Every update is audit-logged as `site.updated`.
 
-Every update is audit-logged as `site.updated`.
-
-## Path 2 — from the shell
+## From the shell
 
 ```bash
 cd ~/Conventus            # or wherever you cloned
-uv run python -m app update
+scripts/update.sh         # or: uv run python -m app update
 ```
 
-This writes a timestamped snapshot (database + git HEAD) to `var/backups/`
-— snapshots are never overwritten and the newest ten are kept — then pulls,
-migrates, and
-restarts the `cloudflared-launch` user service. If the update goes
-sideways:
+## If the site does not come back
+
+SSH in and run:
 
 ```bash
-uv run python -m app revert
+scripts/update.sh --revert
 ```
 
-restores the exact pre-update state (database + git ref) in one step.
+It stops the site, keeps the current database as a `*-pre-revert` copy (so
+the revert can itself be undone), puts back the newest restore point's
+database and code, and starts the site. It asks first; `--yes` skips the
+question. Use this rather than `python -m app revert` when the site is
+broken: the script uses only Python's standard library and never imports the
+application, so it works even when the new code will not start.
 
 ## Migrations
 
@@ -56,10 +61,10 @@ uv run flask --app wsgi:app db stamp head
 
 ## Rolling back
 
-* `uv run python -m app revert` rolls back to the most recent snapshot. It
-  copies the current database aside first (a `*-pre-revert` snapshot under
-  `var/backups/`), so a revert can itself be undone — no state is ever lost
-  irrecoverably. It asks for confirmation; pass `--yes` to skip the prompt.
+* `scripts/update.sh --revert` rolls back to the most recent restore point
+  (see above). `scripts/update.sh list` shows them all, and
+  `python3 scripts/site_update.py revert --to var/backups/<dir>` puts back a
+  specific one.
 * For anything older, restore a backup zip: **Admin → System → Backup**
   (OTP-gated, takes a safety backup first) or
   `uv run python scripts/backup.py --restore <zip>`. Backup archives

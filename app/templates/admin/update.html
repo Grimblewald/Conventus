@@ -41,5 +41,8 @@
   </form>
 </div>
 
-<p class="muted" style="margin-top:18px;">Runs <code>git pull</code> followed by <code>flask db upgrade</code>. A restart may be required to apply code changes.</p>
+<p class="muted" style="margin-top:18px;">Writes a restore point (database and code version), pulls the new
+  version, installs dependencies, applies database migrations and restarts the site — the same steps as
+  <code>scripts/update.sh</code> on the server. If the site does not come back, run
+  <code>scripts/update.sh --revert</code> on the server to put the previous version and database back.</p>
 {% endblock %}

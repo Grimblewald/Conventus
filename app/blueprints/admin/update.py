@@ -1,8 +1,10 @@
-"""Admin → Update site (git pull + migrate)."""
+"""Admin → Update site, through scripts/site_update.py — the same code
+scripts/update.sh runs, restore point included."""
 from __future__ import annotations
 
 import secrets
 import subprocess
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -19,26 +21,20 @@ from ...services.mail import send_mail
 from ...services.updater import latest_status
 
 
-def _run_git_pull() -> tuple[bool, str]:
+def _run_update() -> tuple[bool, str]:
+    """Restore point → pull → dependencies → migrate → queued restart.
+
+    The restart is queued rather than awaited: it stops this very process.
+    """
     root = Path(current_app.root_path).parent
     try:
-        out = subprocess.check_output(
-            ["git", "pull"], cwd=str(root),
-            stderr=subprocess.STDOUT, timeout=60,
-        )
-        return (True, out.decode().strip())
-    except subprocess.CalledProcessError as e:
-        return (False, e.output.decode().strip() if e.output else str(e))
+        proc = subprocess.run(
+            [sys.executable, str(root / "scripts" / "site_update.py"),
+             "update", "--no-wait"],
+            cwd=str(root), capture_output=True, text=True, timeout=900)
     except Exception as e:
         return (False, str(e))
-
-
-def _run_migrations() -> None:
-    root = Path(current_app.root_path).parent
-    subprocess.run(
-        ["uv", "run", "flask", "--app", "wsgi:app", "db", "upgrade"],
-        cwd=str(root), check=True, capture_output=True, text=True,
-    )
+    return (proc.returncode == 0, (proc.stdout + proc.stderr).strip())
 
 
 @admin_bp.route("/update")
@@ -60,7 +56,8 @@ def update_request():
               f"Confirmation code: {code}\n\n"
               f"This code expires in {ttl // 60} minutes. "
               f"If you didn't request this, ignore the email.\n\n"
-              f"This will run git pull and apply database migrations."),
+              f"This writes a restore point, then pulls the new version, "
+              f"applies database migrations and restarts the site."),
     )
     if not ok:
         flash("Failed to send confirmation email. Please try again.", "error")
@@ -93,48 +90,24 @@ def update_confirm():
             flash("That code didn't match, or it has expired.", "error")
             return render_template("admin/update_confirm.html")
         otp.consumed_at = datetime.utcnow()
+        # Committed before the update starts: its restart ends this process.
+        db.session.commit()
+        # Recorded first for the same reason; a failure is recorded below.
+        audit.record("site.updated", target_kind="system", target_id=0,
+                     summary=f"Site update started via admin panel by "
+                             f"{current_user.email}")
 
-        ok, output = _run_git_pull()
+        ok, output = _run_update()
         if not ok:
-            flash(f"git pull failed: {output}", "error")
+            audit.record("site.update_failed", target_kind="system",
+                         target_id=0, summary=output[-400:])
+            flash("The update stopped. Nothing after the failed step ran, and "
+                  "the restore point is in var/backups. If the site misbehaves, "
+                  "run scripts/update.sh --revert on the server.", "error")
+            flash(output[-2000:], "error")
             return redirect(url_for("admin.update_page"))
-        flash("git pull succeeded.", "success")
-
-        try:
-            _run_migrations()
-        except Exception as e:
-            flash(f"Migrations failed: {e}", "error")
-            return redirect(url_for("admin.update_page"))
-        flash("Database migrations applied.", "success")
-
-        # Record the audit entry before restarting: the restart stops the
-        # unit this process runs under, so nothing after it is guaranteed.
-        audit.record("site.updated",
-                     target_kind="system", target_id=0,
-                     summary="Site updated via admin panel")
-
-        try:
-            # --no-block queues the restart so this response gets out
-            # before the service (and this process) is stopped.
-            proc = subprocess.run(
-                ["systemctl", "--user", "restart", "--no-block",
-                 "cloudflared-launch.service"],
-                capture_output=True, timeout=10,
-            )
-            if proc.returncode == 0:
-                # Render the waiting page directly — a redirect would race
-                # the restart and greet the admin with a bad gateway.
-                return render_template("admin/update_restarting.html")
-            else:
-                detail = (proc.stderr or proc.stdout or b"").decode().strip()
-                flash("Site updated, but the restart could not be queued"
-                      + (f" ({detail})" if detail else "") + ". Run manually:"
-                      " systemctl --user restart cloudflared-launch.service", "error")
-        except Exception:
-            flash("Site updated, but the restart could not be queued."
-                  " Run manually:"
-                  " systemctl --user restart cloudflared-launch.service", "error")
-
-        return redirect(url_for("admin.index"))
+        # Render the waiting page directly — a redirect would race the
+        # restart and greet the admin with a bad gateway.
+        return render_template("admin/update_restarting.html")
 
     return render_template("admin/update_confirm.html")

@@ -28,8 +28,9 @@ SQLite.  Lightweight enough to deploy on a Pi or an old phone.
   - **System → Backup** — full-site zip download & OTP-gated restore with
     chunked transfer; optional AES-256 password-protected full backup
     including `.env`
-  - **System → Update** — OTP-gated git pull + migration from the admin
-    panel, with an auto-restart that polls until the site returns
+  - **System → Update** — OTP-gated update from the admin panel (restore
+    point, pull, migrate), with an auto-restart that polls until the site
+    returns
 - Online payments via ANZ Worldline's Hosted Checkout (card data never
   touches the server — PCI SAQ-A scope), webhook-driven status updates
   with HMAC signature verification, PDF invoice/receipt/adjustment-note
@@ -103,16 +104,18 @@ The recommended host is a small Linux VPS rented from **[Binary Lane][bl]** as i
 | Command | What it does |
 |---|---|
 | `uv run python -m app launch` | Start gunicorn + Cloudflare tunnel |
-| `uv run python -m app update` | Backup DB → `git pull` → migrate → restart service |
-| `uv run python -m app revert` | Restore last backup → git reset → restart |
+| `uv run python -m app update` | Restore point → `git pull` → dependencies → migrate → restart (same as `scripts/update.sh`) |
+| `scripts/update.sh --revert` | Stop → put back the last restore point's database and code → start |
 | `uv run python -m app backup` | Manual database + uploads backup |
 | `uv run python -m app syncpages` | Sync `content/pages/*.md` to the database |
 | `uv run python -m app register-service` | Install systemd user units |
 | `uv run python -m app uninstall-service` | Remove systemd user units |
 
-The `update` command is designed to be run while the site is live.
-Backups are stored in `var/backups/`.  If an update goes sideways, `revert`
-restores the exact state from before the last `update`.
+The `update` command is designed to be run while the site is live, and
+Admin → System → Update runs the same code. Restore points are stored in
+`var/backups/`. If an update goes sideways, `scripts/update.sh --revert`
+restores the state from before it — it never imports the application, so it
+works even when the new version will not start. See `docs/UPDATING.md`.
 
 ### Promoting more admins
 

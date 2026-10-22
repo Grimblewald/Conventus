@@ -439,10 +439,18 @@ def _restore_v2(zf, names: set[str], url: str,
 
 
 def _run_migrations() -> None:
-    subprocess.run(
-        ["uv", "run", "flask", "--app", "wsgi:app", "db", "upgrade"],
-        cwd=str(_project_root()), check=True, capture_output=True, text=True,
-    )
+    """The same migration step an update runs (scripts/site_update.py).
+
+    Loaded from the file rather than imported: the script never imports the
+    app, so that a revert works when the app itself will not start.
+    """
+    import importlib.util
+
+    path = _project_root() / "scripts" / "site_update.py"
+    spec = importlib.util.spec_from_file_location("site_update", path)
+    site_update = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(site_update)
+    site_update.migrate(_project_root())
 
 
 def _clear_booklet_cache(uploads_root: Path) -> None:

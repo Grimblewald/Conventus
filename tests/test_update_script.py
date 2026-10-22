@@ -1,271 +1,315 @@
-"""Data-safety guarantees for scripts/update.sh.
+"""Data-safety guarantees for updating and reverting the site.
 
 Regression cover for the 2026-07-22 incident: reverting a broken deploy lost
-data. The script drove a single backup slot (`db.bak`) overwritten on every
-run, so a second update during an incident destroyed the good snapshot, and
-`--revert` overwrote the live database with no safety copy — an irreversible
-roll-back of everything written since the last update.
+data. The old script drove a single backup slot (`db.bak`) overwritten on
+every run, so a second update during an incident destroyed the good snapshot,
+and `--revert` overwrote the live database with no safety copy.
 
-These tests drive the REAL script against a throwaway git repo and database
-(plain text files stand in for app.db — the script only ever copies bytes), so
-the guarantees are verified end to end and cannot silently regress. The service
-restart at the end of a real run is never reached here: every path exercised
-stops before it, or the harness only runs the backup/revert logic.
+Also for what replaced it: a revert copied the snapshot over a live SQLite
+database without stopping the site, leaving its write-ahead log beside it to be
+replayed over the restored data; and a snapshot taken with `cp` could miss
+writes still in that log.
+
+These drive the REAL scripts/update.sh (and through it scripts/site_update.py)
+against a throwaway git repo with a real SQLite database. git pull, uv,
+systemctl and fuser are stand-ins that record what they were asked to do.
 """
 from __future__ import annotations
 
 import os
 import shutil
+import sqlite3
 import subprocess
 from pathlib import Path
 
 import pytest
 
-SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "update.sh"
+SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
 
 
 def _git(cwd, *args):
-    subprocess.run(["git", *args], cwd=cwd, check=True,
-                   capture_output=True, text=True)
+    return subprocess.run(["git", *args], cwd=cwd, check=True,
+                          capture_output=True, text=True).stdout.strip()
+
+
+def _write_db(path: Path, value: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    c = sqlite3.connect(str(path))
+    c.execute("create table if not exists t (v text)")
+    c.execute("delete from t")
+    c.execute("insert into t values (?)", (value,))
+    c.commit()
+    c.close()
+
+
+def _read_db(path: Path) -> str:
+    c = sqlite3.connect(str(path))
+    try:
+        return c.execute("select v from t").fetchone()[0]
+    finally:
+        c.close()
 
 
 @pytest.fixture
 def repo(tmp_path):
-    """A minimal git repo laid out like the project: instance/app.db plus the
-    script under scripts/, with git identity configured."""
-    (tmp_path / "scripts").mkdir()
-    shutil.copy(SCRIPT, tmp_path / "scripts" / "update.sh")
-    os.chmod(tmp_path / "scripts" / "update.sh", 0o755)
-    (tmp_path / "instance").mkdir()
-    (tmp_path / "instance" / "app.db").write_text("data-v1")
+    """A git repo laid out like the project: instance/app.db plus the scripts."""
+    root = tmp_path / "site"
+    (root / "scripts").mkdir(parents=True)
+    for name in ("update.sh", "site_update.py"):
+        shutil.copy(SCRIPTS / name, root / "scripts" / name)
+    os.chmod(root / "scripts" / "update.sh", 0o755)
+    _write_db(root / "instance" / "app.db", "data-v1")
+    (root / ".gitignore").write_text("instance/\nvar/\n")
 
-    _git(tmp_path, "init", "-q")
-    _git(tmp_path, "config", "user.email", "t@example.org")
-    _git(tmp_path, "config", "user.name", "Test")
-    (tmp_path / "README").write_text("v1")
-    _git(tmp_path, "add", "-A")
-    _git(tmp_path, "commit", "-qm", "v1")
-    return tmp_path
+    _git(root, "init", "-q")
+    _git(root, "config", "user.email", "t@example.org")
+    _git(root, "config", "user.name", "Test")
+    (root / "README").write_text("v1")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "v1")
+    return root
+
+
+@pytest.fixture
+def shims(tmp_path):
+    """Stand-ins that record their calls. Returns (PATH, call log)."""
+    bindir = tmp_path / "shim-bin"
+    bindir.mkdir()
+    log = tmp_path / "calls.log"
+    (bindir / "git").write_text(
+        '#!/usr/bin/env bash\n'
+        f'if [ "$1" = "pull" ]; then echo "git pull" >> {log}; exit "${{PULL_EXIT:-0}}"; fi\n'
+        'exec /usr/bin/git "$@"\n')
+    (bindir / "systemctl").write_text(
+        '#!/usr/bin/env bash\n'
+        f'echo "systemctl $*" >> {log}\n'
+        'if [ "$2" = "is-active" ]; then echo active; fi\n')
+    (bindir / "fuser").write_text(f'#!/usr/bin/env bash\necho "fuser $*" >> {log}\n')
+    (bindir / "uv").write_text(
+        '#!/usr/bin/env bash\n'
+        f'echo "uv $*" >> {log}\n'
+        'for a in "$@"; do if [ "$a" = "current" ]; then echo "4a1b2c3d4e5f (head)"; exit 0; fi; done\n'
+        'for a in "$@"; do if [ "$a" = "upgrade" ]; then exit "${MIGRATE_EXIT:-0}"; fi; done\n'
+        'exit 0\n')
+    for f in bindir.iterdir():
+        os.chmod(f, 0o755)
+    return f"{bindir}:{os.environ['PATH']}", log
+
+
+def _run(repo, shims, *args, stdin=None, **env):
+    path, _log = shims
+    return subprocess.run(
+        ["bash", str(repo / "scripts" / "update.sh"), *args],
+        cwd=repo, capture_output=True, text=True, stdin=stdin,
+        env={**os.environ, "PATH": path, "HOME": str(repo), **env})
+
+
+def _calls(shims) -> list[str]:
+    log = shims[1]
+    return log.read_text().splitlines() if log.exists() else []
 
 
 def _backup_dirs(repo):
     d = repo / "var" / "backups"
-    if not d.exists():
-        return []
-    return sorted(p for p in d.iterdir() if p.is_dir())
+    return sorted(p for p in d.iterdir() if p.is_dir()) if d.exists() else []
 
 
-@pytest.fixture
-def shimmed_path(tmp_path):
-    """A PATH whose git pull / systemctl / fuser are no-ops, so the real script
-    runs to completion without touching a remote or a service."""
-    bindir = tmp_path / "shim-bin"
-    bindir.mkdir()
-    # git: pass through except `pull`, which must be a no-op success.
-    (bindir / "git").write_text(
-        '#!/usr/bin/env bash\n'
-        'if [ "$1" = "pull" ]; then exit 0; fi\n'
-        'exec /usr/bin/git "$@"\n')
-    for name in ("systemctl", "fuser"):
-        (bindir / name).write_text('#!/usr/bin/env bash\nexit 0\n')
-    # uv: swallow the migration commands (`uv run flask db …`).
-    (bindir / "uv").write_text(
-        '#!/usr/bin/env bash\n'
-        # `flask db current` must print a revision so the stamp branch is skipped.
-        'for a in "$@"; do if [ "$a" = "current" ]; then echo "abc123 (head)"; exit 0; fi; done\n'
-        'exit 0\n')
-    for f in bindir.iterdir():
-        os.chmod(f, 0o755)
-    return f"{bindir}:{os.environ['PATH']}"
+# --- updating -----------------------------------------------------------------
 
-
-def _run(repo, shimmed_path, *args):
-    return subprocess.run(
-        ["bash", str(repo / "scripts" / "update.sh"), *args],
-        cwd=repo, capture_output=True, text=True,
-        env={**os.environ, "PATH": shimmed_path, "HOME": str(repo)})
-
-
-def test_update_takes_a_timestamped_snapshot(repo, shimmed_path):
-    r = _run(repo, shimmed_path)
-    assert r.returncode == 0, r.stderr
+def test_update_writes_a_restore_point_then_pulls_migrates_restarts(repo, shims):
+    r = _run(repo, shims)
+    assert r.returncode == 0, r.stdout + r.stderr
     snaps = _backup_dirs(repo)
     assert len(snaps) == 1
-    assert (snaps[0] / "app.db").read_text() == "data-v1"
-    assert (snaps[0] / "git-head").read_text().strip()
+    assert _read_db(snaps[0] / "app.db") == "data-v1"
+    assert (snaps[0] / "git-head").read_text().strip() == _git(repo, "rev-parse", "HEAD")
+    calls = _calls(shims)
+    steps = [c.split()[0] + (" " + c.split()[1] if c.startswith("uv") else "")
+             for c in calls]
+    assert steps.index("git") < steps.index("uv sync") < steps.index("uv run")
+    assert any("systemctl --user restart cloudflared-launch.service" == c for c in calls)
 
 
-def test_second_update_does_not_clobber_the_first_snapshot(repo, shimmed_path):
-    """The core of the incident: a second update must NOT overwrite the good
-    backup taken by the first."""
-    _run(repo, shimmed_path)
-    (repo / "instance" / "app.db").write_text("data-v2-with-live-writes")
-    _run(repo, shimmed_path)
-
-    snaps = _backup_dirs(repo)
-    contents = sorted((s / "app.db").read_text() for s in snaps)
-    # BOTH snapshots survive — the original good copy is still recoverable.
-    assert "data-v1" in contents
-    assert "data-v2-with-live-writes" in contents
-
-
-def test_revert_preserves_the_current_db_before_rolling_back(repo, shimmed_path):
-    """A revert must snapshot the live DB first, so the rollback is reversible
-    and no state is ever destroyed irrecoverably."""
-    _run(repo, shimmed_path)                       # snapshot of data-v1
-    (repo / "instance" / "app.db").write_text("data-v2-live")
-
-    r = _run(repo, shimmed_path, "--revert", "--yes")
-    assert r.returncode == 0, r.stderr
-
-    # Live DB rolled back to the snapshot…
-    assert (repo / "instance" / "app.db").read_text() == "data-v1"
-    # …but the pre-revert state was preserved and is still readable.
-    pre = [s for s in _backup_dirs(repo) if s.name.endswith("pre-revert")]
-    assert pre, "revert did not preserve the pre-revert database"
-    assert (pre[0] / "app.db").read_text() == "data-v2-live"
+def test_a_restore_point_includes_writes_still_in_the_write_ahead_log(repo, shims):
+    """A plain file copy of a live WAL-mode database misses these."""
+    db = repo / "instance" / "app.db"
+    held = sqlite3.connect(str(db))
+    held.execute("pragma journal_mode=wal")
+    held.execute("pragma wal_autocheckpoint=0")
+    held.execute("update t set v='written-moments-ago'")
+    held.commit()
+    assert Path(f"{db}-wal").stat().st_size > 0
+    try:
+        assert _run(repo, shims).returncode == 0
+    finally:
+        held.close()
+    assert _read_db(_backup_dirs(repo)[0] / "app.db") == "written-moments-ago"
 
 
-def test_revert_without_yes_makes_no_change(repo, shimmed_path):
-    _run(repo, shimmed_path)
-    (repo / "instance" / "app.db").write_text("data-v2-live")
-    # No --yes and stdin closed → prompt reads EOF → cancel.
-    r = subprocess.run(
-        ["bash", str(repo / "scripts" / "update.sh"), "--revert"],
-        cwd=repo, capture_output=True, text=True, stdin=subprocess.DEVNULL,
-        env={**os.environ, "PATH": shimmed_path, "HOME": str(repo)})
+def test_a_failed_migration_stops_before_the_restart(repo, shims):
+    r = _run(repo, shims, MIGRATE_EXIT="1")
     assert r.returncode != 0
-    assert (repo / "instance" / "app.db").read_text() == "data-v2-live"
+    assert len(_backup_dirs(repo)) == 1, "the restore point is still written first"
+    assert not [c for c in _calls(shims) if "restart" in c]
 
 
-def test_revert_with_no_snapshot_errors_cleanly(repo, shimmed_path):
-    r = _run(repo, shimmed_path, "--revert", "--yes")
+def test_a_failed_pull_changes_nothing_but_the_restore_point(repo, shims):
+    r = _run(repo, shims, PULL_EXIT="1")
+    assert r.returncode != 0
+    assert not [c for c in _calls(shims) if c.startswith(("uv", "systemctl"))]
+
+
+def test_second_update_does_not_clobber_the_first_snapshot(repo, shims):
+    """The core of the incident: a second update must NOT overwrite the good
+    restore point taken by the first."""
+    _run(repo, shims)
+    _write_db(repo / "instance" / "app.db", "data-v2-with-live-writes")
+    _run(repo, shims)
+    contents = sorted(_read_db(s / "app.db") for s in _backup_dirs(repo))
+    assert contents == ["data-v1", "data-v2-with-live-writes"]
+
+
+def test_old_snapshots_are_pruned_but_safety_copies_kept(repo, shims):
+    backups = repo / "var" / "backups"
+    keeper = backups / "20260101-090000-pre-restore"
+    keeper.mkdir(parents=True)
+    _write_db(keeper / "app.db", "PRE-RESTORE-LIVE-DB")
+    for i in range(3):
+        _write_db(repo / "instance" / "app.db", f"data-{i}")
+        _run(repo, shims, UPDATE_KEEP_SNAPSHOTS="2")
+    update_snaps = [s for s in _backup_dirs(repo) if "pre-" not in s.name]
+    assert len(update_snaps) == 2, [s.name for s in update_snaps]
+    assert _read_db(keeper / "app.db") == "PRE-RESTORE-LIVE-DB"
+
+
+# --- reverting ----------------------------------------------------------------
+
+def test_revert_puts_back_database_and_code_and_keeps_what_it_replaced(repo, shims):
+    _run(repo, shims)
+    good = _git(repo, "rev-parse", "HEAD")
+    (repo / "README").write_text("v2")
+    _git(repo, "commit", "-qam", "v2")
+    _write_db(repo / "instance" / "app.db", "data-v2-live")
+
+    r = _run(repo, shims, "--revert", "--yes")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert _read_db(repo / "instance" / "app.db") == "data-v1"
+    assert _git(repo, "rev-parse", "HEAD") == good
+    pre = [s for s in _backup_dirs(repo) if s.name.endswith("pre-revert")]
+    assert pre and _read_db(pre[0] / "app.db") == "data-v2-live"
+
+
+def test_revert_stops_the_site_before_touching_the_database(repo, shims):
+    _run(repo, shims)
+    shims[1].unlink()
+    _run(repo, shims, "--revert", "--yes")
+    calls = _calls(shims)
+    stop = calls.index("systemctl --user stop cloudflared-launch.service")
+    start = calls.index("systemctl --user start cloudflared-launch.service")
+    assert stop < start
+
+
+def test_revert_survives_a_write_ahead_log_left_beside_the_database(repo, shims):
+    """The old revert copied the file over a live database; its leftover -wal
+    was then replayed over the restored data."""
+    _run(repo, shims)
+    db = repo / "instance" / "app.db"
+    held = sqlite3.connect(str(db))
+    held.execute("pragma journal_mode=wal")
+    held.execute("pragma wal_autocheckpoint=0")
+    held.execute("update t set v='after-the-update'")
+    held.commit()
+    try:
+        r = _run(repo, shims, "--revert", "--yes")
+    finally:
+        held.close()
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert _read_db(db) == "data-v1"
+
+
+def test_revert_works_when_the_app_cannot_even_import(repo, shims):
+    """The point of keeping the scripts free of the app."""
+    _run(repo, shims)
+    (repo / "app").mkdir()
+    (repo / "app" / "__init__.py").write_text("this is not python(\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "broken")
+    r = _run(repo, shims, "--revert", "--yes")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert not (repo / "app").exists()
+
+
+def test_revert_without_yes_makes_no_change(repo, shims):
+    _run(repo, shims)
+    _write_db(repo / "instance" / "app.db", "data-v2-live")
+    r = _run(repo, shims, "--revert", stdin=subprocess.DEVNULL)
+    assert r.returncode != 0
+    assert _read_db(repo / "instance" / "app.db") == "data-v2-live"
+
+
+def test_revert_with_no_snapshot_errors_cleanly(repo, shims):
+    r = _run(repo, shims, "--revert", "--yes")
     assert r.returncode != 0
     assert "nothing to revert" in (r.stdout + r.stderr).lower()
-    # The live DB is untouched.
-    assert (repo / "instance" / "app.db").read_text() == "data-v1"
+    assert _read_db(repo / "instance" / "app.db") == "data-v1"
 
 
-def test_old_snapshots_are_pruned_but_pre_revert_kept(repo, shimmed_path):
-    env_path = shimmed_path
-    for i in range(3):
-        (repo / "instance" / "app.db").write_text(f"data-{i}")
-        subprocess.run(
-            ["bash", str(repo / "scripts" / "update.sh")],
-            cwd=repo, capture_output=True, text=True,
-            env={**os.environ, "PATH": env_path, "HOME": str(repo),
-                 "UPDATE_KEEP_SNAPSHOTS": "2"})
-    update_snaps = [s for s in _backup_dirs(repo)
-                    if not s.name.endswith("pre-revert")]
-    assert len(update_snaps) == 2, [s.name for s in update_snaps]
-
-
-def test_pre_restore_snapshots_are_never_pruned(repo, shimmed_path):
-    """The admin panel's archive restore writes its safety copy into the SAME
-    var/backups directory (backup_archive._safety_snapshot). It is the only
-    record of the database that restore overwrote, so update's pruning must
-    never count it toward the keep limit and delete it."""
-    backups = repo / "var" / "backups"
-    backups.mkdir(parents=True)
-    keeper = backups / "20260101-090000-pre-restore"
-    keeper.mkdir()
-    (keeper / "app.db").write_text("PRE-RESTORE-LIVE-DB")
-
-    for i in range(3):
-        (repo / "instance" / "app.db").write_text(f"data-{i}")
-        subprocess.run(
-            ["bash", str(repo / "scripts" / "update.sh")],
-            cwd=repo, capture_output=True, text=True,
-            env={**os.environ, "PATH": shimmed_path, "HOME": str(repo),
-                 "UPDATE_KEEP_SNAPSHOTS": "1"})
-
-    assert keeper.exists(), "pruning deleted the pre-restore safety copy"
-    assert (keeper / "app.db").read_text() == "PRE-RESTORE-LIVE-DB"
-
-
-def test_revert_never_restores_from_a_pre_restore_snapshot(repo, shimmed_path):
-    """Same rule as the pre-revert copies, for the ones the admin panel writes.
-    A pre-restore dir carries no git-head, so selecting it would also leave the
-    code un-rolled-back while reporting a successful revert."""
-    backups = repo / "var" / "backups"
-    backups.mkdir(parents=True)
-
-    upd = backups / "20260101-100000"
-    upd.mkdir()
-    (upd / "app.db").write_text("UPDATE-SNAPSHOT")
-    (upd / "git-head").write_text("")
-
-    for name in ("20260301-120000-pre-restore", "20260301-120000-pre-restore-1"):
-        d = backups / name
-        d.mkdir()
-        (d / "app.db").write_text("OVERWRITTEN-BY-ARCHIVE-RESTORE")
-
-    (repo / "instance" / "app.db").write_text("CURRENT-LIVE")
-    r = _run(repo, shimmed_path, "--revert", "--yes")
-    assert r.returncode == 0, r.stderr
-    assert (repo / "instance" / "app.db").read_text() == "UPDATE-SNAPSHOT"
-
-
-def test_revert_reports_when_snapshots_exist_but_hold_no_database(repo, shimmed_path):
-    """Snapshot dirs with no app.db (every Postgres install: update.sh records
-    code only) must produce the friendly error, not a silent death.
-
-    `latest_snapshot` used to end on a bare `[ -f … ] && …`, so it returned 1
-    when nothing matched — and under `set -euo pipefail` the assignment
-    `SNAP="$(latest_snapshot)"` killed the script right there: exit 1, no
-    output, no rollback, and the legacy db.bak fallback below unreachable.
-    """
-    backups = repo / "var" / "backups"
-    backups.mkdir(parents=True)
+def test_revert_reports_when_snapshots_hold_no_database(repo, shims):
     for name in ("20260101-100000", "20260102-100000"):
-        d = backups / name
-        d.mkdir()
-        (d / "git-head").write_text("deadbeef")   # code-only snapshot
-
-    r = _run(repo, shimmed_path, "--revert", "--yes")
+        d = repo / "var" / "backups" / name
+        d.mkdir(parents=True)
+        (d / "git-head").write_text("deadbeef")
+    r = _run(repo, shims, "--revert", "--yes")
     assert r.returncode != 0
-    assert "nothing to revert" in (r.stdout + r.stderr).lower(), \
-        f"script died silently: stdout={r.stdout!r} stderr={r.stderr!r}"
-    assert (repo / "instance" / "app.db").read_text() == "data-v1"
+    assert "nothing to revert" in (r.stdout + r.stderr).lower()
 
 
-def test_revert_falls_back_to_a_legacy_single_slot_backup(repo, shimmed_path):
-    """Reachability of the pre-2026-07 db.bak path, which sat immediately after
-    the `SNAP="$(latest_snapshot)"` assignment that used to abort the script."""
+def test_revert_never_restores_from_a_safety_copy(repo, shims):
     backups = repo / "var" / "backups"
-    backups.mkdir(parents=True)
-    (backups / "db.bak").write_text("LEGACY-BACKUP")
-
-    (repo / "instance" / "app.db").write_text("CURRENT-LIVE")
-    r = _run(repo, shimmed_path, "--revert", "--yes")
-    assert r.returncode == 0, r.stderr
-    assert (repo / "instance" / "app.db").read_text() == "LEGACY-BACKUP"
-
-
-def test_revert_never_restores_from_a_pre_revert_snapshot(repo, shimmed_path):
-    """Pre-revert copies (including the same-second collision form
-    <stamp>-pre-revert-N) are rolled-back live state, never a rollback target —
-    a --revert must restore the newest UPDATE snapshot, skipping both."""
-    backups = repo / "var" / "backups"
-    backups.mkdir(parents=True)
-
-    # An older genuine update snapshot — the correct restore target.
     upd = backups / "20260101-100000"
-    upd.mkdir()
-    (upd / "app.db").write_text("UPDATE-SNAPSHOT")
+    upd.mkdir(parents=True)
+    _write_db(upd / "app.db", "UPDATE-SNAPSHOT")
     (upd / "git-head").write_text("")
+    for name in ("20260201-120000-pre-revert", "20260201-120000-pre-revert-1",
+                 "20260301-120000-pre-restore", "20260301-120000-pre-restore-1"):
+        _write_db(backups / name / "app.db", "NOT-A-ROLLBACK-TARGET")
+    _write_db(repo / "instance" / "app.db", "CURRENT-LIVE")
+    r = _run(repo, shims, "--revert", "--yes")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert _read_db(repo / "instance" / "app.db") == "UPDATE-SNAPSHOT"
 
-    # Two pre-revert copies in the same second: the base and the -1 collision
-    # form. Newer by name than the update snapshot, so a naive "newest dir"
-    # pick would wrongly choose one of these.
-    for name, body in (("20260201-120000-pre-revert", "ROLLED-BACK-A"),
-                       ("20260201-120000-pre-revert-1", "ROLLED-BACK-B")):
-        d = backups / name
-        d.mkdir()
-        (d / "app.db").write_text(body)
 
-    (repo / "instance" / "app.db").write_text("CURRENT-LIVE")
-    r = _run(repo, shimmed_path, "--revert", "--yes")
-    assert r.returncode == 0, r.stderr
-    # Restored the update snapshot, not either pre-revert copy.
-    assert (repo / "instance" / "app.db").read_text() == "UPDATE-SNAPSHOT"
+def test_revert_falls_back_to_a_legacy_single_slot_backup(repo, shims):
+    _write_db(repo / "var" / "backups" / "db.bak", "LEGACY-BACKUP")
+    _write_db(repo / "instance" / "app.db", "CURRENT-LIVE")
+    r = _run(repo, shims, "--revert", "--yes")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert _read_db(repo / "instance" / "app.db") == "LEGACY-BACKUP"
+
+
+# --- the admin page runs the same script ------------------------------------
+
+def test_the_admin_update_runs_the_same_script(seeded, admin_client, app,
+                                               monkeypatch):
+    import re
+    calls = []
+
+    class Done:
+        returncode, stdout, stderr = 0, "ok", ""
+
+    def fake_run(cmd, **kw):
+        calls.append(cmd)
+        return Done()
+
+    sent = []
+    monkeypatch.setattr("app.blueprints.admin.update.send_mail",
+                        lambda **kw: sent.append(kw) or True)
+    monkeypatch.setattr("app.blueprints.admin.update.subprocess.run", fake_run)
+
+    admin_client.post("/admin/update-request")
+    code = re.search(r"Confirmation code: (\d{6})", sent[-1]["body"]).group(1)
+    admin_client.post("/admin/update-confirm", data={"code": code})
+
+    assert len(calls) == 1
+    assert calls[0][1].endswith("scripts/site_update.py")
+    assert calls[0][2:] == ["update", "--no-wait"]

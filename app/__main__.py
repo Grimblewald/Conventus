@@ -41,6 +41,7 @@ def main() -> None:
         sys.exit(1)
 
     script, *args = COMMANDS[name]
+    args += sys.argv[2:]   # e.g. revert --yes
     path = ROOT / script
 
     if not path.exists():

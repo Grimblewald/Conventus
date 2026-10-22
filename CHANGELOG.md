@@ -104,6 +104,16 @@
   about the toolchain opt back in with a `real_latex` marker. 227s to 92s.
 
 ### Fixed
+- **One way to update, and a revert that works when the site is broken.**
+  Admin → Update, `scripts/update.sh` and `python -m app update` now all run
+  `scripts/site_update.py`: restore point (database copied through SQLite's
+  backup API, plus the git commit), fast-forward pull, dependencies,
+  migrations, restart. The admin page previously took no restore point and
+  installed no dependencies. `scripts/update.sh --revert` stops the site
+  before putting the database back (the old revert copied over a running
+  database, whose write-ahead log could then be replayed over the restored
+  data), and uses only the standard library so it runs even when the new
+  code will not import. `python -m app revert` now passes `--yes` through.
 - **Restoring a backup restores it.** The restore moved the archive's database
   over the live one and left the old write-ahead log beside it, which SQLite
   replayed on the next open — the restore came back as the database it

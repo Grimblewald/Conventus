@@ -88,7 +88,10 @@ def shims(tmp_path):
     (bindir / "uv").write_text(
         '#!/usr/bin/env bash\n'
         f'echo "uv $*" >> {log}\n'
-        'for a in "$@"; do if [ "$a" = "current" ]; then echo "4a1b2c3d4e5f (head)"; exit 0; fi; done\n'
+        'for a in "$@"; do if [ "$a" = "current" ]; then\n'
+        '  if [ -n "${CURRENT_EXIT:-}" ]; then echo "Error: could not import app" >&2; exit "$CURRENT_EXIT"; fi\n'
+        '  echo "${CURRENT_OUT-4a1b2c3d4e5f (head)}"; exit 0; fi; done\n'
+        f'for a in "$@"; do if [ "$a" = "stamp" ]; then echo "uv stamp" >> {log}; fi; done\n'
         'for a in "$@"; do if [ "$a" = "upgrade" ]; then exit "${MIGRATE_EXIT:-0}"; fi; done\n'
         'exit 0\n')
     for f in bindir.iterdir():
@@ -151,6 +154,23 @@ def test_a_failed_migration_stops_before_the_restart(repo, shims):
     assert r.returncode != 0
     assert len(_backup_dirs(repo)) == 1, "the restore point is still written first"
     assert not [c for c in _calls(shims) if "restart" in c]
+
+
+def test_a_broken_app_is_never_stamped_back_to_the_baseline(repo, shims):
+    """`db current` failing (the new code will not import) is not the same as
+    a database with no migration record: stamping it would replay every
+    migration over current data."""
+    r = _run(repo, shims, CURRENT_EXIT="1")
+    assert r.returncode != 0
+    calls = _calls(shims)
+    assert not [c for c in calls if "stamp" in c]
+    assert not [c for c in calls if "restart" in c]
+
+
+def test_a_database_with_no_migration_record_is_stamped(repo, shims):
+    r = _run(repo, shims, CURRENT_OUT="")
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert [c for c in _calls(shims) if "stamp" in c]
 
 
 def test_a_failed_pull_changes_nothing_but_the_restore_point(repo, shims):

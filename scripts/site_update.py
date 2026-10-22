@@ -199,8 +199,11 @@ def _report_running(root: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def migrate(root: Path) -> None:
-    current = run(root, "uv", "run", "flask", "--app", "wsgi:app", "db", "current",
-                  check=False)
+    # Stamped only when the command worked and found no revision (a database
+    # restored from a raw copy). If it failed, the app could not even be
+    # asked, and stamping would roll a current database back to the baseline
+    # and replay every migration over it.
+    current = run(root, "uv", "run", "flask", "--app", "wsgi:app", "db", "current")
     if not re.search(r"^[0-9a-f]{12}", current, re.M):
         run(root, "uv", "run", "flask", "--app", "wsgi:app", "db", "stamp", BASELINE)
     run(root, "uv", "run", "flask", "--app", "wsgi:app", "db", "upgrade")

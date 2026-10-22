@@ -863,52 +863,33 @@ def test_gst_registered_shows_the_breakdown(ctx):
     assert "Tax Invoice" in tex
 
 
-def test_not_gst_registered_states_it_plainly(ctx):
-    """The reference document this was modelled on omits any GST statement,
-    which leaves the payer guessing; a zero-valued GST line would be worse
-    still, implying a taxable sale that was not taxed. So the skeleton carries
-    an explicit statement — and when the issuer genuinely is not registered, it
-    names them."""
-    tex = _tex("invoice", ctx, gst_applies="", gst_registered="",
-               invoice_type="Invoice",
+def test_no_gst_says_so_where_the_gst_line_would_be(ctx):
+    """Without GST the totals carry a quiet "GST not applicable" where the GST
+    line would be — never a zero-valued GST line, which would imply a taxable
+    sale that was not taxed, and no separate statement."""
+    tex = _tex("invoice", ctx, gst_applies="", invoice_type="Invoice",
                business_legal_name="Example Society Ltd")
-    assert r"\gstfalse" in tex and r"\gstregfalse" in tex
+    assert r"\gstfalse" in tex and "GST not applicable" in tex
     flat = " ".join(tex.split())
-    assert "No GST has been charged. Example Society Ltd is not registered "\
-           "for GST." in flat
+    assert "not registered for GST" not in flat
+    assert "No GST has been charged" not in flat
 
 
-def test_a_registered_issuer_never_claims_to_be_unregistered(ctx):
-    """"No GST on this sale" and "not registered for GST" are different facts.
-
-    A GST-registered society can legitimately issue a GST-free invoice (an
-    overseas sponsor, say) by unticking the per-send toggle. Printing a
-    non-registration statement on that document would be a false statement on
-    a tax document, so the two travel as separate flags.
-    """
-    tex = _tex("invoice", ctx, gst_applies="", gst_registered="1",
-               invoice_type="Invoice",
-               business_legal_name="Example Society Ltd")
-    assert r"\gstfalse" in tex, "no GST was charged on this sale"
-    assert r"\gstregtrue" in tex, "but the issuer IS registered"
+def test_old_snapshots_with_a_registration_flag_render_the_same_way(ctx):
+    """Documents issued while a per-invoice GST override existed carry a
+    gst_registered variable; it no longer changes anything."""
+    a = _tex("invoice", ctx, gst_applies="", gst_registered="1")
+    b = _tex("invoice", ctx, gst_applies="", gst_registered="")
+    assert a == b
 
 
-def test_all_three_tax_statements_actually_compile(ctx):
-    """The tax statement is a nested LaTeX conditional; a miscounted \\fi is
-    invisible in the source assertions above and fatal at compile time."""
-    for gst, reg in (("1", "1"), ("", "1"), ("", "")):
-        pdf = render_document("invoice", _vars(gst_applies=gst,
-                                               gst_registered=reg))
-        assert pdf[:4] == b"%PDF", (gst, reg)
-
-
-def test_legacy_documents_without_the_registration_flag_still_regenerate(ctx):
-    """Snapshots issued before the two facts were split carry only
-    gst_applies. Falling back to it reproduces exactly what was issued."""
-    tex = _tex("invoice", ctx, gst_applies="")
-    assert r"\gstregfalse" in tex
-    charged = _tex("invoice", ctx, gst_applies="1")
-    assert r"\gstregtrue" in charged
+@pytest.mark.real_latex
+def test_both_tax_treatments_actually_compile(ctx):
+    """The totals are a LaTeX conditional around table rows; a miscounted \\fi
+    is invisible in the source assertions above and fatal at compile time."""
+    for gst in ("1", ""):
+        pdf = render_document("invoice", _vars(gst_applies=gst))
+        assert pdf[:4] == b"%PDF", gst
 
 
 def test_issuer_and_signatory_appear(ctx):

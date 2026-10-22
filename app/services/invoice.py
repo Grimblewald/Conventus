@@ -29,29 +29,22 @@ from .mail import send_mail
 log = logging.getLogger(__name__)
 
 
-def _business_vars(amount_cents: int, gst: bool | None = None) -> dict:
+def _business_vars(amount_cents: int) -> dict:
     """Issuer and tax variables shared by every document, from the single
-    FinancialIdentity row.
+    FinancialIdentity row. GST always follows the identity's registration.
 
     GST-inclusive pricing: the tax component of an inclusive total is
     `total × rate / (100 + rate)` — at the Australian 10% that is total ÷ 11,
     a 10% rate expressed against an inclusive amount rather than an 11% one.
-    `gst` overrides the identity's registration for one send (the Send Invoice
-    form's per-recipient toggle). `gst_applies` is the control flag the
-    renderer keys on — it travels in the variables so a stored document
-    regenerates with the tax treatment it was issued under, not today's
-    setting, and `gst_rate` travels with it for the same reason: a document
-    reissued after a rate change must still print the rate it was taxed at.
-
-    `gst_registered` is a SEPARATE fact and must stay separate: "no GST on this
-    sale" and "this issuer is not registered for GST" are different statements,
-    and a registered issuer printing the latter on a tax document would be
-    asserting something false. Both travel with the document for the same
-    snapshot reason.
+    `gst_applies` is the control flag the renderer keys on — it travels in the
+    variables so a stored document regenerates with the tax treatment it was
+    issued under, not today's setting, and `gst_rate` travels with it for the
+    same reason: a document reissued after a rate change must still print the
+    rate it was taxed at.
     """
     ident = get_financial_identity()
     site = get_site_settings()
-    gst_on = ident.gst_registered if gst is None else gst
+    gst_on = bool(ident.gst_registered)
     rate = ident.gst_percent
     gst_cents = round(amount_cents * rate / (100 + rate)) if gst_on else 0
     return {
@@ -63,7 +56,6 @@ def _business_vars(amount_cents: int, gst: bool | None = None) -> dict:
         "signatory_name": ident.signatory_name or "",
         "signatory_role": ident.signatory_role or "",
         "gst_applies": "1" if gst_on else "",
-        "gst_registered": "1" if ident.gst_registered else "",
         "gst_rate": ident.gst_percent_label,
         "invoice_type": "Tax Invoice" if gst_on else "Invoice",
         "gst_amount": format_amount(gst_cents),
@@ -318,8 +310,7 @@ def _finalise_issuer_text(vars_: dict) -> dict:
 def manual_invoice_vars(to: str, *, recipient_name: str, description: str,
                         item: str, amount_cents: int, reference: str,
                         period: str = "", due_date: str = "",
-                        recipient_abn: str = "", recipient_address: str = "",
-                        include_gst: bool | None = None) -> dict:
+                        recipient_abn: str = "", recipient_address: str = "") -> dict:
     """Resolve the variables for a manually raised invoice.
 
     Shared by the send path and the form's preview so what an admin previews is
@@ -345,7 +336,7 @@ def manual_invoice_vars(to: str, *, recipient_name: str, description: str,
         "payment_date": datetime.utcnow().strftime("%-d %B %Y"),
         "site_name": site.site_name,
         "registration_id": "N/A",
-        **_business_vars(amount_cents, gst=include_gst),
+        **_business_vars(amount_cents),
     }
     vars_["due_date"] = due_date
     vars_["recipient_abn"] = recipient_abn
@@ -362,8 +353,7 @@ def send_manual_invoice(to: str, *, recipient_name: str, description: str,
                         period: str = "", cc: list[str] | None = None,
                         subject_override: str = "", body_override: str = "",
                         due_date: str = "", recipient_abn: str = "",
-                        recipient_address: str = "",
-                        include_gst: bool | None = None) -> bool:
+                        recipient_address: str = "") -> bool:
     """Send a templated invoice for an agreed amount to arbitrary recipients.
 
     Used for out-of-band billing (e.g. sponsors). Maps onto the template's
@@ -377,7 +367,7 @@ def send_manual_invoice(to: str, *, recipient_name: str, description: str,
         to, recipient_name=recipient_name, description=description, item=item,
         amount_cents=amount_cents, reference=reference, period=period,
         due_date=due_date, recipient_abn=recipient_abn,
-        recipient_address=recipient_address, include_gst=include_gst)
+        recipient_address=recipient_address)
     log.info("Sending manual invoice %s to %s (cc %s)", reference, to, cc or [])
     attachment = _render_attachment("invoice", vars_, reference)
     ok = _send_rendered("invoice", vars_, to=to, cc=cc,

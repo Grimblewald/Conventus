@@ -379,6 +379,22 @@ class TestAddressChange:
             from app.services.invoice import registration_documents
             assert sum(1 for d in registration_documents(reg) if d.replaces_id) == 1
 
+    def test_an_admin_correction_does_not_use_up_the_members_change(
+            self, members_paid_registration, member_client, mailbox, app):
+        """The GST correction is the organisers' doing; it must not stop the
+        member changing their address the same day."""
+        from app.models import IssuedDocument
+        from app.services.invoice import reissue_document
+        slug, _rid, iid = members_paid_registration
+        with app.app_context():
+            reissue_document(db.session.get(IssuedDocument, iid), reason=REASON)
+        mailbox.clear()
+        db.session.expire_all()
+        page = _save(member_client, slug, ADDRESS)
+        assert b"reissued with the new billing address" in page.data
+        assert b"once a day" not in page.data
+        assert [m["to"] for m in mailbox] == ["member@test.example.org"]
+
     def test_saving_the_same_address_sends_nothing(
             self, members_paid_registration, member_client, mailbox, app):
         slug, _rid, _iid = members_paid_registration

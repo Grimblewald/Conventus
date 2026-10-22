@@ -160,17 +160,9 @@ def assemble_tex(kind: str, tpl, vars_: dict, *, has_logo: bool = False,
     so the generated source is testable without invoking tectonic."""
     v = dict(vars_)
     # GST comes from the variables, not the template: the send layer resolves
-    # it from the financial identity (or a per-send override) and it is
-    # snapshotted, so a regenerated document keeps the treatment it was issued
-    # under rather than today's registration status.
+    # it from the financial identity and it is snapshotted, so a regenerated
+    # document keeps the treatment it was issued under rather than today's.
     gst_on = bool(v.get("gst_applies"))
-    # Registration status is NOT the same fact as "GST charged on this sale".
-    # A GST-registered issuer can legitimately issue a GST-free invoice (an
-    # overseas sponsor, say); printing "not registered for GST" on it would be
-    # a false statement on a tax document. Absent from legacy snapshots, where
-    # the two facts were conflated — fall back to gst_on so those regenerate
-    # exactly as issued.
-    gst_registered = bool(v.get("gst_registered", gst_on))
 
     # Title reflects the kind; the invoice kind defers to the GST-aware
     # {invoice_type} value ("Tax Invoice" vs "Invoice").
@@ -189,7 +181,6 @@ def assemble_tex(kind: str, tpl, vars_: dict, *, has_logo: bool = False,
 
     subst = {
         "flag_gst": _flag("gst", gst_on),
-        "flag_gst_registered": _flag("gstreg", gst_registered),
         "flag_logo": _flag("haslogo", has_logo),
         "flag_signature": _flag("hassig", has_signature),
         "flag_recipient_abn": _flag("rabn", bool(v.get("recipient_abn"))),
@@ -824,10 +815,8 @@ def placeholder_vars(kind: str) -> dict[str, RawLatex]:
     ident = get_financial_identity()
     # GST is a configured fact, not a field to fill in: a preview shows the
     # tax treatment the identity is actually set to, so an admin can see
-    # whether their documents will carry GST lines or the no-GST statement.
-    registered = ident.gst_registered
-    vars_["gst_applies"] = "1" if registered else ""
-    vars_["gst_registered"] = "1" if registered else ""
+    # whether their documents will carry GST lines or "GST not applicable".
+    vars_["gst_applies"] = "1" if ident.gst_registered else ""
     # A configured fact like the registration itself, so it shows for real
     # rather than as a placeholder — an admin proofing a 15% rate needs to see
     # 15 on the page.

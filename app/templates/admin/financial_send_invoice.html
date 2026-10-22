@@ -111,16 +111,9 @@
     </div>
   </div>
 
-  <div class="form-group" style="margin-bottom:16px;">
-    <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
-      <input type="checkbox" name="include_gst" value="1"
-             {% if (submitted and form.get('include_gst') == '1') or (not submitted and ident.gst_registered) %}checked{% endif %}>
-      <strong>Amount includes GST</strong>
-    </label>
-    <p class="muted" style="margin:4px 0 0 28px;">Breaks out the GST component and
-      titles the document "Tax Invoice". Follows your
-      <a href="{{ url_for('admin.financial_identity') }}">GST registration</a>.</p>
-  </div>
+  <p class="muted" style="margin-bottom:16px;">GST follows your
+    <a href="{{ url_for('admin.financial_identity') }}">Financial Identity</a>:
+    {% if ident.gst_registered %}the amount includes GST, broken out on a "Tax Invoice".{% else %}not registered, so the invoice shows "GST not applicable".{% endif %}</p>
 
   <div class="form-group" style="margin-bottom:16px;">
     <label for="subject"><strong>Subject override</strong> <span class="muted">(optional)</span></label>

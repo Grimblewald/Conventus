@@ -638,7 +638,6 @@ def _resolve_send_invoice(form):
         "due_date": _display_date(form.get("due_date")),
         "recipient_abn": (form.get("recipient_abn") or "").strip(),
         "recipient_address": (form.get("recipient_address") or "").strip(),
-        "include_gst": form.get("include_gst") == "1",
         "subject_override": (form.get("subject") or "").strip(),
         "body_override": (form.get("body") or "").strip(),
     }
@@ -697,7 +696,6 @@ def financial_send_invoice():
             body_override=f["body_override"],
             due_date=f["due_date"], recipient_abn=f["recipient_abn"],
             recipient_address=f["recipient_address"],
-            include_gst=f["include_gst"],
         )
     except RenderError as e:
         flash(f"The invoice PDF could not be generated: {e}"
@@ -763,18 +761,12 @@ def financial_send_invoice_preview():
         due_date=f["due_date"],
         recipient_abn=f["recipient_abn"],
         recipient_address=f["recipient_address"],
-        include_gst=f["include_gst"],
     )
-    # Blank user fields stay a bold placeholder rather than an empty gap. But
-    # the tax treatment is fully decided here (include_gst), so gst_applies must
-    # carry through even when empty — "" means "GST off", not "unfilled". Drop
-    # it and the identity-derived placeholder ("1" for a GST-registered society)
-    # would win, so the preview would show a GST breakdown the send omits.
-    # gst_registered rides along for the same reason: it decides which no-GST
-    # statement the document prints, and "" is a real value there too.
+    # Blank user fields stay a bold placeholder rather than an empty gap. The
+    # tax flags carry through even when empty: "" means "no GST", not
+    # "unfilled", and dropping them would let the placeholder win.
     overrides = {k: v for k, v in vars_.items() if v not in ("", None)}
     overrides["gst_applies"] = vars_["gst_applies"]
-    overrides["gst_registered"] = vars_["gst_registered"]
     # No amount chosen yet: keep the money fields as bold placeholders. A
     # formatted 0 is truthy and would otherwise print a real $0.00 — the one
     # thing a preview must never show, since it reads as a genuine total.
@@ -1177,9 +1169,8 @@ def financial_test_payment_cancel(ref):
 _REISSUE_KINDS = ("receipt", "adjustment")
 _REISSUE_PENDING = "reissue_pending"
 _REISSUE_DEFAULT_REASON = (
-    "The original showed GST, which was included in error: we are not "
-    "registered for GST. The amount you paid is unchanged and nothing further "
-    "is owed.")
+    "The earlier receipt showed GST in error. The amount you paid is "
+    "unchanged and nothing further is owed.")
 
 
 def _parse_day(raw):

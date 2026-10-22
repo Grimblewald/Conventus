@@ -305,9 +305,10 @@ class TestFinancialIdentity:
             assert v["gst_amount"] == "10.00"
             assert v["amount_ex_gst"] == "100.00"
 
-            # A per-send override wins over the identity's registration, and
-            # a non-GST document never shows a computed zero-GST breakdown.
-            v = _business_vars(11000, gst=False)
+            # Unregistered: no GST and no "Tax Invoice", whatever the amount.
+            ident.gst_registered = False
+            db.session.commit()
+            v = _business_vars(11000)
             assert v["gst_applies"] == ""
             assert v["invoice_type"] == "Invoice"
 
@@ -420,7 +421,6 @@ class TestSendInvoicePreview:
             "item": "Sponsor package",
             "amount": "5500.00",
             "due_date": "2026-09-30",
-            "include_gst": "1",
         })
         assert resp.status_code == 200
         assert resp.mimetype == "application/pdf"
@@ -447,11 +447,12 @@ class TestSendInvoicePreview:
             assert (IssuedDocument.query.count(), PaymentEvent.query.count()) == before
         assert sent == []
 
-    def test_preview_gst_flag_matches_the_form_not_the_identity(self, seeded, app,
-                                                              monkeypatch):
-        """Unticking GST on one invoice must be honoured by the preview, even
-        when the society itself is GST-registered — otherwise the preview shows
-        a GST breakdown the send would omit (regression)."""
+    def test_preview_gst_always_follows_the_identity(self, seeded, app,
+                                                     monkeypatch):
+        """There is no per-invoice GST choice: a form still posting the old
+        include_gst field cannot put GST on an unregistered society's invoice,
+        and the decided-off flag reaches the render rather than being dropped
+        for the placeholder."""
         captured = {}
 
         def _fake_preview(kind, overrides=None, template=None):
@@ -465,7 +466,7 @@ class TestSendInvoicePreview:
         with app.app_context():
             from app.extensions import db
             from app.models import get_financial_identity
-            get_financial_identity().gst_registered = True   # society IS registered
+            get_financial_identity().gst_registered = False
             db.session.commit()
 
         client = app.test_client()
@@ -476,27 +477,28 @@ class TestSendInvoicePreview:
             sess["_user_id"] = str(uid)
             sess["_fresh"] = True
 
-        # This invoice is billed WITHOUT GST (box left unticked).
         resp = client.post("/admin/financial/send-invoice/preview", data={
             "to": "sponsor@example.org", "tier_id": "custom",
             "item": "Sponsorship", "amount": "500.00",
-            # include_gst intentionally absent → GST off for this invoice
+            "include_gst": "1",   # a stale form; ignored
         })
         assert resp.status_code == 200
-        # The decided-off flag must survive into the render, not be dropped so
-        # the identity default ("1") wins.
         assert captured["overrides"].get("gst_applies") == ""
 
     def test_preview_uses_the_same_variables_as_the_send(self, seeded, app):
         """The preview and the send must resolve variables through one shared
         function, or the two drift apart the moment either changes."""
         with app.app_context():
+            from app.extensions import db
+            from app.models import get_financial_identity
             from app.services.invoice import manual_invoice_vars
+            get_financial_identity().gst_registered = True
+            db.session.commit()
             v = manual_invoice_vars(
                 "sponsor@example.org", recipient_name="Acme Pty Ltd",
                 description="Gold sponsorship", item="Sponsor package",
                 amount_cents=550000, reference="INV-X", due_date="30 Sep 2026",
-                recipient_address="1 Example St", include_gst=True)
+                recipient_address="1 Example St")
             assert v["user_name"] == "Acme Pty Ltd"
             assert v["conference_title"] == "Gold sponsorship"
             assert v["transaction_id"] == "INV-X"

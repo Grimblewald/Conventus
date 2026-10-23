@@ -177,6 +177,69 @@ def test_an_archive_without_assets_leaves_them_alone(isolated_app, tmp_path):
     assert (assets / "logo.png").read_bytes() == b"current logo"
 
 
+def test_a_relative_database_url_is_taken_from_the_instance_folder(isolated_app):
+    """Where Flask-SQLAlchemy puts it."""
+    from app.services.backup_archive import sqlite_path
+    with isolated_app.app_context():
+        assert sqlite_path("sqlite:///other.db") == \
+            Path(isolated_app.instance_path) / "other.db"
+
+
+def test_the_restore_route_holds_no_write_open_when_it_restores(
+        seeded, admin_client, app, tmp_path, monkeypatch):
+    """A restore writes the live database through SQLite, which waits for any
+    write still open. The route's own pending write — the code it consumed,
+    flushed by the safety backup that then failed — once made it wait on
+    itself for ever."""
+    import sqlite3
+    from datetime import datetime, timedelta
+
+    from app.extensions import db
+    from app.models import OTPCode
+
+    monkeypatch.setattr("app.blueprints.admin.backup._backup_dir", lambda: tmp_path)
+    (tmp_path / ".restore-tok.zip").write_bytes(b"not read")
+
+    def failing_safety_backup(*a, **k):
+        db.session.query(OTPCode).count()        # autoflush, as the real one does
+        db.session.add(OTPCode(email="x@example.org", code="000000",
+                               purpose="probe",
+                               expires_at=datetime.utcnow()))
+        db.session.flush()
+        raise RuntimeError("disk full")
+
+    live = db.engine.url.database
+    could_write = []
+
+    def probe_restore(*a, **k):
+        c = sqlite3.connect(live, timeout=1)
+        try:
+            c.execute("begin immediate")
+            could_write.append(True)
+        except sqlite3.OperationalError:
+            could_write.append(False)
+        finally:
+            c.rollback()
+            c.close()
+        return []
+
+    monkeypatch.setattr("app.blueprints.admin.backup.build_backup_zip",
+                        failing_safety_backup)
+    monkeypatch.setattr("app.blueprints.admin.backup.restore_backup_zip",
+                        probe_restore)
+    with app.app_context():
+        db.session.add(OTPCode(email="admin@test.example.org", code="424242",
+                               purpose="backup_restore",
+                               expires_at=datetime.utcnow() + timedelta(minutes=5)))
+        db.session.commit()
+
+    admin_client.post("/admin/backup/restore-confirm/tok", data={"code": "424242"})
+    assert could_write == [True]
+    with app.app_context():
+        otp = OTPCode.query.filter_by(code="424242", purpose="backup_restore").one()
+        assert otp.consumed_at is not None
+
+
 def test_invalid_archive_is_rejected(isolated_app, tmp_path):
     import zipfile
     from app.services.backup_archive import validate_backup_zip

@@ -307,6 +307,47 @@ def test_revert_falls_back_to_a_legacy_single_slot_backup(repo, shims):
     assert _read_db(repo / "instance" / "app.db") == "LEGACY-BACKUP"
 
 
+# --- the database copy and where the database is ----------------------------
+
+def _site_update():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("site_update_under_test",
+                                                  SCRIPTS / "site_update.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_a_copy_onto_a_locked_database_gives_up_instead_of_hanging(tmp_path):
+    """The backup API retries a locked database forever; a restore once waited
+    on a write its own request still held open."""
+    su = _site_update()
+    src, dst = tmp_path / "src.db", tmp_path / "dst.db"
+    _write_db(src, "NEW")
+    _write_db(dst, "OLD")
+    holder = sqlite3.connect(str(dst))
+    holder.execute("begin immediate")
+    holder.execute("update t set v = 'held'")
+    try:
+        with pytest.raises(su.UpdateError, match="stayed locked"):
+            su.sqlite_copy(src, dst, wait=0)
+    finally:
+        holder.rollback()
+        holder.close()
+    assert _read_db(dst) == "OLD"
+
+
+def test_a_relative_database_url_is_taken_from_the_instance_folder(tmp_path,
+                                                                   monkeypatch):
+    """Where Flask-SQLAlchemy puts it, so the restore point holds the live
+    database rather than reporting none."""
+    su = _site_update()
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///other.db")
+    assert su.database_path(tmp_path) == tmp_path / "instance" / "other.db"
+    monkeypatch.setenv("DATABASE_URL", "sqlite:////srv/abs.db")
+    assert su.database_path(tmp_path) == Path("/srv/abs.db")
+
+
 # --- the admin page runs the same script ------------------------------------
 
 def test_the_admin_update_runs_the_same_script(seeded, admin_client, app,

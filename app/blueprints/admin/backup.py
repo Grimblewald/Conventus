@@ -347,7 +347,10 @@ def backup_restore_confirm(token: str):
             return render_template("admin/backup_restore_confirm.html",
                                    token=token, encrypted=encrypted)
 
+        # Committed now: the restore writes the database file through SQLite
+        # itself, and a write this request still held open would lock it out.
         otp.consumed_at = datetime.utcnow()
+        db.session.commit()
 
         try:
             safety_zip = build_backup_zip(_backup_dir())
@@ -355,7 +358,7 @@ def backup_restore_confirm(token: str):
                          target_kind="system", target_id=0,
                          summary=f"Pre-restore safety backup: {safety_zip.name}")
         except Exception:
-            pass
+            db.session.rollback()
 
         try:
             warnings = restore_backup_zip(restore_path, password=password)

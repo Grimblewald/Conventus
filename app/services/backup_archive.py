@@ -24,7 +24,6 @@ import json
 import logging
 import os
 import shutil
-import sqlite3
 import subprocess
 import tempfile
 import zipfile
@@ -60,18 +59,30 @@ def is_sqlite(url: str) -> bool:
 
 
 def sqlite_path(url: str) -> Path:
+    """The file a sqlite:/// URL names. A relative path is taken from the
+    instance folder, as Flask-SQLAlchemy takes it."""
     path = url[len("sqlite:///"):]
     if path.startswith("/"):
         return Path(path)
-    return _project_root() / path
+    return Path(current_app.instance_path) / path
+
+
+def _site_update():
+    """scripts/site_update.py, which holds the database copy and migration
+    steps an update runs. Loaded from the file rather than imported: the
+    script never imports the app, so that a revert works when the app itself
+    will not start."""
+    import importlib.util
+
+    path = Path(__file__).resolve().parents[2] / "scripts" / "site_update.py"
+    spec = importlib.util.spec_from_file_location("site_update", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _sqlite_copy(src: Path, dst: Path) -> None:
-    s = sqlite3.connect(str(src))
-    d = sqlite3.connect(str(dst))
-    s.backup(d)
-    d.close()
-    s.close()
+    _site_update().sqlite_copy(src, dst)
 
 
 def restore_sqlite_db(data: bytes, dest: Path) -> None:
@@ -439,18 +450,8 @@ def _restore_v2(zf, names: set[str], url: str,
 
 
 def _run_migrations() -> None:
-    """The same migration step an update runs (scripts/site_update.py).
-
-    Loaded from the file rather than imported: the script never imports the
-    app, so that a revert works when the app itself will not start.
-    """
-    import importlib.util
-
-    path = _project_root() / "scripts" / "site_update.py"
-    spec = importlib.util.spec_from_file_location("site_update", path)
-    site_update = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(site_update)
-    site_update.migrate(_project_root())
+    """The same migration step an update runs (scripts/site_update.py)."""
+    _site_update().migrate(_project_root())
 
 
 def _clear_booklet_cache(uploads_root: Path) -> None:

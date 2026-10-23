@@ -65,14 +65,17 @@ def _setting(root: Path, name: str) -> str:
 
 
 def database_path(root: Path) -> Path | None:
-    """The SQLite database file, or None for any other database."""
+    """The SQLite database file, or None for any other database.
+
+    A relative path is taken from instance/, as Flask-SQLAlchemy takes it.
+    """
     url = _setting(root, "DATABASE_URL")
     if not url:
         return root / "instance" / "app.db"
     if not url.startswith("sqlite:///"):
         return None
     path = Path(url[len("sqlite:///"):])
-    return path if path.is_absolute() else root / path
+    return path if path.is_absolute() else root / "instance" / path
 
 
 def backups_dir(root: Path) -> Path:
@@ -93,15 +96,34 @@ def run(root: Path, *cmd: str, check: bool = True) -> str:
     return out
 
 
-def sqlite_copy(src: Path, dst: Path) -> None:
+# SQLITE_BUSY and SQLITE_LOCKED. The named constants only exist from Python
+# 3.11, and this script runs on the server's own python3.
+_SQLITE_WAITING = (5, 6)
+
+
+def sqlite_copy(src: Path, dst: Path, *, wait: float = 60) -> None:
     """Copy one SQLite database onto another through the backup API, which
     reads a live write-ahead log and writes through the destination's own
     journal. A plain file copy does neither: it misses recent writes, and a
-    stale -wal left beside the destination is replayed over it on next open."""
+    stale -wal left beside the destination is replayed over it on next open.
+
+    The backup API retries a locked database forever, so a writer that never
+    lets go — including an open transaction in the very process asking —
+    would hang the copy. Past *wait* seconds it gives up with nothing copied.
+    """
+    deadline = time.monotonic() + wait
+
+    def give_up_when_stuck(status, remaining, total):
+        if status in _SQLITE_WAITING and time.monotonic() > deadline:
+            raise UpdateError(
+                f"Copying {src} to {dst}: the database stayed locked for "
+                f"{wait:.0f}s while something else wrote to it. Nothing was "
+                f"copied.")
+
     s = sqlite3.connect(str(src))
     d = sqlite3.connect(str(dst))
     try:
-        s.backup(d)
+        s.backup(d, progress=give_up_when_stuck)
     finally:
         d.close()
         s.close()

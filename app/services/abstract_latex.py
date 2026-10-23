@@ -12,10 +12,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from . import authors as _authors_module
+from . import citations as _citations_module
+from . import documents as _documents_module
 # The LaTeX text-mode escape lives with the document renderer (single home for
 # the escaping table); the abstract export reuses it.
 from .citations import fetch_metadata, format_reference_compact
 from .documents import latex_escape as _latex_escape
+from .documents import source_fingerprint
 
 
 KNOWN_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff"}
@@ -35,6 +39,17 @@ FIGURE_SPACE_ABOVE = "8pt"
 REF_FONT_SIZE = "\\footnotesize"
 REF_TOP_SPACE = "10pt"
 REF_ITEM_SPACE = "2pt"
+
+
+def latex_fingerprint() -> str:
+    """Identifies the code an abstract's LaTeX is drawn with — this module,
+    the author reader, the citation formatter and the escaping — so a cached
+    booklet or export keyed on it is rebuilt after an update changes any of
+    them, rather than served as the old code drew it."""
+    return source_fingerprint(
+        Path(__file__).resolve(),
+        *(Path(m.__file__).resolve()
+          for m in (_authors_module, _citations_module, _documents_module)))
 
 
 def convert_for_latex(src: Path, dst: Path) -> Path:

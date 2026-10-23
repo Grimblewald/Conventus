@@ -48,12 +48,16 @@ def cache_dir() -> Path:
 
 
 def bundle_key(abstracts) -> str:
-    """Identifies a bundle by its contents: the abstracts as last saved, and
-    the conferences whose title and dates head each booklet file."""
+    """Identifies a bundle by its contents: the abstracts as last saved, the
+    conferences whose title and dates head each booklet file, and the code
+    that writes the LaTeX."""
+    from .abstract_latex import latex_fingerprint
+
     parts = sorted(f"{a.id}:{a.status}:{a.updated_at.isoformat()}"
                    for a in abstracts)
     confs = {a.conference for a in abstracts if a.conference is not None}
     parts += sorted(f"c{c.id}:{c.updated_at.isoformat()}" for c in confs)
+    parts.append(latex_fingerprint())
     return hashlib.sha256(",".join(parts).encode()).hexdigest()[:32]
 
 

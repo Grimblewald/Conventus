@@ -370,6 +370,55 @@ class TestBookletCompile:
         assert "abstract_001/figure.png" in names
         assert "abstract_001/profile.png" in names
 
+    def test_the_cache_follows_the_conference_and_the_code(
+            self, seeded, admin_client, app, db, monkeypatch):
+        """Served from cache only while nothing it is drawn from has changed:
+        a retitled conference, or an update to the code that writes the
+        LaTeX, must rebuild rather than hand back the old booklet."""
+        import io
+        import secrets
+        import zipfile
+
+        from app.blueprints.admin import conferences as admin_conferences
+
+        tag = secrets.token_hex(4)
+        with app.app_context():
+            c = Conference(slug=f"booklet-cache-{tag}", title="First Title",
+                           start_date=date(2027, 6, 1), end_date=date(2027, 6, 3))
+            db.session.add(c)
+            db.session.flush()
+            db.session.add(Abstract(user_id=None, conference_id=c.id,
+                                    status="keynote", title="Cached",
+                                    authors="K. Note|1|Uni", body="Body."))
+            db.session.commit()
+            cid = c.id
+
+        builds = []
+        real = admin_conferences.booklet_preamble
+        monkeypatch.setattr(admin_conferences, "booklet_preamble",
+                            lambda *a, **k: builds.append(1) or real(*a, **k))
+
+        def booklet():
+            resp = admin_client.post(f"/admin/conferences/{cid}/compile-booklet",
+                                     data={"booklet_action": "latex"})
+            assert resp.status_code == 200, resp.data[:400]
+            return zipfile.ZipFile(io.BytesIO(resp.data)).read("booklet.tex").decode()
+
+        booklet()
+        booklet()
+        assert len(builds) == 1
+
+        with app.app_context():
+            db.session.get(Conference, cid).title = "Second Title"
+            db.session.commit()
+        assert "Second Title" in booklet()
+        assert len(builds) == 2
+
+        monkeypatch.setattr(admin_conferences, "latex_fingerprint",
+                            lambda: "after-an-update")
+        booklet()
+        assert len(builds) == 3
+
     def test_missing_tectonic_is_reported_not_crashed(self, seeded, admin_client,
                                                       booklet_conference, app):
         import shutil

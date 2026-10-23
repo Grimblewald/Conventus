@@ -28,7 +28,7 @@ from ...services.uploads import (
 )
 from ...services.abstract_latex import (abstract_fragment, booklet_preamble,
                                         copy_abstract_images,
-                                        copy_booklet_image)
+                                        copy_booklet_image, latex_fingerprint)
 from ...services.citations import fetch_metadata, format_reference_compact, normalize_doi
 
 
@@ -1529,13 +1529,19 @@ def conference_compile_booklet(cid):
     cache_dir = uploads_root / "abstracts" / ".booklet-cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
 
+    # Everything the booklet is drawn from: the abstracts, the conference
+    # (its title and dates head every page), its decoration, and the code
+    # that writes the LaTeX — without that last, a booklet built before an
+    # update keeps being served after it.
     cache_key = hashlib.sha256(
         ",".join(
             [f"{a.id}:{a.status}:{a.updated_at.isoformat()}" for a in abstracts]
             + [
+                c.updated_at.isoformat(),
                 c.booklet_header_filename or "",
                 c.booklet_footer_filename or "",
                 c.booklet_background_filename or "",
+                latex_fingerprint(),
             ]
         ).encode()
     ).hexdigest()
@@ -1543,8 +1549,8 @@ def conference_compile_booklet(cid):
     cache_file = cache_dir / f"{c.slug}-{cache_key[:12]}.zip"
     pdf_cache_file = cache_dir / f"{c.slug}-{cache_key[:12]}.pdf"
 
-    for old in cache_dir.glob(f"{c.slug}-*.zip"):
-        if old != cache_file:
+    for old in [*cache_dir.glob(f"{c.slug}-*.zip"), *cache_dir.glob(f"{c.slug}-*.pdf")]:
+        if old not in (cache_file, pdf_cache_file):
             old.unlink(missing_ok=True)
 
     action = request.form.get("booklet_action", "latex")

@@ -277,6 +277,19 @@ class TestBackgroundDelivery:
         _request(admin_client, mailbox, **form)
         assert len(builds) == 2
 
+    def test_an_update_to_the_latex_code_rebuilds(self, seeded, export_env,
+                                                  app, monkeypatch):
+        """A bundle built before an update that changes how abstracts are
+        written must not be handed out after it."""
+        from app.services import abstract_export, abstract_latex
+        with app.test_request_context():
+            selection = Abstract.query.filter_by(
+                conference_id=export_env["c1"], deleted_at=None).all()
+            before = abstract_export.bundle_key(selection)
+            monkeypatch.setattr(abstract_latex, "latex_fingerprint",
+                                lambda: "after-an-update")
+            assert abstract_export.bundle_key(selection) != before
+
     def test_a_running_build_is_joined_not_repeated(self, seeded, admin_client,
                                                     mailbox, export_env,
                                                     monkeypatch, app):

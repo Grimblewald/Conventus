@@ -395,6 +395,44 @@ class TestAddressChange:
         assert b"once a day" not in page.data
         assert [m["to"] for m in mailbox] == ["member@test.example.org"]
 
+    def test_two_saves_before_the_reissue_runs_send_one_receipt(
+            self, members_paid_registration, member_client, mailbox, app,
+            monkeypatch):
+        """The reissue runs after the request. Counted only once it had
+        landed, a second save in between was let through and sent a second
+        receipt."""
+        from app.models import Registration
+        from app.services import tasks
+        queued = []
+        monkeypatch.setattr(tasks, "run_later", lambda fn: queued.append(fn) or True)
+        slug, rid, _iid = members_paid_registration
+
+        _save(member_client, slug, ADDRESS)
+        db.session.expire_all()
+        page = _save(member_client, slug, "Somewhere else entirely")
+        assert b"once a day" in page.data
+
+        with app.test_request_context():
+            for job in queued:
+                job()
+        assert [m["to"] for m in mailbox] == ["member@test.example.org"]
+        with app.app_context():
+            assert db.session.get(Registration, rid).custom_data["bill"] == ADDRESS
+
+    def test_a_reissue_that_fails_is_left_where_admins_look(
+            self, members_paid_registration, member_client, mailbox, app,
+            monkeypatch):
+        from app.models.audit import AuditLog
+        monkeypatch.setattr("app.services.invoice.send_mail", lambda **kw: False)
+        slug, rid, _iid = members_paid_registration
+        page = _save(member_client, slug, ADDRESS)
+        # Said as what it is: on its way, not done.
+        assert b"will be emailed to you shortly" in page.data
+        with app.app_context():
+            row = (AuditLog.query.filter_by(action="financial.reissue_failed",
+                                            target_id=str(rid)).one())
+            assert "could not be sent" in row.summary
+
     def test_saving_the_same_address_sends_nothing(
             self, members_paid_registration, member_client, mailbox, app):
         slug, _rid, _iid = members_paid_registration

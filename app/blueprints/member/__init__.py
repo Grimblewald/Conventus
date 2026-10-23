@@ -256,20 +256,27 @@ def register_conf(slug):
 
         # A paid registration's address is printed on a receipt already sent,
         # so changing it reissues that receipt — at most once a day, since each
-        # change emails a new tax document.
+        # change emails a new tax document. The change is counted when it is
+        # made, not when the receipt goes out: the reissue runs after this
+        # request, and a second save before it lands must not send a second.
         reissue_address = False
         if existing is not None and existing.status in ("paid", "refunded"):
             key = billing_address_key(schema)
             if key and (billing_address(schema, custom_data)
                         != billing_address(schema, existing.custom_data)):
-                if address_reissued_recently(existing):
+                from ...models.rate_limit import allow
+
+                held = current_registration_document(existing) is not None
+                if held and (address_reissued_recently(existing)
+                             or not allow("address.reissue", str(existing.id),
+                                          limit=1, per_seconds=86_400)):
                     custom_data[key] = (existing.custom_data or {}).get(key, "")
                     flash("Your billing address was not changed. It can be "
                           "changed once a day after payment, because each "
                           "change reissues your receipt. Please try again "
                           "tomorrow.", "warning")
                 else:
-                    reissue_address = current_registration_document(existing) is not None
+                    reissue_address = held
 
         reg = existing or Registration(user_id=current_user.id, conference_id=c.id)
         # The price is struck when the tier is chosen and then left alone. It
@@ -365,9 +372,9 @@ def register_conf(slug):
         if reissue_address:
             from ...services.tasks import run_later_for
             run_later_for(Registration, reg.id, reissue_for_address)
-            flash("Your receipt has been reissued with the new billing address "
-                  "and emailed to you. Earlier versions stay on your dashboard.",
-                  "success")
+            flash("Your receipt is being reissued with the new billing address "
+                  "and will be emailed to you shortly. Earlier versions stay on "
+                  "your dashboard.", "success")
         return redirect(url_for("member.dashboard"))
 
     # The lock is enforced on POST regardless; passing it to the GET is what

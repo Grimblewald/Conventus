@@ -707,14 +707,31 @@ def current_registration_document(reg):
 
 
 def reissue_for_address(reg) -> None:
-    """Background job: reissue the current receipt with the new address."""
+    """Background job: reissue the current receipt with the new address.
+
+    The member was told it is on its way, so a failure is put where admins
+    look — the audit log — to be sent from Admin → Financial → Reissue.
+    """
+    from ..security import audit
+
     doc = current_registration_document(reg)
     if doc is None:
         return
     try:
-        reissue_document(doc, reason=ADDRESS_REASON)
+        sent = reissue_document(doc, reason=ADDRESS_REASON)
+        failure = None if sent is not None else "the email could not be sent"
     except AlreadyReplaced:
         log.info("Address reissue for reg %s skipped: already replaced", reg.id)
+        return
+    except RenderError as e:
+        log.exception("Address reissue for reg %s failed to render", reg.id)
+        failure = f"the document could not be generated ({e})"
+    if failure:
+        audit.record("financial.reissue_failed",
+                     target_kind="registration", target_id=reg.id,
+                     summary=(f"{reg.reference}: receipt not reissued after a "
+                              f"billing address change — {failure}. Reissue it "
+                              f"from Financial → Reissue.")[:400])
 
 
 class AlreadyReplaced(Exception):

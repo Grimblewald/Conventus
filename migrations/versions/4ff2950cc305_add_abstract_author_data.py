@@ -9,13 +9,14 @@ column may already exist. See app/migration_guards.
 
 Every abstract without structured author data gets it, read from its author
 text through the same parser the pages use, so a row typed by hand ("1,2"
-with "A; B") comes through as the author meant it.
+with "A; B") comes through as the author meant it. That parser can change
+after this migration is written; tests/test_authors.py pins what it produces
+for the shapes this migration meets.
 """
 from alembic import op
 import sqlalchemy as sa
 
 from app.migration_guards import add_columns, drop_columns, has_table
-from app.services.authors import parse, to_data
 
 
 revision = '4ff2950cc305'
@@ -25,6 +26,10 @@ depends_on = None
 
 
 def upgrade():
+    # Imported here: alembic loads every migration to list revisions, and only
+    # this one needs the parser.
+    from app.services.authors import parse, to_data
+
     add_columns('abstracts', sa.Column('author_data', sa.JSON(), nullable=True))
     if not has_table('abstracts'):
         return

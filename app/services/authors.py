@@ -1,7 +1,9 @@
 """An abstract's authors and the affiliations they belong to.
 
-Stored as structured data in `Abstract.author_data` (see `to_data`), written
-only through `clean`, so what is stored has always been validated.
+Stored as structured data in `Abstract.author_data` (see `to_data`). What the
+editor posts is validated by `clean`; what is already stored is read back
+without the editor's limits (`from_data`), because data converted from older
+text was never held to them and must still display.
 
 Abstracts saved before that carry only text, one author per line:
 `name|numbers|affiliation`. `numbers` is usually one affiliation number, but
@@ -50,15 +52,19 @@ def parse(raw: str | None, presenting: int | None = 0) -> AuthorList:
     Affiliations come out numbered 1..n in the order of the numbers they were
     stored under, with gaps closed, so whatever was typed the numbers printed
     against names always match the list printed under them.
+
+    Spacing is collapsed, and affiliations that differ only in case are one
+    affiliation under its first spelling: the editor treats them as the same,
+    so reading them as two would leave an author an error they never made.
     """
     rows: list[tuple[str, list[tuple[int | None, str | None]]]] = []
     for line in (raw or "").strip().split("\n"):
         parts = line.split("|")
-        name = parts[0].strip()
+        name = _tidy(parts[0])
         if not name:
             continue
         numbers = [int(n) for n in re.findall(r"\d+", parts[1] if len(parts) > 1 else "")]
-        text = parts[2].strip() if len(parts) > 2 else ""
+        text = _tidy(parts[2]) if len(parts) > 2 else ""
         if len(numbers) > 1:
             pieces = [p.strip() for p in text.split(";") if p.strip()]
             if len(pieces) == len(numbers):
@@ -83,18 +89,21 @@ def parse(raw: str | None, presenting: int | None = 0) -> AuthorList:
     ordered = [named[n] for n in sorted(named)]
     for _, pairs in rows:
         for number, text in pairs:
-            if number is None and text and text not in ordered:
+            if number is None and text:
                 ordered.append(text)
-    position = {text: i + 1 for i, text in enumerate(dict.fromkeys(ordered))}
-    affiliations = tuple(position)
+    spelling: dict[str, str] = {}
+    for text in ordered:
+        spelling.setdefault(text.casefold(), text)
+    position = {folded: i + 1 for i, folded in enumerate(spelling)}
+    affiliations = tuple(spelling.values())
 
     authors = []
     for name, pairs in rows:
         nums: list[int] = []
         for number, text in pairs:
             resolved = text if number is None else named.get(number)
-            if resolved and position[resolved] not in nums:
-                nums.append(position[resolved])
+            if resolved and position[resolved.casefold()] not in nums:
+                nums.append(position[resolved.casefold()])
         authors.append(Author(name, tuple(nums)))
 
     index = presenting or 0
@@ -107,7 +116,7 @@ def _tidy(text) -> str:
     return re.sub(r"\s+", " ", text).strip() if isinstance(text, str) else ""
 
 
-def clean(raw) -> tuple[AuthorList | None, list[str]]:
+def clean(raw, *, strict: bool = True) -> tuple[AuthorList | None, list[str]]:
     """Validate author data as the editor posts it.
 
     *raw* is the JSON text (or the dict) `{"affiliations": [text, …],
@@ -117,6 +126,10 @@ def clean(raw) -> tuple[AuthorList | None, list[str]]:
 
     Affiliations no author ticked are dropped and the rest renumbered, so the
     numbers printed always run 1..n.
+
+    `strict=False` checks only that the data can be read — its shape, and
+    numbers that point somewhere — and not the editor's limits on counts,
+    lengths, blanks and repeats.
     """
     if isinstance(raw, str):
         try:
@@ -133,30 +146,31 @@ def clean(raw) -> tuple[AuthorList | None, list[str]]:
         return None, ["The author list could not be read. Please re-enter it."]
 
     affils = [_tidy(a) for a in affils_in]
-    if len(affils) > MAX_AFFILIATIONS:
-        errors.append(f"At most {MAX_AFFILIATIONS} affiliations.")
-    seen: dict[str, int] = {}
-    for n, text in enumerate(affils, 1):
-        if not text:
-            errors.append(f"Affiliation {n} is empty.")
-        elif len(text) > MAX_AFFILIATION:
-            errors.append(f"Affiliation {n} is longer than {MAX_AFFILIATION} characters.")
-        elif text.casefold() in seen:
-            errors.append(f"Affiliation {n} repeats affiliation {seen[text.casefold()]}.")
-        else:
-            seen[text.casefold()] = n
+    if strict:
+        if len(affils) > MAX_AFFILIATIONS:
+            errors.append(f"At most {MAX_AFFILIATIONS} affiliations.")
+        seen: dict[str, int] = {}
+        for n, text in enumerate(affils, 1):
+            if not text:
+                errors.append(f"Affiliation {n} is empty.")
+            elif len(text) > MAX_AFFILIATION:
+                errors.append(f"Affiliation {n} is longer than {MAX_AFFILIATION} characters.")
+            elif text.casefold() in seen:
+                errors.append(f"Affiliation {n} repeats affiliation {seen[text.casefold()]}.")
+            else:
+                seen[text.casefold()] = n
 
     if not authors_in:
         errors.append("Add at least one author.")
-    if len(authors_in) > MAX_AUTHORS:
+    if strict and len(authors_in) > MAX_AUTHORS:
         errors.append(f"At most {MAX_AUTHORS} authors.")
     people: list[tuple[str, list[int]]] = []
     for i, entry in enumerate(authors_in, 1):
         entry = entry if isinstance(entry, dict) else {}
         name = _tidy(entry.get("name"))
-        if not name:
+        if strict and not name:
             errors.append(f"Author {i} needs a name.")
-        elif len(name) > MAX_NAME:
+        elif strict and len(name) > MAX_NAME:
             errors.append(f"Author {i}'s name is longer than {MAX_NAME} characters.")
         nums: list[int] = []
         for n in entry.get("affiliations") or []:
@@ -196,9 +210,10 @@ def to_data(authors: AuthorList) -> dict:
 
 
 def from_data(data) -> AuthorList:
-    """Read stored author data. It was cleaned on the way in; anything that no
-    longer passes reads as no authors rather than raising on a page."""
-    authors, _ = clean(data)
+    """Read stored author data, without the editor's limits: a list converted
+    from older text may exceed them and must still display. Data that cannot
+    be read at all reads as no authors rather than raising on a page."""
+    authors, _ = clean(data, strict=False)
     return authors or AuthorList((), (), 0)
 
 

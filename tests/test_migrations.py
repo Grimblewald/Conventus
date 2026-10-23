@@ -292,6 +292,15 @@ with app.app_context():
                             body='B', authors='Old|1|Old',
                             author_data={'affiliations': ['Kept'], 'presenting': 0,
                                          'authors': [{'name': 'Kept', 'affiliations': [1]}]}))
+    # Shapes the editor would refuse, which older text could still hold.
+    db.session.add(Abstract(conference_id=c.id, status='submitted', title='case',
+                            body='B', authors='Jane Doe|1|University of X\\n'
+                                             'John Roe|2|university  of X'))
+    db.session.add(Abstract(conference_id=c.id, status='submitted', title='many',
+                            body='B', authors='\\n'.join(
+                                f'Author {i}|1|Uni A' for i in range(51))))
+    db.session.add(Abstract(conference_id=c.id, status='submitted', title='long',
+                            body='B', authors='Jane Doe|1|' + 'x' * 600))
     db.session.commit()
 """], db_path)
     assert seed.returncode == 0, f"stdout={seed.stdout}\nstderr={seed.stderr}"
@@ -312,3 +321,14 @@ with app.app_context():
                     {"name": "John Roe", "affiliations": [1, 2]}]}
     # Rows that already carry structure are left as they are.
     assert rows["done"]["authors"] == [{"name": "Kept", "affiliations": [1]}]
+
+    # Case and spacing variants of one affiliation are one affiliation.
+    assert rows["case"] == {
+        "affiliations": ["University of X"], "presenting": 0,
+        "authors": [{"name": "Jane Doe", "affiliations": [1]},
+                    {"name": "John Roe", "affiliations": [1]}]}
+    # Over the editor's limits, and still read back in full: these once
+    # displayed as no authors at all.
+    from app.services.authors import from_data
+    assert len(from_data(rows["many"]).authors) == 51
+    assert from_data(rows["long"]).affiliations == ("x" * 600,)

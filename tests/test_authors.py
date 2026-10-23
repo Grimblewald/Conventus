@@ -61,6 +61,16 @@ def test_the_same_affiliation_under_two_numbers_is_one():
     assert [a.affiliations for a in al.authors] == [(1,), (1,)]
 
 
+def test_case_and_spacing_variants_are_one_affiliation():
+    """The editor refuses these as repeats, so reading them as two would hand
+    the author an error on their next edit for something they never typed."""
+    al = parse("Jane  Doe|1|Uni  of X\nJohn Roe|2|uni of x\nAmy Poe|3|Other")
+    assert al.affiliations == ("Uni of X", "Other")
+    assert [a.affiliations for a in al.authors] == [(1,), (1,), (2,)]
+    assert al.authors[0].name == "Jane Doe"
+    assert clean(to_data(al))[1] == []
+
+
 def test_empty_and_nameless():
     assert parse(None).authors == ()
     assert parse("").presenting_author is None
@@ -148,6 +158,40 @@ def test_stored_data_round_trips():
     al, _ = clean(_posted([A, B], [("Jane Doe", [1, 2]), ("John Roe", [])], 1))
     assert from_data(to_data(al)) == al
     assert from_data({"nonsense": True}).authors == ()
+
+
+@pytest.mark.parametrize("data", [
+    {"affiliations": [A], "presenting": 0,
+     "authors": [{"name": f"Author {i}", "affiliations": [1]} for i in range(51)]},
+    {"affiliations": ["x" * 600], "presenting": 0,
+     "authors": [{"name": "Jane Doe", "affiliations": [1]}]},
+    {"affiliations": [A, A.upper()], "presenting": 0,
+     "authors": [{"name": "Jane Doe", "affiliations": [1, 2]}]},
+    {"affiliations": [A], "presenting": 0,
+     "authors": [{"name": "y" * 300, "affiliations": [1]}]},
+])
+def test_stored_data_over_the_editors_limits_still_reads(data):
+    """Converted from older text, which had no limits. The editor refuses it;
+    the pages must still show it."""
+    assert clean(data)[0] is None
+    assert from_data(data).authors
+
+
+def test_unreadable_structure_falls_back_to_the_text():
+    from app.models import Abstract
+    a = Abstract(authors=f"Jane Doe|1|{A}", author_data={"nonsense": True})
+    assert [x.name for x in a.author_list.authors] == ["Jane Doe"]
+
+
+def test_editor_opens_with_stored_authors_over_the_limits():
+    """Not blank: a member editing an old abstract keeps what is there and is
+    told what to change when they save."""
+    from app.models import Abstract
+    a = Abstract(authors="", author_data={
+        "affiliations": [A, A.upper()], "presenting": 0,
+        "authors": [{"name": "Jane Doe", "affiliations": [1, 2]}]})
+    assert editor_initial(None, a)["authors"] == [{"name": "Jane Doe",
+                                                    "affiliations": [1, 2]}]
 
 
 def test_legacy_text_reads_back_the_same():

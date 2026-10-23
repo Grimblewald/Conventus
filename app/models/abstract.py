@@ -145,13 +145,16 @@ class Abstract(db.Model):
     def author_list(self):
         """The authors and their numbered affiliations (services.authors).
 
-        From the stored structure; an abstract saved before there was one is
-        read from its text.
+        From the stored structure; an abstract saved before there was one, or
+        whose structure cannot be read, is read from its text, which is kept
+        in step on every save.
         """
         from ..services.authors import from_data, parse
 
         if self.author_data:
-            return from_data(self.author_data)
+            authors = from_data(self.author_data)
+            if authors.authors:
+                return authors
         return parse(self.authors, self.presenting_author_index)
 
     def set_authors(self, authors) -> None:

@@ -326,35 +326,44 @@ def contact_resend():
 # network shares that one budget.
 # ---------------------------------------------------------------------------
 
+def _send_upload(subdir: str, name: str):
+    """A file from one public uploads folder.
+
+    Hidden entries are never uploads: the export bundles and their grants and
+    the compiled booklets are cached under dot-folders here, and must only be
+    reachable through the routes that check who is asking.
+    """
+    if any(part.startswith(".") for part in name.split("/")):
+        abort(404)
+    return send_from_directory(Path(current_app.config["UPLOAD_FOLDER"]) / subdir,
+                               name)
+
+
 @public_bp.route("/uploads/site/<path:name>")
 @limiter.exempt
 def site_upload(name):
     """Site-wide images (logo, favicon, hero, OG) — always public."""
-    folder = Path(current_app.config["UPLOAD_FOLDER"]) / "site"
-    return send_from_directory(folder, name)
+    return _send_upload("site", name)
 
 
 @public_bp.route("/uploads/committee/<path:name>")
 @limiter.exempt
 def committee_upload(name):
     """Committee portraits — public."""
-    folder = Path(current_app.config["UPLOAD_FOLDER"]) / "committee"
-    return send_from_directory(folder, name)
+    return _send_upload("committee", name)
 
 
 @public_bp.route("/uploads/conferences/<path:name>")
 @limiter.exempt
 def conference_upload(name):
     """Conference assets (hero, booklet) — public."""
-    folder = Path(current_app.config["UPLOAD_FOLDER"]) / "conferences"
-    return send_from_directory(folder, name)
+    return _send_upload("conferences", name)
 
 
 @public_bp.route("/uploads/sponsors/<path:name>")
 @limiter.exempt
 def sponsor_upload(name):
-    folder = Path(current_app.config["UPLOAD_FOLDER"]) / "sponsors"
-    return send_from_directory(folder, name)
+    return _send_upload("sponsors", name)
 
 
 # ---------------------------------------------------------------------------
@@ -392,8 +401,7 @@ def abstract_view(aid):
 @limiter.exempt
 def abstract_upload(name):
     """Abstract profile pictures — public (used by speaker cards)."""
-    folder = Path(current_app.config["UPLOAD_FOLDER"]) / "abstracts"
-    return send_from_directory(folder, name)
+    return _send_upload("abstracts", name)
 
 
 @public_bp.route("/favicon.ico")

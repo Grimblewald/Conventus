@@ -9,14 +9,18 @@ who asked; the task worker builds the bundle and emails the link.
 Kept under <uploads>/abstracts/.export-cache:
   <key>.zip           a bundle, keyed on everything that went into it, so an
                       unchanged selection is never built twice
-  <key>.building      held while a build runs, so concurrent requests for the
-                      same bundle share one build
+  <key>.building      locked while a build runs, so concurrent requests for
+                      the same bundle share one build. The lock, not the file,
+                      is the claim: it dies with the process holding it, so a
+                      build lost to a restart never blocks the next request.
   grant-<token>.json  one per request: who may fetch which bundle, until when,
                       and whether they have been emailed
+  <key>-*.part        a bundle being written, moved into place when complete
 """
 from __future__ import annotations
 
 import csv
+import fcntl
 import hashlib
 import json
 import logging
@@ -33,8 +37,6 @@ from flask import current_app, url_for
 log = logging.getLogger(__name__)
 
 GRANT_TTL = timedelta(hours=48)
-# A build marker older than this belongs to a process that died mid-build.
-BUILD_STALE = timedelta(minutes=30)
 
 _TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{20,64}$")
 
@@ -122,13 +124,19 @@ def write_bundle(abstracts, dest: Path) -> None:
                             a.title, a.authors, a.track or "",
                             f"{a.reference}/{a.reference}.tex"])
 
-        # Written aside and moved into place, so a reader never sees half a zip.
-        part = dest.with_suffix(".part")
-        with zipfile.ZipFile(part, "w", zipfile.ZIP_DEFLATED) as zf:
-            for f in sorted(src.rglob("*")):
-                if f.is_file():
-                    zf.write(f, f.relative_to(src).as_posix())
-        os.replace(part, dest)
+        # Written aside and moved into place, so a reader never sees half a
+        # zip. Its own name, so two builds that overlap never share one file.
+        fd, part = tempfile.mkstemp(dir=dest.parent, prefix=f"{dest.stem}-",
+                                    suffix=".part")
+        os.close(fd)
+        try:
+            with zipfile.ZipFile(part, "w", zipfile.ZIP_DEFLATED) as zf:
+                for f in sorted(src.rglob("*")):
+                    if f.is_file():
+                        zf.write(f, f.relative_to(src).as_posix())
+            os.replace(part, dest)
+        finally:
+            Path(part).unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------------------
@@ -160,42 +168,58 @@ def request_export(user, abstracts, *, download_name: str,
 
     if (cache_dir() / f"{key}.zip").exists():
         run_later(lambda: _notify(key, ok=True))
-    elif _claim_build(key):
-        ids = [a.id for a in abstracts]
-        run_later(lambda: _build_and_notify(key, ids))
+        return
+    claim = _claim_build(key)
+    if claim is None:
+        return
+    ids = [a.id for a in abstracts]
+    started = []
+
+    def build():
+        started.append(True)
+        try:
+            _build_and_notify(key, ids)
+        finally:
+            _release_build(claim)
+
+    if not run_later(build) and not started:
+        # The task queue was full and dropped it: nothing will build this,
+        # so let go now and tell whoever is waiting.
+        _release_build(claim)
+        _notify(key, ok=False)
 
 
 def _build_and_notify(key: str, ids: list[int]) -> None:
     from ..models import Abstract
 
-    d = cache_dir()
     try:
         abstracts = Abstract.query.filter(Abstract.id.in_(ids)).all()
-        write_bundle(abstracts, d / f"{key}.zip")
+        write_bundle(abstracts, cache_dir() / f"{key}.zip")
         ok = True
     except Exception:
         log.exception("Abstract export %s failed", key)
         ok = False
-    finally:
-        (d / f"{key}.building").unlink(missing_ok=True)
     _notify(key, ok=ok)
 
 
-def _claim_build(key: str) -> bool:
-    """Take the build for *key*, unless a live build already holds it."""
-    marker = cache_dir() / f"{key}.building"
-    for _ in range(2):
-        try:
-            fd = os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except FileExistsError:
-            age = datetime.now() - datetime.fromtimestamp(marker.stat().st_mtime)
-            if age < BUILD_STALE:
-                return False
-            marker.unlink(missing_ok=True)
-            continue
+def _claim_build(key: str) -> int | None:
+    """Take the build for *key*: the open, locked marker, or None when a live
+    build already holds it. Held until `_release_build`, or until the process
+    holding it ends."""
+    fd = os.open(cache_dir() / f"{key}.building", os.O_CREAT | os.O_RDWR)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
         os.close(fd)
-        return True
-    return False
+        return None
+    return fd
+
+
+def _release_build(fd: int) -> None:
+    # The marker stays: removing it here would let a request that opened it
+    # a moment earlier lock the removed file while another locks a new one.
+    # Markers go with their bundle, in _purge_expired.
+    os.close(fd)
 
 
 def _notify(key: str, *, ok: bool) -> None:
@@ -277,7 +301,9 @@ def _read_json(path: Path) -> dict | None:
 
 
 def _purge_expired() -> None:
-    """Drop expired grants, and bundles no live grant still points at."""
+    """Drop expired grants, and bundles and build markers no live grant still
+    points at. A running build always has one: its requester's grant is
+    written before the build is claimed."""
     d = cache_dir()
     now = datetime.utcnow()
     live_keys: set[str] = set()
@@ -288,6 +314,14 @@ def _purge_expired() -> None:
             path.unlink(missing_ok=True)
         else:
             live_keys.add(grant["key"])
-    for path in d.glob("*.zip"):
+    for path in [*d.glob("*.zip"), *d.glob("*.building")]:
         if path.stem not in live_keys:
             path.unlink(missing_ok=True)
+    # Half-written zips left by a build the process died in. A day is far
+    # longer than any build takes.
+    for path in d.glob("*.part"):
+        try:
+            if now - datetime.utcfromtimestamp(path.stat().st_mtime) > timedelta(days=1):
+                path.unlink(missing_ok=True)
+        except OSError:
+            pass

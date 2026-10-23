@@ -230,7 +230,8 @@ class TestBackgroundDelivery:
         and no mail sent, and the queued job does both."""
         from app.services import tasks
         queued = []
-        monkeypatch.setattr(tasks, "run_later", lambda fn: queued.append(fn))
+        monkeypatch.setattr(tasks, "run_later",
+                            lambda fn: queued.append(fn) or True)
 
         resp = admin_client.post("/admin/abstracts/download", data={
             "status": "all", "conference_id": str(export_env["c1"])},
@@ -281,7 +282,8 @@ class TestBackgroundDelivery:
                                                     monkeypatch, app):
         from app.services import abstract_export, tasks
         queued = []
-        monkeypatch.setattr(tasks, "run_later", lambda fn: queued.append(fn))
+        monkeypatch.setattr(tasks, "run_later",
+                            lambda fn: queued.append(fn) or True)
         form = {"status": "all", "conference_id": str(export_env["c1"]),
                 "search": export_env["tag"]}
 
@@ -293,6 +295,46 @@ class TestBackgroundDelivery:
             queued[0]()
         # One build, both requests told.
         assert [m["subject"] for m in mailbox] == ["Abstract export ready"] * 2
+
+    def test_a_build_lost_to_a_restart_does_not_block_the_next(
+            self, seeded, admin_client, mailbox, export_env, app):
+        """A restart kills the build but leaves its marker. The claim is the
+        marker's lock, which died with the process, so the next request
+        builds rather than waiting on a build that will never finish."""
+        from app.models import User
+        from app.services import abstract_export
+        with app.test_request_context():
+            selection = Abstract.query.filter_by(
+                conference_id=export_env["c1"], deleted_at=None).all()
+            key = abstract_export.bundle_key(selection)
+            # The lost build's requester, still waiting on it.
+            waiting = User.query.filter_by(email="admin@test.example.org").one()
+            abstract_export._write_grant("w" * 32, {
+                "user_id": waiting.id, "key": key, "count": len(selection),
+                "description": "before the restart", "download_name": "x.zip",
+                "created_at": datetime.utcnow().isoformat(), "notified": False})
+            (abstract_export.cache_dir() / f"{key}.building").touch()
+
+        admin_client.post("/admin/abstracts/download", data={
+            "status": "all", "conference_id": str(export_env["c1"])})
+        # Built, and the earlier requester is told as well as the new one.
+        assert [m["subject"] for m in mailbox] == ["Abstract export ready"] * 2
+        assert admin_client.get(_link(mailbox[-1])).status_code == 200
+
+    def test_a_dropped_job_says_so_and_lets_go(self, seeded, admin_client,
+                                               mailbox, export_env,
+                                               monkeypatch):
+        """The task queue drops work when full. Nothing would then build the
+        bundle, so the requester hears now and the next request can build."""
+        from app.services import tasks
+        form = {"status": "all", "conference_id": str(export_env["c1"])}
+        with monkeypatch.context() as m:
+            m.setattr(tasks, "run_later", lambda fn: False)
+            admin_client.post("/admin/abstracts/download", data=form)
+        assert [x["subject"] for x in mailbox] == ["Abstract export failed"]
+
+        link = _request(admin_client, mailbox, **form)
+        assert admin_client.get(link).status_code == 200
 
     def test_a_failed_build_says_so(self, seeded, admin_client, mailbox,
                                     export_env, monkeypatch):

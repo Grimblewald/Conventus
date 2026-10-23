@@ -2,7 +2,8 @@
 
 Every real send that attaches a PDF (an auto receipt/adjustment, a manual
 invoice, a manual-invoice receipt, a §7 pending retry) appends one row here
-carrying enough to rebuild that exact PDF byte-identically on demand:
+carrying enough to rebuild that document on demand, saying exactly what it
+said when issued, in the current layout:
 
 * `vars_json`     — a JSON snapshot of ALL resolved variables handed to the
                     renderer for this document;

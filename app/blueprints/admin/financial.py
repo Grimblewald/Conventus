@@ -940,7 +940,7 @@ _BULK_DOC_CAP = 20
 @requires_permission("financial.manage")
 def financial_download_issued_document(doc_id):
     """Regenerate a single stored document (plan §12) and stream it as a PDF.
-    Rebuilds byte-identically from the snapshot; a compile failure flashes."""
+    Rebuilds what was issued from the snapshot; a compile failure flashes."""
     from io import BytesIO
 
     from ...models import IssuedDocument

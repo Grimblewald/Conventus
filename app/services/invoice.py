@@ -502,7 +502,7 @@ def registration_document(reg: Registration, kind: str) -> bytes:
     """A registration's invoice or receipt as PDF bytes, compiled at most once.
 
     A receipt is rebuilt from the `IssuedDocument` recorded when it was emailed,
-    so the member gets the same bytes their copy has. That row is absent when
+    so the member gets what their copy says. That row is absent when
     the render or the send failed at capture, in which case it is built from
     what was actually received.
 
@@ -593,7 +593,7 @@ def _record_issued(kind: str, vars_: dict, *, reference: str, recipient: str,
     """Append an IssuedDocument snapshot for a real send that just attached a
     PDF (plan §12, ATO 5-year retention). Captures the EXACT resolved variables
     and the render-affecting template fields used, so `regenerate_document` can
-    rebuild the PDF byte-identically later even after the live template changes.
+    rebuild what it said later, even after the live template changes.
     Called next to `_render_attachment`'s successful send paths only — never for
     test invoices or previews. Best-effort: a snapshot failure must never break
     a send that already went out."""

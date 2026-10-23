@@ -1,8 +1,8 @@
 """Regeneration store tests (plan build step 7 / §12, ATO 5-year retention).
 
 Every real send that attaches a PDF appends an IssuedDocument snapshot from
-which the exact PDF can be rebuilt byte-identically; test invoices and previews
-never do. Regeneration renders through the ONE renderer using the stored vars
+which the document can be rebuilt saying exactly what it said; test invoices
+and previews never do. Regeneration renders through the ONE renderer using the stored vars
 and a template stand-in, so it stays faithful even after the live template is
 edited. Compiles are stubbed at the pure `_compile` step — no real tectonic.
 """
@@ -427,6 +427,39 @@ class TestDocumentCaching:
         with app.app_context():
             assert registration_document(
                 Registration.query.get(rid), "receipt") == emailed
+
+    def test_a_changed_skeleton_is_not_served_from_the_cache(
+            self, seed_templates, compiles, monkeypatch, tmp_path):
+        """A copy cached before an update that changed the layout must not
+        keep being served beside copies drawn in the new one."""
+        app = seed_templates
+        skeleton = tmp_path / "document.tex"
+        skeleton.write_bytes(docs._SKELETON.read_bytes())
+        monkeypatch.setattr(docs, "_SKELETON", skeleton)
+        monkeypatch.setattr(docs, "_RENDER_SOURCES", (skeleton,))
+        docs.source_fingerprint.cache_clear()
+        with app.app_context():
+            from app.models import IssuedDocument
+            row = IssuedDocument(kind="receipt", reference=f"SK-{secrets.token_hex(3)}",
+                                 recipient="a@example.org", amount=5000,
+                                 vars_json="{}", template_json='{"pdf_body":""}',
+                                 content_hash="x")
+            db.session.add(row)
+            db.session.commit()
+
+            first = docs.regenerate_cached(row)
+            assert docs.regenerate_cached(row) == first
+            assert len(compiles) == 1
+
+            # The update: a new skeleton, and a process that starts afresh.
+            skeleton.write_text(skeleton.read_text() + "\n% changed layout\n")
+            docs.source_fingerprint.cache_clear()
+            second = docs.regenerate_cached(row)
+        docs.source_fingerprint.cache_clear()
+
+        assert len(compiles) == 2
+        assert second != first
+        assert "% changed layout" in compiles[1]
 
     def test_a_receipt_falls_back_when_none_was_recorded(self, seed_templates,
                                                          compiles):

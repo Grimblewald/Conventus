@@ -30,6 +30,7 @@ the same reason (`DOC_WARM_ON_BOOT`).
 from __future__ import annotations
 
 import fcntl
+import functools
 import logging
 import os
 import queue
@@ -46,7 +47,7 @@ log = logging.getLogger(__name__)
 
 # Fixed epoch for byte-reproducible PDFs (tectonic honours SOURCE_DATE_EPOCH).
 # 2024-01-01T00:00:00Z. Never change casually — the regeneration store (plan
-# §12) relies on identical inputs producing identical bytes across releases.
+# §12) relies on identical inputs producing identical bytes.
 SOURCE_DATE_EPOCH = 1704067200
 
 # Compile wall-clock ceiling. A warm cache compiles in ~1-2s; a cold fetch is
@@ -54,6 +55,26 @@ SOURCE_DATE_EPOCH = 1704067200
 _COMPILE_TIMEOUT = 60
 
 _SKELETON = Path(__file__).resolve().parent.parent / "latex" / "document.tex"
+
+
+@functools.lru_cache(maxsize=None)
+def source_fingerprint(*paths: Path) -> str:
+    """A short hash of the source files an output is drawn from.
+
+    For cache keys: data alone does not identify a rendered file, because the
+    same data drawn by a changed skeleton or builder comes out differently,
+    and a key without the source keeps serving copies drawn the old way.
+    """
+    import hashlib
+
+    h = hashlib.sha256()
+    for path in paths:
+        h.update(Path(path).read_bytes())
+    return h.hexdigest()[:12]
+
+
+# What a document PDF is drawn from besides its variables and template.
+_RENDER_SOURCES = (_SKELETON, Path(__file__).resolve())
 
 
 class RenderError(Exception):
@@ -726,10 +747,10 @@ def render_document(kind: str, vars_: dict[str, str],
 
 # ---------------------------------------------------------------------------
 # Regeneration store (plan §12) — a CALLER of render_document. Rebuilds a stored
-# IssuedDocument's PDF byte-identically from its snapshots. Lives here (not in
-# the send layer) because it is pure rendering: stored vars + a template
-# stand-in → the one renderer, with the pinned SOURCE_DATE_EPOCH. It touches no
-# send/email concerns, so this is the cleaner home.
+# IssuedDocument's PDF from its snapshots. Lives here (not in the send layer)
+# because it is pure rendering: stored vars + a template stand-in → the one
+# renderer, with the pinned SOURCE_DATE_EPOCH. It touches no send/email
+# concerns, so this is the cleaner home.
 # ---------------------------------------------------------------------------
 
 def regenerate_document(issued) -> bytes:
@@ -737,9 +758,12 @@ def regenerate_document(issued) -> bytes:
 
     Renders through the ONE renderer using the resolved variables captured at
     issue time and a template stand-in built from the stored render-affecting
-    fields (so the result is faithful even if the live DocumentTemplate has been
-    edited since). With the pinned SOURCE_DATE_EPOCH the bytes are identical to
-    the originally issued document. Raises RenderError on a compile failure."""
+    fields, so it is faithful even if the live DocumentTemplate has been edited
+    since. What the document says — parties, amounts, dates, references, tax
+    treatment — is exactly what was issued. The layout is the skeleton's as it
+    stands: while that is unchanged the bytes match the original, and after it
+    changes the copy follows the current layout. Raises RenderError on a
+    compile failure."""
     import json
     import types
 
@@ -877,14 +901,14 @@ def cached_pdf(key: str, build) -> bytes:
     """The PDF for *key*, compiling it only the first time it is asked for.
 
     Safe because a document's bytes are a pure function of its inputs: the
-    pinned SOURCE_DATE_EPOCH and the snapshotted variables and template make
-    every rebuild identical, so a hit can never be stale. Callers put the
-    template's content hash in the key, so editing a template misses rather
-    than serving the old design.
+    pinned SOURCE_DATE_EPOCH, the variables and template, and the skeleton
+    and renderer that draw them. Callers put the template's content hash in
+    the key; the skeleton and renderer are added here, so an update that
+    changes the layout misses rather than serving copies in the old one.
 
     Purely a cache. The directory can be deleted at any time.
     """
-    dest = _issued_cache_dir() / f"{key}.pdf"
+    dest = _issued_cache_dir() / f"{key}-{source_fingerprint(*_RENDER_SOURCES)}.pdf"
     try:
         return dest.read_bytes()
     except OSError:

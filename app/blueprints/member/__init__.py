@@ -1101,7 +1101,7 @@ def registration_document(reg_id, kind):
 @member_bp.route("/registrations/<int:reg_id>/documents/<int:doc_id>")
 @login_required
 def registration_issued_document(reg_id, doc_id):
-    """One version of a receipt the member was sent, as it was sent."""
+    """One version of a receipt the member was sent, saying what it said."""
     from ...services.documents import RenderError, regenerate_cached
     from ...services.invoice import _safe_ref, registration_documents
 

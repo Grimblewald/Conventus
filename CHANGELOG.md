@@ -2,6 +2,18 @@
 
 ## [Unreleased]  **MIGRATION REQUIRED**
 
+### Upgrading
+- **Take a backup first** (Admin → System → Backup). The update into this
+  release is run by the version you are leaving, and its Admin → Update takes
+  no restore point, so `scripts/update.sh --revert` would have nothing recent
+  to go back to. Every update after this one writes its own. Updating over
+  SSH with the old `scripts/update.sh` does take one, but only copies a live
+  database safely if the `sqlite3` command is installed (`command -v
+  sqlite3`); without it the copy can miss the latest writes.
+- Admin pages may answer with an error for the few seconds between the pull
+  and the restart, while the old process loads the new templates. It clears
+  when the restart lands.
+
 ### Added
 - **The abstracts panel can hand over its whole filtered view as LaTeX.**
   "Download selected" on Admin → Abstracts bundles every abstract matching
@@ -17,7 +29,9 @@
   only they can use, signed in, for 48 hours; an unchanged selection is never
   built twice. Building in the request held a worker for as long as the
   citation lookups and image conversion took — half a minute for a full
-  conference.
+  conference. A build lost to a restart does not hold up the next request for
+  the same export, and the built bundles are never reachable through the
+  public uploads URLs.
 - **A billing address prints on invoices and receipts.** A new form-builder
   field type, `billing-address`, placed in a conference's registration form
   (beside Payment method, say) renders as a text box noting that it appears on
@@ -33,10 +47,12 @@
   and references, takes GST and issuer details from Financial Identity as it
   stands and the bill-to from the registration as it stands, and says which
   receipt it replaces. Nothing is overwritten: every version is listed on the
-  member's dashboard and the admin registration page, and each downloads as
-  sent. A paid registrant who changes their billing address gets their
-  receipt reissued automatically, at most once a day. **MIGRATION:** adds
-  `issued_documents.replaces_id` and `reason`.
+  member's dashboard and the admin registration page, and each downloads
+  saying what it said. A paid registrant who changes their billing address
+  gets their receipt reissued automatically, at most once a day, counted
+  when the change is saved; a reissue that fails is recorded in the audit log
+  for an admin to resend. **MIGRATION:** adds `issued_documents.replaces_id`
+  and `reason`.
 - **Authors and affiliations are entered as a list, not typed as text.** The
   member submission form and the admin abstract editor share one editor: a
   numbered list of affiliations, then each author with a ticked box per
@@ -44,7 +60,10 @@
   per author are supported throughout — pages, PDFs, booklet, export.
   Validated on the server, with messages that say which row to fix.
   **MIGRATION:** adds `abstracts.author_data` and fills it from the existing
-  author text.
+  author text, with spacing tidied and affiliations that differ only in case
+  merged. Lists the editor would refuse — over its limits on authors,
+  affiliations or length — are still shown in full; the editor asks for
+  changes only when one is next saved.
 - **Accepted abstracts are accepted as oral or as poster.** The single
   "accepted" decision is replaced by **Accepted (oral)** and **Accepted
   (poster)**, on the decision form, the admin filter, and the review page's
@@ -79,8 +98,10 @@
   every download re-ran LaTeX — and the bulk download re-ran it for every
   document in the zip, every time. Because a document's bytes are a pure
   function of its inputs, finished PDFs are now cached and served from disk
-  thereafter; editing a document template misses the cache rather than serving
-  the old design. Staff downloads and the zip take the same path, so they are
+  thereafter; editing a document template, or an update that changes the
+  document layout, misses the cache rather than serving the old design. A
+  stored document is rebuilt saying exactly what was issued — parties,
+  amounts, dates, references, tax treatment — in the current layout. Staff downloads and the zip take the same path, so they are
   cheaper too. The cache holds nothing that cannot be rebuilt and can be
   deleted at any time.
 - **A payment email can be sent again from the registrations list.** A payment
@@ -117,7 +138,17 @@
 - **Restoring a backup restores it.** The restore moved the archive's database
   over the live one and left the old write-ahead log beside it, which SQLite
   replayed on the next open — the restore came back as the database it
-  replaced. The database is now written through SQLite's backup API.
+  replaced. The database is now written through SQLite's backup API, with
+  nothing of the restoring request's own left open to lock it out, and a
+  copy onto a database something else keeps locked gives up after a minute
+  rather than waiting for ever.
+- **A relative SQLite `DATABASE_URL` is found where the app keeps it.**
+  Flask-SQLAlchemy puts it under `instance/`; backups, restores and restore
+  points looked in the project root and found nothing.
+- **A booklet is rebuilt when its conference or the code that writes it
+  changes.** The cache was keyed on the abstracts alone, so a retitled
+  conference, or an update to how abstracts are typeset, went on serving the
+  booklet built before it.
 - **Backups carry the document logo and signature.** They live outside the
   uploads folder so they are never served on the web, which also kept them out
   of every backup; a restored site issued documents with neither.

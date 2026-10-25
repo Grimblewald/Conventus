@@ -13,8 +13,29 @@
 - Admin pages may answer with an error for the few seconds between the pull
   and the restart, while the old process loads the new templates. It clears
   when the restart lands.
+- Existing sub-events (the EMCR Workshop) come through **tentative**, with
+  their prices converted to cents ($50 stays $50.00). Nobody is charged until
+  an admin starts billing one.
 
 ### Added
+- **Sub-events can be tentative, and are billed when they go ahead.** A
+  tentative sub-event records who is interested without charging, and the
+  registration form says it is billed only if it goes ahead. **Start billing**
+  (Admin → Conferences → Sub-Events, needs `financial.manage`) shows who would
+  be charged and what each would owe, then — after an emailed confirmation
+  code — charges everyone attending, and can email each an invoice that opens
+  with a note. It happens once; there is no going back to tentative. From then
+  on the sub-event is charged when someone opts in, at the price on that day.
+  A registrant who had paid everything else goes back to pending until they
+  pay the balance, through the same pay link. Once paid for, a sub-event
+  cannot be withdrawn from on the form. Sub-event prices are entered in
+  dollars like tier prices, "no" answers are kept, and the registrations list
+  shows and filters by attendance. **MIGRATION:** adds
+  `sub_events.tentative`.
+- **Invoices and receipts list each charge.** A registration billed for a
+  sub-event, or part paid, gets a line per charge and Total charges and Paid
+  previously rows above the amount due or received. Payment emails list the
+  items too. Documents with a single charge paid in one go are unchanged.
 - **The abstracts panel can hand over its whole filtered view as LaTeX.**
   "Download selected" on Admin → Abstracts bundles every abstract matching
   the current status/search/conference filter into a zip: one folder per
@@ -125,6 +146,14 @@
   about the toolchain opt back in with a `real_latex` marker. 227s to 92s.
 
 ### Fixed
+- **A payment made after an earlier one is receipted for what was paid.** A
+  receipt from the gateway or from reconciliation printed the tier price
+  whatever arrived, so paying a balance — an upgrade, or a sub-event billed
+  later — produced a receipt for the whole fee. And the pay link refused any
+  registration marked paid, so that balance could not be paid online at all.
+- **Reconciliation no longer re-pays an old payment.** For a registration that
+  owed something new since its last payment, it read the old capture again,
+  marked the registration paid and emailed a duplicate receipt.
 - **One way to update, and a revert that works when the site is broken.**
   Admin → Update, `scripts/update.sh` and `python -m app update` now all run
   `scripts/site_update.py`: restore point (database copied through SQLite's

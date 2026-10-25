@@ -148,13 +148,16 @@ def _due_date(conf) -> str:
     return ""
 
 
-def send_payment_email(registration: Registration) -> bool:
+def send_payment_email(registration: Registration, note: str = "") -> bool:
     """Ask a member to pay, and record that we asked. Returns whether it sent.
 
     Carries the registration's reference and, if the society has configured
     payment instructions, those too. A member paying by bank transfer has
     nothing else to quote — the transfer arrives as a line on a statement, and
     without the reference on it the treasurer cannot tell whose it is.
+
+    *note* opens the email when there is something to explain first — that a
+    sub-event they registered interest in is now going ahead and billed.
 
     The only way to ask, so the timestamp and count an admin reads always
     describe the same sends the payer received.
@@ -164,7 +167,7 @@ def send_payment_email(registration: Registration) -> bool:
     from ..extensions import db
     from ..models import record_payment_event
     from ..models.content import get_financial_identity, get_site_settings
-    from ..models.payment_event import PAYMENT_EMAIL_EVENT
+    from ..models.payment_event import PAYMENT_EMAIL_EVENT, amount_received
     from .invoice import _reg_merchant_reference, sanitized_reference
 
     pay_url = payment_url_for(registration)
@@ -174,11 +177,17 @@ def send_payment_email(registration: Registration) -> bool:
     currency = (site.currency_code or "AUD").upper()
     due = _due_date(conf)
 
+    symbol = site.currency_symbol or ""
+    items = [(registration.tier_name, registration.amount or 0),
+             *registration.sub_event_charges()]
+    received = amount_received(registration.id)
     body = (
-        f"Thank you for registering for {conf.title} ({conf.date_range}).\n\n"
-        f"Item:      {registration.tier_name}\n"
-        f"Amount:    {site.currency_symbol or ''}"
-        f"{registration.amount_due / 100:.2f} {currency}\n"
+        (f"{note.strip()}\n\n" if note.strip() else "")
+        + f"Thank you for registering for {conf.title} ({conf.date_range}).\n\n"
+        + "".join(f"Item:      {name} — {symbol}{cents / 100:.2f}\n"
+                  for name, cents in items)
+        + (f"Paid:      {symbol}{received / 100:.2f}\n" if received > 0 else "")
+        + f"Amount:    {symbol}{registration.amount_due / 100:.2f} {currency}\n"
         f"Reference: {registration.reference}\n"
         + (f"Due:       {due}\n" if due else "")
         + f"\nPay online:\n{pay_url}\n\n"

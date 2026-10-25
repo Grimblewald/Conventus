@@ -4,16 +4,10 @@
 <div class="section-head"><div><div class="eyebrow">Conferences</div><h2>Registrations</h2></div></div>
 
 <div style="display:flex; gap:8px; margin-bottom:14px; flex-wrap:wrap;">
-  <a class="btn btn-{% if status_filter == 'all' %}primary{% else %}ghost{% endif %} btn-sm"
-     href="{{ url_for('admin.registrations', conference_id=conference_id, status='all') }}">All</a>
-  <a class="btn btn-{% if status_filter == 'pending' %}primary{% else %}ghost{% endif %} btn-sm"
-     href="{{ url_for('admin.registrations', conference_id=conference_id, status='pending') }}">Pending</a>
-  <a class="btn btn-{% if status_filter == 'paid' %}primary{% else %}ghost{% endif %} btn-sm"
-     href="{{ url_for('admin.registrations', conference_id=conference_id, status='paid') }}">Paid</a>
-  <a class="btn btn-{% if status_filter == 'cancelled' %}primary{% else %}ghost{% endif %} btn-sm"
-     href="{{ url_for('admin.registrations', conference_id=conference_id, status='cancelled') }}">Cancelled</a>
-  <a class="btn btn-{% if status_filter == 'refunded' %}primary{% else %}ghost{% endif %} btn-sm"
-     href="{{ url_for('admin.registrations', conference_id=conference_id, status='refunded') }}">Refunded</a>
+  {% for value, label in [('all', 'All'), ('pending', 'Pending'), ('paid', 'Paid'), ('cancelled', 'Cancelled'), ('refunded', 'Refunded')] %}
+  <a class="btn btn-{% if status_filter == value %}primary{% else %}ghost{% endif %} btn-sm"
+     href="{{ url_for('admin.registrations', conference_id=conference_id, status=value, sub_event=sub_event_id) }}">{{ label }}</a>
+  {% endfor %}
 </div>
 
 <div style="display:flex; gap:8px; margin-bottom:18px; flex-wrap:wrap;">
@@ -25,12 +19,23 @@
     {% endfor %}
   </select>
 
+  {% if sub_event_options %}
+  <select class="select" style="max-width:300px;" data-jump aria-label="Sub-event">
+    <option value="{{ url_for('admin.registrations', conference_id=conference_id, status=status_filter) }}">Any sub-event</option>
+    {% for se in sub_event_options %}
+      <option value="{{ url_for('admin.registrations', conference_id=conference_id, status=status_filter, sub_event=se.id) }}"
+              {% if sub_event_id == se.id %}selected{% endif %}>Attending {{ se.name }}{% if not conference_id %} ({{ se.conference.title }}){% endif %}</option>
+    {% endfor %}
+  </select>
+  {% endif %}
+
   {# Reconciling a bank transfer starts from a statement line, so the box takes
      the payer's reference in whatever form the bank left it, as well as a
      name, email or transaction id. #}
   <form method="get" style="display:flex; gap:8px; flex:1; min-width:260px;">
     <input type="hidden" name="status" value="{{ status_filter }}">
     {% if conference_id %}<input type="hidden" name="conference_id" value="{{ conference_id }}">{% endif %}
+    {% if sub_event_id %}<input type="hidden" name="sub_event" value="{{ sub_event_id }}">{% endif %}
     <input type="search" name="q" class="input" value="{{ q or '' }}" style="flex:1;"
            placeholder="Reference, name, email or transaction id">
     <button class="btn btn-primary" type="submit">Search</button>
@@ -51,7 +56,7 @@
 {% if regs %}
 <div style="overflow-x:auto;">
 <table class="table">
-  <thead><tr><th>Reference</th><th>User</th><th>Conference</th><th>Tier</th><th>Amount</th><th>Status</th><th>Payment sent</th><th>Date</th>
+  <thead><tr><th>Reference</th><th>User</th><th>Conference</th><th>Tier</th><th>Sub-events</th><th>Amount</th><th>Due</th><th>Status</th><th>Payment sent</th><th>Date</th>
       {% if can('financial.manage') %}<th>Payment email</th>{% endif %}
       {% if can('registrations.edit') %}<th></th>{% endif %}</tr></thead>
   <tbody>
@@ -61,7 +66,17 @@
       <td><a href="{{ url_for('admin.registration_detail', reg_id=r.id) }}">{{ r.user.email if r.user else '—' }}</a></td>
       <td>{{ r.conference.title if r.conference else '—' }}</td>
       <td>{{ r.tier_name }}</td>
-      <td>{{ site.currency_symbol }}{{ r.amount | format_amount }}</td>
+      <td style="font-size:13px;">
+        {% for se in (r.conference.sub_events if r.conference else []) %}
+          {% set entry = (r.sub_events or {}).get(se.key) %}
+          {% if entry and entry.attending %}
+            <div>{{ se.name }}
+              <span class="muted">{% if entry.charged %}billed{% elif se.tentative %}tentative{% else %}free{% endif %}</span></div>
+          {% endif %}
+        {% endfor %}
+      </td>
+      <td>{{ site.currency_symbol }}{{ r.total_price | format_amount }}</td>
+      <td>{% if r.amount_due > 0 %}{{ site.currency_symbol }}{{ r.amount_due | format_amount }}{% else %}<span class="muted">—</span>{% endif %}</td>
       <td><span class="status" data-v="{{ r.status }}">{{ r.status }}</span></td>
       {# A date alone hides both the payer never asked and the one chased four times. #}
       {% set sent = email_counts.get(r.id, 0) %}

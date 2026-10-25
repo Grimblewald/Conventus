@@ -96,6 +96,43 @@ class Registration(db.Model):
                    .with_entities(PaymentEvent.amount).all())
         return sum((a or 0) for (a,) in charged)
 
+    def sub_event_charges(self) -> list[tuple[str, int]]:
+        """(name, cents) for each sub-event this registration is billed for.
+
+        The price is the one struck when billing began for it, kept on the
+        entry, so a later price change does not re-price people already
+        billed — the same rule the tier price follows.
+        """
+        out = []
+        for key, entry in (self.sub_events or {}).items():
+            if (isinstance(entry, dict) and entry.get("attending")
+                    and entry.get("charged")):
+                out.append((entry.get("name") or key.replace("_", " ").title(),
+                            int(entry["charged"])))
+        return out
+
+    @property
+    def total_price(self) -> int:
+        """The tier plus every sub-event billed: what this registration costs."""
+        return (self.amount or 0) + sum(c for _, c in self.sub_event_charges())
+
+    def settle_status(self) -> None:
+        """Bring the status in line with what is owed. Caller commits.
+
+        `paid` means nothing is owed, so a charge added after payment — a
+        sub-event billed later, or an upgrade — returns it to `pending`, which
+        is what lets the member pay the balance. Clearing that balance is
+        settled the other way. Refunded, cancelled and in-flight registrations
+        are someone's deliberate state and are left alone.
+        """
+        from .payment_event import amount_received
+
+        if self.status == "paid" and self.amount_due > 0:
+            self.status = "pending"
+        elif (self.status in ("pending", "failed") and self.amount_due <= 0
+              and amount_received(self.id) > 0):
+            self.status = "paid"
+
     @property
     def amount_due(self) -> int:
         """What to bill right now — never less than nothing.

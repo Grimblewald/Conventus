@@ -32,6 +32,7 @@ from ...services.payments import (
     initiate_payment, payments_open_to_members, send_payment_email,
     send_registration_confirmation,
 )
+from ...services import sub_event_billing
 from ...services.authors import from_form as authors_from_form, to_legacy
 from ...services.uploads import UploadError, remove_upload, save_figure, save_image
 from ...services.form_renderer import (billing_address, billing_address_key,
@@ -231,18 +232,9 @@ def register_conf(slug):
                     val = request.form.getlist(key) if field.get("type") == "checkbox-group" else request.form.get(key, "")
                     custom_data[key] = val
 
-        # Collect sub-event registration data
-        sub_event_data: dict = {}
-        for se in sub_events:
-            sekey = se.name.lower().replace(" ", "_")
-            attending = request.form.get(f"_sub_event_{sekey}_attending") == "yes"
-            entry = {"attending": attending}
-            if attending and se.preference_schema:
-                for pf in se.preference_schema.get("fields", []):
-                    pfkey = pf.get("key", "")
-                    pval = request.form.getlist(f"_sub_event_{sekey}_{pfkey}") if pf.get("type") == "checkbox-group" else request.form.get(f"_sub_event_{sekey}_{pfkey}", "")
-                    entry[pfkey] = pval
-            sub_event_data[sekey] = entry
+        sub_event_data = sub_event_billing.collect(
+            request.form, sub_event_billing.asked(schema, sub_events),
+            existing.sub_events if existing else None, existing)
 
         # Validate custom fields against schema
         if schema:
@@ -254,13 +246,15 @@ def register_conf(slug):
                                        c=c, tiers=tiers, existing=existing,
                                        schema=schema, sub_events=sub_events)
 
-        # A paid registration's address is printed on a receipt already sent,
-        # so changing it reissues that receipt — at most once a day, since each
-        # change emails a new tax document. The change is counted when it is
-        # made, not when the receipt goes out: the reissue runs after this
-        # request, and a second save before it lands must not send a second.
+        # The address is printed on any receipt already sent, so changing it
+        # reissues that receipt — at most once a day, since each change emails
+        # a new tax document. Keyed on holding a receipt, not on the status: a
+        # member who paid and now owes a sub-event billed since is pending,
+        # and still holds one. The change is counted when it is made, not when
+        # the receipt goes out: the reissue runs after this request, and a
+        # second save before it lands must not send a second.
         reissue_address = False
-        if existing is not None and existing.status in ("paid", "refunded"):
+        if existing is not None:
             key = billing_address_key(schema)
             if key and (billing_address(schema, custom_data)
                         != billing_address(schema, existing.custom_data)):
@@ -293,12 +287,13 @@ def register_conf(slug):
                 if tier.early_bird_amount and c.early_bird_deadline
                 and c.early_bird_deadline >= datetime.utcnow().date()
                 else tier.amount)
-        amount = reg.amount or 0
         reg.tier_name = tier.name
         reg.dietary = (request.form.get("dietary") or "").strip()
         reg.accessibility = (request.form.get("accessibility") or "").strip()
         reg.custom_data = custom_data if custom_data else None
-        reg.sub_events = sub_event_data if any(v.get("attending") for v in sub_event_data.values()) else None
+        # Every answer is kept, "no" included, so declining reads differently
+        # from never having been asked.
+        reg.sub_events = sub_event_data or None
         # Editing must not un-settle a registration somebody actually paid for
         # — resetting every save to "pending" would mark them unpaid and bill
         # them again for changing a dietary note. But "settled" has to mean
@@ -327,9 +322,15 @@ def register_conf(slug):
         # delta of zero and writes nothing. That keeps this the one place a
         # registration with no charge lines at all — a row that predates them
         # and escaped the backfill — still gets its baseline.
-        reg.charge_to(amount, reason=(
+        extras = reg.sub_event_charges()
+        reg.charge_to(reg.total_price, reason=(
             f"tier set to {tier.name}"
-            + ("" if amount else " — no fee")))
+            + "".join(f" + {name}" for name, _ in extras)
+            + ("" if reg.total_price else " — no fee")))
+        # A sub-event added after paying, or an upgrade, leaves a balance that
+        # must be payable; withdrawing from an unpaid one may clear it.
+        reg.settle_status()
+        db.session.commit()
 
         outstanding = reg.amount_due
         if reg.status == "refunded":

@@ -140,8 +140,11 @@ def _search_registrations(query, q: str):
 @admin_bp.route("/registrations")
 @requires_permission("registrations.view")
 def registrations():
+    from ...models import SubEvent
+
     conference_id = request.args.get("conference_id", type=int)
     status_filter = request.args.get("status", "all")
+    sub_event_id = request.args.get("sub_event", type=int)
     q = (request.args.get("q") or "").strip()
     query = Registration.query.filter(Registration.deleted_at.is_(None))
     if conference_id:
@@ -151,12 +154,19 @@ def registrations():
     if q:
         query = _search_registrations(query, q)
     regs = query.order_by(Registration.created_at.desc()).all()
+    # Answers live in a JSON column, so attendance is filtered here.
+    sub_event = db.session.get(SubEvent, sub_event_id) if sub_event_id else None
+    if sub_event is not None:
+        regs = [r for r in regs if r.conference_id == sub_event.conference_id
+                and ((r.sub_events or {}).get(sub_event.key) or {}).get("attending")]
     conf_list = (
         Conference.query
         .filter(Conference.deleted_at.is_(None))
         .order_by(Conference.start_date.desc())
         .all()
     )
+    sub_event_options = [se for c in conf_list for se in c.sub_events
+                         if not conference_id or c.id == conference_id]
     from ...models.payment_event import PAYMENT_EMAIL_EVENT, event_counts
 
     ids = [r.id for r in regs]
@@ -166,6 +176,8 @@ def registrations():
         conferences=conf_list,
         conference_id=conference_id,
         status_filter=status_filter,
+        sub_event_id=sub_event.id if sub_event else None,
+        sub_event_options=sub_event_options,
         q=q,
         email_counts=event_counts(ids, PAYMENT_EMAIL_EVENT),
         receipt_counts=event_counts(ids, "document.sent"),

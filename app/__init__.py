@@ -376,6 +376,9 @@ def _register_template_globals(app: Flask) -> None:
     from .services.authors import editor_initial
     app.jinja_env.globals["author_editor_initial"] = editor_initial
 
+    from .services.sub_event_billing import paid_for_event
+    app.jinja_env.globals["sub_event_paid_for"] = paid_for_event
+
     # The link-target picker's two halves: `split_target` turns a stored
     # target into (dropdown value, URL box value), and the sentinel tells the
     # template which dropdown value means "external".

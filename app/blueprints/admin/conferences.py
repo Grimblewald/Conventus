@@ -33,7 +33,7 @@ from ...services.citations import fetch_metadata, format_reference_compact, norm
 
 
 def _tier_price(raw: str | None, current: int | None) -> int | None:
-    """Parse a sponsor-tier price field into cents.
+    """Parse a sponsor-tier or sub-event price field into cents.
 
     Blank means "this level has no set price" (NULL), which is different from
     zero — a free tier is a real thing and must survive a save. Unparseable
@@ -491,11 +491,12 @@ def conference_save(cid):
                 se.name = (request.form.get(f"se_name_{se.id}") or "").strip()
             if f"se_desc_{se.id}" in request.form:
                 se.description = (request.form.get(f"se_desc_{se.id}") or "").strip()
+            # Tentative is not read here: billing starts only through
+            # sub_event_billing_*, which invoices whoever is attending, and
+            # once billed an event cannot be made tentative again.
             if f"se_price_{se.id}" in request.form:
-                try:
-                    se.price = int(request.form.get(f"se_price_{se.id}") or 0)
-                except ValueError:
-                    pass
+                se.price = _tier_price(request.form.get(f"se_price_{se.id}"),
+                                       se.price) or 0
             if f"se_eligibility_{se.id}" in request.form:
                 se.eligibility_note = (request.form.get(f"se_eligibility_{se.id}") or "").strip()
             if f"se_order_{se.id}" in request.form:
@@ -531,20 +532,22 @@ def conference_save(cid):
         new_se_prices = request.form.getlist("new_se_price[]")
         new_se_elig = request.form.getlist("new_se_eligibility[]")
         new_se_orders = request.form.getlist("new_se_order[]")
+        new_se_billing = request.form.getlist("new_se_billing[]")
         for i, name in enumerate(new_se_names):
             name = name.strip()
             if not name:
                 continue
-            price = 0
             try:
-                price = int(new_se_prices[i] or 0)
-            except (IndexError, ValueError):
-                pass
+                price = _tier_price(new_se_prices[i], None) or 0
+            except IndexError:
+                price = 0
             db.session.add(SubEvent(
                 conference_id=c.id,
                 name=name,
                 description=(new_se_descs[i] if i < len(new_se_descs) else "").strip(),
                 price=price,
+                tentative=(i < len(new_se_billing)
+                           and new_se_billing[i] == "tentative"),
                 eligibility_note=(new_se_elig[i] if i < len(new_se_elig) else "").strip(),
                 display_order=int(new_se_orders[i] or 0) if i < len(new_se_orders) else 0,
             ))

@@ -495,6 +495,13 @@ section.block.ink .table td {
   letter-spacing: 0.01em;
 }
 .field .help { font-family: var(--f-ui); font-size: 12.5px; color: var(--c-muted-text); margin-top: 6px; }
+/* Small, but it decides whether someone is charged, so it stays in the body
+   text colour rather than the faded muted one. */
+.sub-event-tentative {
+  font-family: var(--f-ui); font-size: 13px; line-height: 1.45;
+  color: var(--c-page-text); margin: 4px 0 12px;
+  padding-left: 10px; border-left: 3px solid var(--c-card-border);
+}
 .input, .textarea, .select {
   width: 100%; font-family: var(--f-body); font-size: 16px;
   padding: 11px 14px; border: 1px solid var(--c-card-border);

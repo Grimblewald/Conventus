@@ -1348,6 +1348,154 @@ def financial_reissue_confirm():
                            docs=docs, reason=pending["reason"])
 
 
+# ---------------------------------------------------------------------------
+# Starting to bill a tentative sub-event.
+# ---------------------------------------------------------------------------
+
+_BILLING_PENDING = "sub_event_billing_pending"
+
+
+def _default_billing_note(se) -> str:
+    conf = se.conference
+    return (f"The {se.name} at {conf.title if conf else 'the conference'} has "
+            f"enough interest to go ahead. You registered interest in it, so it "
+            f"has been added to your registration and the amount below is now "
+            f"due.")
+
+
+def _sub_event_or_404(se_id: int):
+    from flask import abort
+
+    from ...models import SubEvent
+
+    se = db.session.get(SubEvent, se_id)
+    if se is None:
+        abort(404)
+    return se
+
+
+@admin_bp.route("/financial/sub-events/<int:se_id>/billing")
+@requires_permission("financial.manage")
+def sub_event_billing(se_id):
+    """Who starting to bill this sub-event would charge, and the note they
+    would be sent. Changes nothing."""
+    from ...services.sub_event_billing import awaiting_billing
+
+    se = _sub_event_or_404(se_id)
+    if not se.tentative:
+        flash(f"{se.name} is already billed.", "info")
+        return redirect(url_for("admin.conference_edit", cid=se.conference_id))
+    return render_template("admin/sub_event_billing.html", se=se,
+                           regs=awaiting_billing(se),
+                           note=_default_billing_note(se))
+
+
+@admin_bp.route("/financial/sub-events/<int:se_id>/billing/request",
+                methods=["POST"])
+@requires_permission("financial.manage")
+def sub_event_billing_request(se_id):
+    """Hold the note and email the admin a code; nobody is charged or
+    emailed until the code comes back."""
+    from flask import session
+
+    from ...services.sub_event_billing import awaiting_billing
+
+    se = _sub_event_or_404(se_id)
+    back = url_for("admin.sub_event_billing", se_id=se.id)
+    if not se.tentative:
+        flash(f"{se.name} is already billed.", "info")
+        return redirect(url_for("admin.conference_edit", cid=se.conference_id))
+    if not se.price:
+        flash("Set a price for this sub-event before billing it.", "error")
+        return redirect(back)
+    note = (request.form.get("note") or "").strip()
+    send_invoices = request.form.get("send_invoices") == "1"
+    if send_invoices and not note:
+        flash("Write the note that opens each invoice email.", "error")
+        return redirect(back)
+
+    count = len(awaiting_billing(se))
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    ttl = current_app.config["OTP_TTL_SECONDS"]
+    if not send_mail(to=current_user.email,
+                     subject="Confirm billing a sub-event",
+                     body=(f"You asked to start billing {se.name} "
+                           f"({_money(se.price)} each), charging "
+                           f"{count} registration(s) already attending"
+                           + (" and emailing each an invoice" if send_invoices else "")
+                           + f".\n\nConfirmation code: {code}\n\n"
+                           f"This code expires in {ttl // 60} minutes. If you "
+                           f"didn't request this, ignore this email.")):
+        flash("Failed to send the confirmation email. Please try again.", "error")
+        return redirect(back)
+    db.session.add(OTPCode(email=current_user.email.lower(), code=code,
+                           purpose="sub_event_billing",
+                           expires_at=datetime.utcnow() + timedelta(seconds=ttl),
+                           ip=request.remote_addr))
+    db.session.commit()
+    session[_BILLING_PENDING] = {"se_id": se.id, "note": note,
+                                 "send_invoices": send_invoices}
+    return redirect(url_for("admin.sub_event_billing_confirm", se_id=se.id))
+
+
+@admin_bp.route("/financial/sub-events/<int:se_id>/billing/confirm",
+                methods=["GET", "POST"])
+@requires_permission("financial.manage")
+def sub_event_billing_confirm(se_id):
+    from flask import session
+
+    from ...services.sub_event_billing import awaiting_billing, start_billing
+
+    se = _sub_event_or_404(se_id)
+    pending = session.get(_BILLING_PENDING)
+    if not pending or pending.get("se_id") != se.id:
+        return redirect(url_for("admin.sub_event_billing", se_id=se.id))
+    if not se.tentative:
+        session.pop(_BILLING_PENDING, None)
+        flash(f"{se.name} is already billed.", "info")
+        return redirect(url_for("admin.conference_edit", cid=se.conference_id))
+    regs = awaiting_billing(se)
+
+    if request.method == "POST":
+        entered = (request.form.get("code") or "").strip().replace(" ", "")
+        otp = (OTPCode.query
+               .filter_by(email=current_user.email.lower(), code=entered,
+                          purpose="sub_event_billing", consumed_at=None)
+               .order_by(OTPCode.id.desc()).first())
+        if not (otp and otp.is_valid()):
+            flash("That code didn't match, or it has expired.", "error")
+            return render_template("admin/sub_event_billing_confirm.html",
+                                   se=se, regs=regs, **pending)
+        otp.consumed_at = datetime.utcnow()
+        db.session.commit()
+        session.pop(_BILLING_PENDING, None)
+        billed = start_billing(se, note=pending["note"],
+                               send_invoices=pending["send_invoices"])
+        audit.record("financial.sub_event_billed",
+                     target_kind="sub_event", target_id=se.id,
+                     summary=(f"{current_user.email} started billing {se.name} "
+                              f"({_money(se.price)}): "
+                              f"{len(billed)} registration(s) charged"
+                              + (", invoices emailed" if pending["send_invoices"]
+                                 else ", no emails")))
+        flash(f"Billing started for {se.name}: {len(billed)} registration(s) "
+              f"charged"
+              + (" — each is emailed an invoice as it is generated."
+                 if pending["send_invoices"] else ". Nobody was emailed."),
+              "success")
+        return redirect(url_for("admin.conference_edit", cid=se.conference_id))
+
+    return render_template("admin/sub_event_billing_confirm.html",
+                           se=se, regs=regs, **pending)
+
+
+def _money(cents: int) -> str:
+    from ...models.content import get_site_settings
+    from ...services.jinja_filters import format_amount
+
+    return f"{get_site_settings().currency_symbol or ''}{format_amount(cents)}"
+
+
 @admin_bp.route("/financial/document/<ref>/send-pending", methods=["POST"])
 @requires_permission("financial.manage")
 def financial_send_pending_document(ref):

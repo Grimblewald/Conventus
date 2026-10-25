@@ -1,0 +1,43 @@
+{% extends "admin/_base.html" %}
+{% block title %}Confirm billing · {{ se.name }} · Admin{% endblock %}
+{% block admin %}
+<div class="section-head">
+  <div>
+    <div class="eyebrow">{{ se.conference.title if se.conference else 'Conference' }}</div>
+    <h2>Confirm billing {{ se.name }}</h2>
+  </div>
+</div>
+
+<div class="card" style="padding:24px; max-width:640px;">
+  <p style="background:#fff3cd; padding:12px; border-radius:6px; margin-top:0;">
+    <strong>Warning:</strong> this charges <strong>{{ regs|length }}</strong>
+    registration{{ '' if regs|length == 1 else 's' }}
+    <strong>{{ site.currency_symbol }}{{ se.price | format_amount }}</strong> each
+    {%- if send_invoices %} and emails each of them an invoice{% else %}. Nobody is emailed{% endif %}.
+    {{ se.name }} stops being tentative, and that cannot be undone.
+  </p>
+  {% if send_invoices %}
+  <p><strong>Note that opens each email:</strong></p>
+  <blockquote style="margin:0 0 16px; padding-left:12px; border-left:3px solid var(--c-card-border); white-space:pre-line;">{{ note }}</blockquote>
+  {% endif %}
+  <details style="margin-bottom:16px;">
+    <summary>Registrations ({{ regs|length }})</summary>
+    <ul>
+      {% for r in regs %}<li>{{ r.reference }} — {{ r.user.email if r.user else '—' }} ({{ r.status }})</li>{% endfor %}
+    </ul>
+  </details>
+  <p>A confirmation code has been sent to <strong>{{ current_user.email }}</strong>.</p>
+
+  <form method="POST" style="margin-top:16px;">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field" style="margin-bottom:16px;">
+      <label for="code"><strong>Confirmation code</strong></label>
+      <input type="text" id="code" name="code" class="input" maxlength="6" placeholder="6-digit code" autocomplete="off">
+    </div>
+    <div style="display:flex; gap:8px;">
+      <button type="submit" class="btn btn-primary">Start billing</button>
+      <a href="{{ url_for('admin.sub_event_billing', se_id=se.id) }}" class="btn btn-ghost">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

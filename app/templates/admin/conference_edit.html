@@ -397,8 +397,13 @@
       </small>
     </summary>
     <div class="edit-section-body">
+      <p class="muted" style="margin-top:0;">A <strong>tentative</strong> sub-event records who is
+        interested without charging anyone, and the registration form says it will be billed if
+        it goes ahead. <strong>Start billing</strong> charges everyone already attending and
+        emails them an invoice; after that it bills whoever opts in. A price change applies
+        to people who opt in from then on.</p>
       <table class="table">
-        <thead><tr><th style="width:64px">Order</th><th>Name</th><th>Description</th><th>Price ({{ site.currency_code }})</th><th>Eligibility</th><th>Prefs</th><th style="width:70px"></th></tr></thead>
+        <thead><tr><th style="width:64px">Order</th><th>Name</th><th>Description</th><th>Price ({{ site.currency_code }})</th><th>Eligibility</th><th>Billing</th><th>Prefs</th><th style="width:70px"></th></tr></thead>
         <tbody id="se-tbody">
           {% for se in c.sub_events %}
           {% set seidx = loop.index0 %}
@@ -406,8 +411,18 @@
             <td><input class="input" name="se_order_{{ se.id }}" value="{{ se.display_order }}" style="width:64px;"></td>
             <td><input class="input" name="se_name_{{ se.id }}" value="{{ se.name }}"></td>
             <td><input class="input" name="se_desc_{{ se.id }}" value="{{ se.description }}"></td>
-            <td><input class="input" name="se_price_{{ se.id }}" value="{{ se.price }}" style="width:100px;"></td>
+            <td><input class="input" name="se_price_{{ se.id }}" value="{{ se.price | format_amount }}" style="width:100px;"></td>
             <td><input class="input" name="se_eligibility_{{ se.id }}" value="{{ se.eligibility_note }}"></td>
+            <td style="white-space:nowrap;">
+              {% if se.tentative %}
+                <span class="muted">Tentative</span>
+                {% if can('financial.manage') %}
+                  <a class="btn btn-ghost btn-sm" href="{{ url_for('admin.sub_event_billing', se_id=se.id) }}">Start billing…</a>
+                {% endif %}
+              {% else %}
+                Billed
+              {% endif %}
+            </td>
             <td><small class="muted">{{ se.preference_schema.fields|default([])|length }} field{% if se.preference_schema.fields|default([])|length != 1 %}s{% endif %}</small></td>
             <td>
               <input type="hidden" name="se_delete_{{ se.id }}" value="">
@@ -415,7 +430,7 @@
             </td>
           </tr>
           <tr class="se-prefs-row" data-se-id="{{ se.id }}">
-            <td colspan="7" style="padding:4px 14px 12px;">
+            <td colspan="8" style="padding:4px 14px 12px;">
               <div class="se-prefs-container" data-se-id="{{ se.id }}">
                 {% for pf in se.preference_schema.fields | default([]) %}
                 <div class="se-pref-row" style="display:flex; gap:6px; align-items:end; margin-bottom:4px;">
@@ -459,6 +474,12 @@
           <td><input class="input" name="new_se_desc[]" value=""></td>
           <td><input class="input" name="new_se_price[]" value="" style="width:100px;"></td>
           <td><input class="input" name="new_se_eligibility[]" value=""></td>
+          <td>
+            <select class="select select-sm" name="new_se_billing[]" aria-label="Billing">
+              <option value="billed">Billed</option>
+              <option value="tentative">Tentative</option>
+            </select>
+          </td>
           <td><small class="muted">0 fields</small></td>
           <td><button type="button" class="btn btn-quiet btn-sm js-remove-row">Remove</button></td>
         </tr>

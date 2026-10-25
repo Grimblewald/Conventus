@@ -18,7 +18,13 @@
       <div><dt>Email</dt><dd>{{ reg.user.email }}</dd></div>
       <div><dt>Conference</dt><dd>{{ conference.title if conference else '—' }}</dd></div>
       <div><dt>Tier</dt><dd>{{ reg.tier_name }}</dd></div>
-      <div><dt>Amount</dt><dd>{{ site.currency_symbol }}{{ reg.amount | format_amount }} {{ site.currency_code }}</dd></div>
+      <div><dt>Amount</dt><dd>{{ site.currency_symbol }}{{ reg.amount | format_amount }} {{ site.currency_code }}
+        {% for name, cents in reg.sub_event_charges() %}
+          <br><span class="muted">+ {{ name }} {{ site.currency_symbol }}{{ cents | format_amount }}</span>
+        {% endfor %}
+        {% if reg.sub_event_charges() %}<br><strong>Total {{ site.currency_symbol }}{{ reg.total_price | format_amount }}</strong>{% endif %}
+      </dd></div>
+      <div><dt>Owing</dt><dd>{{ site.currency_symbol }}{{ reg.amount_due | format_amount }} {{ site.currency_code }}</dd></div>
       <div><dt>Status</dt><dd><span class="status" data-v="{{ reg.status }}">{{ reg.status }}</span></dd></div>
       <div><dt>Reference</dt><dd style="font-family:monospace;">{{ reg.reference }}
         <span class="muted">({{ reg.sanitized_reference }} on a bank transfer)</span></dd></div>
@@ -162,13 +168,17 @@
 <div class="card" style="margin-top:12px;">
   <h4 style="margin-top:0;">Sub-events</h4>
   {% for se in sub_events_list %}
-    {% set sekey = se.name.lower().replace(' ', '_') %}
-    {% set se_data = reg.sub_events.get(sekey, {}) %}
-    {% if se_data.attending %}
+    {% set se_data = reg.sub_events.get(se.key) %}
+    {% if se_data %}
     <div style="margin-bottom:14px; {% if not loop.last %}padding-bottom:14px; border-bottom:1px solid var(--c-card-border);{% endif %}">
       <h5 style="margin:0 0 6px;">{{ se.name }}</h5>
       <dl class="hero-meta" style="margin-top:0; padding-top:0; border-top:none;">
-        <div><dt>Attendance</dt><dd>Yes (+{{ site.currency_code }} {{ se.price }})</dd></div>
+        <div><dt>Attendance</dt><dd>
+          {% if not se_data.attending %}No
+          {% elif se_data.charged %}Yes — billed {{ site.currency_symbol }}{{ se_data.charged | format_amount }}
+          {% elif se.tentative %}Yes — tentative, not billed yet
+          {% else %}Yes{% endif %}
+        </dd></div>
         {% if se.preference_schema %}
           {% for pf in se.preference_schema.fields %}
             {% set pfval = se_data.get(pf.key, '') %}

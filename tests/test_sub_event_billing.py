@@ -331,6 +331,8 @@ class TestDocumentsAndPayment:
         with app.app_context():
             registration_document(db.session.get(Registration, rid), "invoice")
         tex = seen[-1]
+        # Numbered by the registration, not by the payment already made.
+        assert f"\\mbox{{REG-{rid:06d}}}" in tex and f"TXN-{rid}" not in tex
         assert "Physics 2026 Standard & 1 & 400.00" in tex
         assert "EMCR Workshop & 1 & 50.00" in tex
         assert "Paid previously" in tex and "400.00" in tex

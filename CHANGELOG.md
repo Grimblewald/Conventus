@@ -35,7 +35,9 @@
 - **Invoices and receipts list each charge.** A registration billed for a
   sub-event, or part paid, gets a line per charge and Total charges and Paid
   previously rows above the amount due or received. Payment emails list the
-  items too. Documents with a single charge paid in one go are unchanged.
+  items too. Documents with a single charge paid in one go are unchanged. An
+  invoice is numbered by the registration's reference; it used to take the
+  id of an earlier card payment when there was one.
 - **The abstracts panel can hand over its whole filtered view as LaTeX.**
   "Download selected" on Admin → Abstracts bundles every abstract matching
   the current status/search/conference filter into a zip: one folder per

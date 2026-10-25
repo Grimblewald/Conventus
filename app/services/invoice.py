@@ -441,10 +441,13 @@ def _registration_vars(reg: Registration, kind: str,
         "amount": format_amount(amount),
         "currency_code": site.currency_code,
         "currency_symbol": site.currency_symbol,
-        # The registration's own reference until the gateway assigns one: this
-        # prints as the document's number, and "N/A" is not a thing a payer can
-        # quote back.
-        "transaction_id": reg.transaction_id or reg.reference,
+        # Prints as the document's number. A receipt belongs to a payment, so
+        # it takes the gateway's id once there is one; an invoice asks for what
+        # is owed now, and an earlier payment's id on it would name the wrong
+        # transaction — it is the registration's own reference, which is also
+        # what the payer quotes back.
+        "transaction_id": (reg.reference if kind == "invoice"
+                           else reg.transaction_id or reg.reference),
         "payment_reference": reg.reference,
         # The durable, token-keyed link, so a finance office holding nothing
         # but a forwarded PDF can still pay it. Without this the skeleton's

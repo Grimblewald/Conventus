@@ -75,6 +75,11 @@ def reconcile_payments() -> dict:
         target = _STATUS_MAP.get((status.raw_status or "").upper())
         if target == "captured-as-paid":
             target = "paid"
+        # A payment already on the ledger has been credited and receipted. A
+        # registration owing something new since (a sub-event billed after it
+        # paid) is not paid again by hearing about the old capture once more.
+        if target == "paid" and _settlement_id(status.transaction_id):
+            target = None
         if not target or target == reg.status:
             unchanged.append(f"reg {reg.id}: {status.raw_status or 'NO_PAYMENT'}")
             continue
@@ -93,7 +98,8 @@ def reconcile_payments() -> dict:
         else:
             continue
 
-        reg.transaction_id = reg.transaction_id or status.transaction_id
+        # The payment just found, as the webhook would have recorded it.
+        reg.transaction_id = status.transaction_id or reg.transaction_id
         reg.last_webhook_event = f"reconcile.{status.raw_status.lower()}"
         db.session.commit()
 
@@ -106,10 +112,19 @@ def reconcile_payments() -> dict:
             note=f"status {old_status} → {reg.status} (reconciliation)",
         )
 
-        if reg.status in ("paid", "refunded"):
+        # Money arrived (or went back) whether or not it cleared the balance,
+        # so the document goes out either way; the status then says what is
+        # still owed.
+        moved = reg.status in ("paid", "refunded")
+        reg.settle_status()
+        db.session.commit()
+        if moved:
             try:
                 from .invoice import send_invoice_email
-                send_invoice_email(reg)
+                # A receipt for what arrived, which may be a balance.
+                send_invoice_email(reg, amount_cents=(
+                    status.amount if target == "paid" and status.amount
+                    else None))
             except Exception:
                 log.exception("Invoice email failed during reconciliation for reg %d", reg.id)
 
@@ -245,12 +260,28 @@ def _add_pre_ledger_test_refs(by_ref: dict, cutoff) -> None:
         db.session.commit()
 
 
+def _settlement_id(transaction_id: str | None) -> int | None:
+    """The ledger row that credited *transaction_id*, or None if none has."""
+    from ..models.payment_event import event_delta
+
+    if not transaction_id:
+        return None
+    for evt in (PaymentEvent.query
+                .filter(PaymentEvent.transaction_id == transaction_id)
+                .order_by(PaymentEvent.id.asc())):
+        if event_delta(evt.event_type, evt.amount) < 0:
+            return evt.id
+    return None
+
+
 def _fetch_status(gateway, reg: Registration):
     """Fetch provider state for *reg*: by payment ID when known, otherwise
-    via the most recent hosted checkout session. None = nothing to check."""
-    if reg.transaction_id:
-        return gateway.get_payment_status(reg.transaction_id)
+    via the most recent hosted checkout session. None = nothing to check.
 
+    A known payment that has already been credited is old news when a
+    checkout was started after it — paying a balance added later — so that
+    checkout is what gets asked about.
+    """
     checkout = (PaymentEvent.query
                 .filter(db.or_(
                     PaymentEvent.merchant_reference == f"reg_{reg.id}",
@@ -258,6 +289,12 @@ def _fetch_status(gateway, reg: Registration):
                         PaymentEvent.event_type == "checkout.created")
                 .order_by(PaymentEvent.id.desc())
                 .first())
+    if reg.transaction_id:
+        settled = _settlement_id(reg.transaction_id)
+        if not (settled and checkout and checkout.transaction_id
+                and checkout.id > settled):
+            return gateway.get_payment_status(reg.transaction_id)
+
     if not checkout or not checkout.transaction_id:
         return None
     return gateway.get_checkout_payment(checkout.transaction_id)

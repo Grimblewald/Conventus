@@ -429,6 +429,9 @@ def payment_webhook():
         result = g.verify_webhook(request.data, dict(request.headers))
         ledger_note = ""
         reg = None
+        # Sent once the event is on the ledger, so the document is drawn from
+        # balances that include it.
+        send_document, document_amount = False, None
         if result.registration_id:
             reg = db.session.get(Registration, result.registration_id)
             if not reg:
@@ -446,8 +449,7 @@ def payment_webhook():
                         first_refund = reg.status != "refunded"
                         reg.status = "refunded"
                         db.session.commit()
-                        if first_refund:
-                            _document_later(reg.id)
+                        send_document = first_refund
                     else:
                         # Initiated (refund.created) or failed refunds must
                         # not flip the status; failures need human eyes.
@@ -476,7 +478,9 @@ def payment_webhook():
                         current_app.logger.info(
                             "Payment webhook: reg %d marked paid (%s)",
                             result.registration_id, result.transaction_id)
-                        _document_later(reg.id)
+                        # A receipt for what arrived — a balance, perhaps,
+                        # not the whole tier price.
+                        send_document, document_amount = True, result.amount
                     else:
                         # Already paid or refunded. A redelivered webhook for
                         # the SAME transaction is routine; a successful capture
@@ -535,6 +539,11 @@ def payment_webhook():
                 amount=result.amount,
                 note=ledger_note,
             )
+            if reg is not None:
+                # A checkout minted before a later charge settles less than is
+                # now owed; the registration stays payable for the rest.
+                reg.settle_status()
+                db.session.commit()
         elif result.error:
             # No event type and an error means the payload never got as far as
             # being understood — a bad signature, an unparseable body. That is
@@ -549,13 +558,15 @@ def payment_webhook():
                          summary=f"Rejected webhook from "
                                  f"{request.remote_addr or 'unknown'}: "
                                  f"{result.error}"[:400])
+        if reg is not None and send_document:
+            _document_later(reg.id, amount_cents=document_amount)
         return {"status": "ok" if result.success else "ignored"}, 200
     except Exception:
         current_app.logger.exception("Webhook processing failed")
         return {"status": "error", "message": "Payment processing error"}, 500
 
 
-def _document_later(reg_id: int) -> None:
+def _document_later(reg_id: int, amount_cents: int | None = None) -> None:
     """Send this registration's receipt or adjustment note, after we answer.
 
     Rendering it takes seconds and is serialised box-wide, so doing it here
@@ -566,7 +577,8 @@ def _document_later(reg_id: int) -> None:
     from ...services.invoice import send_invoice_email
     from ...services.tasks import run_later_for
 
-    run_later_for(Registration, reg_id, send_invoice_email)
+    run_later_for(Registration, reg_id, send_invoice_email,
+                  amount_cents=amount_cents)
 
 
 def _attention_later(reg, result, reason: str = "") -> None:

@@ -432,6 +432,7 @@ def _registration_vars(reg: Registration, kind: str,
     conf = reg.conference
     amount = reg.amount if amount_cents is None else amount_cents
     return _finalise_issuer_text({
+        **_line_item_vars(reg, kind, amount),
         "user_name": user.full_name or user.email,
         "user_email": user.email,
         "conference_title": conf.title,
@@ -457,6 +458,35 @@ def _registration_vars(reg: Registration, kind: str,
         "recipient_address": billing_address(conf.registration_form_schema,
                                              reg.custom_data),
     })
+
+
+def _line_item_vars(reg: Registration, kind: str, amount: int) -> dict:
+    """Line items for a registration invoice or receipt that covers more
+    than its tier, or only part of what was charged.
+
+    The lines are everything charged; "paid previously" is what had already
+    come in before the money this document is about, so the stack reads
+    charges, less earlier payments, leaves this amount. A registration with
+    one charge paid in one go gets none of this and keeps its single line.
+    """
+    import json
+
+    if kind not in ("invoice", "receipt"):
+        return {}
+    extras = reg.sub_event_charges()
+    total = reg.total_price
+    owed_after = reg.amount_due if kind == "receipt" else 0
+    prior = max(0, total - amount - owed_after)
+    if not extras and not prior:
+        return {}
+    conf = reg.conference
+    items = [[f"{conf.title} {reg.tier_name}" if conf else reg.tier_name,
+              reg.amount or 0], *[[name, cents] for name, cents in extras]]
+    return {
+        "line_items": json.dumps(items),
+        "charges_total": format_amount(total),
+        "prior_paid": format_amount(prior) if prior else "",
+    }
 
 
 def _manual_receipt_vars(reference: str, recipient: str,

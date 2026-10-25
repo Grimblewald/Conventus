@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import secrets
 import zipfile
 from datetime import date
@@ -410,8 +411,11 @@ class TestDocumentCaching:
             assert Registration.query.get(rid).amount_due == 30000
 
         self._fetch(app, rid)
-        assert "300.00" in compiles[0]
-        assert "500.00" not in compiles[0]
+        tex = compiles[0]
+        # The charge, less what came in, leaves what is asked for.
+        assert "Total charges" in tex and "500.00" in tex
+        assert "Paid previously" in tex and "200.00" in tex
+        assert re.search(r"Amount Due.*?300\.00", tex, re.S)
 
     def test_a_receipt_matches_the_document_that_was_emailed(
             self, seed_templates, content_pdf, mailbox):

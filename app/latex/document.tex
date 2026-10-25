@@ -14,7 +14,10 @@
 %     flag_recipient_address, flag_due_date, flag_business_number,
 %     flag_business_address, flag_contact_email, flag_signatory,
 %     flag_payment_instructions, flag_payment_link, flag_pdf_body,
-%     flag_invoice, flag_receipt, flag_adjustment, flag_replaces
+%     flag_invoice, flag_receipt, flag_adjustment, flag_replaces,
+%     flag_prior_paid
+%   Raw LaTeX built by the renderer from escaped values:
+%     line_rows (one table row per line item, each ending in an hline)
 %   Asset filenames — raw basenames of files copied into the job dir:
 %     logo_file, signature_file
 %   Text values — LaTeX-escaped (unless RawLatex):
@@ -24,7 +27,7 @@
 %     conference_title, conference_dates, tier_name, transaction_id,
 %     registration_id, payment_date, due_date, currency_symbol, currency_code,
 %     amount, gst_amount, amount_ex_gst, gst_rate, payment_instructions,
-%     payment_link, pdf_body, replaces_note
+%     payment_link, pdf_body, replaces_note, charges_total, prior_paid
 %
 % Packages are limited to those verified warm in the tectonic cache:
 % geometry, fontenc, helvet, graphicx, array, tabularx, xcolor.
@@ -59,6 +62,7 @@
 \newif\ifisreceipt  @@flag_receipt@@
 \newif\ifisadjustment @@flag_adjustment@@
 \newif\ifreplaces   @@flag_replaces@@
+\newif\ifpriorpaid  @@flag_prior_paid@@
 
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{5pt}
@@ -135,8 +139,7 @@
   \hline
   \textbf{Description} & \textbf{Qty} & \textbf{Amount (@@currency_code@@)}\\
   \hline
-  @@conference_title@@\ifisinvoice\else\fi{} @@tier_name@@ & 1 & @@amount@@\\
-  \hline
+  @@line_rows@@
 \end{tabularx}
 
 \vspace{6mm}
@@ -148,6 +151,12 @@
 \renewcommand{\arraystretch}{1.5}
 \hfill
 \begin{tabular}{r@{\hspace{6mm}}r}
+  % Part of the charges was paid earlier: what they come to, what is already
+  % in, and the rest of the stack is about this document's amount.
+  \ifpriorpaid
+    Total charges (@@currency_code@@): & @@currency_symbol@@@@charges_total@@\\
+    Paid previously (@@currency_code@@): & @@currency_symbol@@@@prior_paid@@\\
+  \fi
   \ifgst
     Subtotal (excl.\ GST) (@@currency_code@@): & @@currency_symbol@@@@amount_ex_gst@@\\
     GST (@@gst_rate@@\%) (@@currency_code@@): & @@currency_symbol@@@@gst_amount@@\\

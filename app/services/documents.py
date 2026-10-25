@@ -174,6 +174,32 @@ def _expand_body(raw_body, vars_: dict) -> str:
     return "".join(out)
 
 
+def _line_rows(v: dict, esc) -> str:
+    """The line-item rows of the document table.
+
+    `line_items` is a JSON list of [description, cents], present when a
+    registration is billed for more than its tier. Without it the document
+    has its one line, the conference and tier at the document's amount —
+    which is every document issued before line items existed, and they must
+    rebuild as they were.
+    """
+    import json
+
+    from .jinja_filters import format_amount
+
+    try:
+        items = json.loads(v.get("line_items") or "[]")
+    except (TypeError, ValueError):
+        items = []
+    if not items:
+        return (f"{esc('conference_title')}\\ifisinvoice\\else\\fi{{}} "
+                f"{esc('tier_name')} & 1 & {esc('amount')}\\\\\n  \\hline")
+    return "\n  ".join(
+        f"{latex_escape(str(desc))} & 1 & {latex_escape(format_amount(int(cents)))}"
+        f"\\\\ \\hline"
+        for desc, cents in items)
+
+
 def assemble_tex(kind: str, tpl, vars_: dict, *, has_logo: bool = False,
                  has_signature: bool = False, logo_name: str = "",
                  signature_name: str = "") -> str:
@@ -201,6 +227,10 @@ def assemble_tex(kind: str, tpl, vars_: dict, *, has_logo: bool = False,
         return val if isinstance(val, RawLatex) else latex_escape(str(val))
 
     subst = {
+        "line_rows": RawLatex(_line_rows(v, esc)),
+        "flag_prior_paid": _flag("priorpaid", bool(v.get("prior_paid"))),
+        "charges_total": esc("charges_total"),
+        "prior_paid": esc("prior_paid"),
         "flag_gst": _flag("gst", gst_on),
         "flag_logo": _flag("haslogo", has_logo),
         "flag_signature": _flag("hassig", has_signature),

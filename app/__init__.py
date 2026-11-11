@@ -352,6 +352,7 @@ def _register_template_globals(app: Flask) -> None:
             "now": datetime.utcnow,
             "today": date.today,
             "FONT_STACKS": FONT_STACKS,
+            "csrf_refresh_after_seconds": _csrf_refresh_after_seconds(app),
         }
 
     @app.template_filter("md")
@@ -412,6 +413,16 @@ def _register_template_globals(app: Flask) -> None:
             _asset_versions[filename] = v
         if v:
             values["v"] = v
+
+
+def _csrf_refresh_after_seconds(app: Flask) -> int:
+    """How old a page's CSRF token gets before the page fetches a new one.
+
+    A quarter hour short of the limit, so a submit started just before the
+    refresh still lands inside it; half the limit when that is shorter.
+    """
+    limit = app.config.get("WTF_CSRF_TIME_LIMIT", 3600) or 3600
+    return max(limit - 15 * 60, limit // 2)
 
 
 def _setup_complete(app: Flask) -> bool:
@@ -480,7 +491,24 @@ def _warm_document_pregen(app: Flask) -> None:
 
 
 def _register_error_handlers(app: Flask) -> None:
-    from flask import render_template
+    from flask import flash, render_template
+    from flask_wtf.csrf import CSRFError
+
+    @app.errorhandler(CSRFError)
+    def csrf_failed(e):
+        # A bare 400 is a dead end, and pressing Back from it resubmits the
+        # same stale token. A fresh copy of the page carries a valid one.
+        from .security import audit
+        audit.record("csrf.rejected", target_kind="path",
+                     target_id=request.path,
+                     summary=f"{request.method} {request.path}: {e.description}")
+        flash("This page was open too long, or your session changed, so it "
+              "couldn't be sent. Please check the form and submit it again.",
+              "error")
+        rule = request.url_rule
+        if rule is not None and "GET" in (rule.methods or ()):
+            return redirect(request.script_root + request.full_path.rstrip("?"))
+        return redirect(url_for("public.home"))
 
     @app.errorhandler(403)
     def forbidden(_e):

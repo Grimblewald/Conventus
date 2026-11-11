@@ -15,6 +15,100 @@
     };
   }
 
+  // A signed CSRF token is refused an hour after it was issued, and a long
+  // form can stay open longer than that. The token is swapped in place well
+  // before then, because reloading would throw away what was typed.
+  var refreshMeta = document.querySelector('meta[name="csrf-refresh"]');
+  if (csrf && refreshMeta && window.fetch) {
+    var REFRESH_AFTER_MS = (Number(refreshMeta.dataset.afterSeconds) || 2700) * 1000;
+    var signedIn = refreshMeta.dataset.signedIn === "1";
+    var issuedAt = Date.now();
+    var pending = null;
+
+    var stale = function () { return Date.now() - issuedAt >= REFRESH_AFTER_MS; };
+
+    var refreshToken = function () {
+      if (pending) return pending;
+      pending = window.fetch(refreshMeta.getAttribute("content"), {
+        credentials: "same-origin", cache: "no-store",
+      }).then(function (r) {
+        if (!r.ok) throw new Error("token refresh failed: " + r.status);
+        return r.json();
+      }).then(function (d) {
+        // A fresh anonymous session would also hand out a token, but posting
+        // with it would bounce a member to the sign-in page and lose the form.
+        if (!d.token || (signedIn && !d.signed_in)) {
+          var ended = new Error("session ended");
+          ended.sessionEnded = true;
+          throw ended;
+        }
+        csrf.setAttribute("content", d.token);
+        document.querySelectorAll('input[name="csrf_token"]').forEach(function (i) {
+          i.value = d.token;
+        });
+        issuedAt = Date.now();
+        pending = null;
+      }, function (err) {
+        pending = null;
+        throw err;
+      });
+      return pending;
+    };
+
+    var notSent = function (form, err) {
+      var note = form.querySelector(".csrf-not-sent");
+      if (!note) {
+        note = document.createElement("div");
+        note.className = "flash error csrf-not-sent";
+        note.setAttribute("role", "alert");
+        form.insertBefore(note, form.firstChild);
+      }
+      note.textContent = err && err.sessionEnded
+        ? "Your session has ended. Sign in again in another tab, then come " +
+          "back and submit — what you entered here is kept."
+        : "This couldn't be sent because the site didn't respond. Check your " +
+          "connection and submit again — what you entered here is kept.";
+      note.scrollIntoView({ block: "center" });
+    };
+
+    var check = function () {
+      if (document.visibilityState === "visible" && stale()) {
+        refreshToken().catch(function () {});
+      }
+    };
+    setInterval(check, 60 * 1000);
+    // Timers don't run while a laptop sleeps, so also check on waking.
+    document.addEventListener("visibilitychange", check);
+
+    // Capture phase, so a stale submit is held before any other submit
+    // handler (confirm dialogs, button spinners) sees it.
+    document.addEventListener("submit", function (e) {
+      var form = e.target;
+      if (!form || !form.querySelector('input[name="csrf_token"]') || !stale()) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      var submitter = e.submitter;
+      refreshToken().then(function () {
+        var note = form.querySelector(".csrf-not-sent");
+        if (note) note.remove();
+        if (form.requestSubmit) {
+          form.requestSubmit(submitter && submitter.form === form ? submitter : undefined);
+        } else {
+          if (submitter && submitter.name) {
+            var carry = document.createElement("input");
+            carry.type = "hidden";
+            carry.name = submitter.name;
+            carry.value = submitter.value;
+            form.appendChild(carry);
+          }
+          form.submit();
+        }
+      }, function (err) {
+        notSent(form, err);
+      });
+    }, true);
+  }
+
   document.addEventListener("submit", function (e) {
     var form = e.target;
     if (!form || !form.dataset.confirm) return;

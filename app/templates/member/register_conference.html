@@ -15,8 +15,11 @@
     <form method="post" class="form form-wide" id="reg-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
+      {# After a refused submit, show what was typed rather than what is stored. #}
+      {% set chosen_tier = submitted.tier_name if submitted else (existing.tier_name if existing else '') %}
+      {% set entered_sub_events = submitted.sub_events if submitted else (existing.sub_events if existing else none) %}
       {% if schema and schema.sections %}
-        {% set data = existing.custom_data|default({}) %}
+        {% set data = submitted.custom_data if submitted else (existing.custom_data or {} if existing else {}) %}
         {% for section in schema.sections %}
           {% if section.collapsible %}
             <details>
@@ -89,7 +92,7 @@
                   <option value="">— Select a tier —</option>
                   {% for t in tiers %}
                     {% set is_early = c.early_bird_deadline and t.early_bird_amount and c.early_bird_deadline >= today() %}
-                    <option value="{{ t.name }}" {% if existing and existing.tier_name == t.name %}selected{% endif %}>
+                    <option value="{{ t.name }}" {% if chosen_tier == t.name %}selected{% endif %}>
                       {{ t.name }} —
                       {% if is_early %}
                         {{ site.currency_symbol }}{{ t.early_bird_amount | format_amount }} (early bird, {{ site.currency_symbol }}{{ t.amount | format_amount }} standard)
@@ -120,7 +123,7 @@
                     does, it is added to your registration and you will be sent an invoice.</p>
                   {% endif %}
                   {% set sekey = se.key %}
-                  {% set se_data = existing.sub_events.get(sekey, {}) if existing and existing.sub_events else {} %}
+                  {% set se_data = entered_sub_events.get(sekey, {}) if entered_sub_events else {} %}
                   {% set locked = existing and sub_event_paid_for(existing, se) %}
                   <div class="field">
                     <label>Attendance</label>

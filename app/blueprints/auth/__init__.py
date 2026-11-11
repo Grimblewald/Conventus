@@ -17,10 +17,11 @@ from datetime import datetime, timedelta
 
 from email_validator import EmailNotValidError, validate_email
 from flask import (
-    Blueprint, current_app, flash, redirect, render_template,
+    Blueprint, current_app, flash, jsonify, redirect, render_template,
     request, session, url_for,
 )
 from flask_login import current_user, login_required, login_user, logout_user
+from flask_wtf.csrf import generate_csrf
 
 from ...extensions import db, limiter
 from ...models import OTPCode, User
@@ -187,6 +188,19 @@ def resend():
         issue_login_otp(email)
         flash("A new code is on its way.", "success")
     return redirect(url_for("auth.verify"))
+
+
+@auth_bp.route("/csrf-token")
+def fresh_csrf_token():
+    """A newly signed CSRF token for a page that has been open a while.
+
+    Readable only by this site's own pages: no CORS headers are sent, so a
+    cross-origin caller gets an opaque response.
+    """
+    resp = jsonify(token=generate_csrf(),
+                   signed_in=current_user.is_authenticated)
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @auth_bp.route("/logout")

@@ -4,6 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="csrf-token" content="{{ csrf_token() }}">
+  <meta name="csrf-refresh" content="{{ url_for('auth.fresh_csrf_token') }}"
+        data-signed-in="{{ '1' if current_user.is_authenticated else '0' }}"
+        data-after-seconds="{{ csrf_refresh_after_seconds }}">
   <title>{% block title %}{{ site.browser_tab_title or site.site_name }}{% endblock %}</title>
   {% if site.favicon_filename %}
     <link rel="icon" type="image/png" href="{{ url_for('public.site_upload', name=site.favicon_filename) }}">

@@ -17,6 +17,15 @@
           input.type = "text";
           input.placeholder = "Type to search…";
           input.autocomplete = "off";
+          // The <select> is removed below, and with it the browser's own
+          // required check, so the visible box carries it instead.
+          if (orig.required) input.required = true;
+          if (orig.id) input.id = orig.id;
+
+          var note = document.createElement("div");
+          note.className = "help";
+          note.style.color = "#6f2335";
+          note.style.display = "none";
 
           var dropdown = document.createElement("div");
           dropdown.className = "country-select-dropdown";
@@ -38,8 +47,15 @@
 
           if (selectedVal) {
             var match = countries.find(function (c) { return c.name === selectedVal; });
-            if (match) input.value = match.name + " (" + match.code + ")";
-            else input.value = selectedVal;
+            if (match) {
+              input.value = match.name + " (" + match.code + ")";
+            } else {
+              // A stored value the server would refuse must not ride along
+              // unseen behind a box that looks filled in.
+              input.value = selectedVal;
+              hidden.value = "";
+              resolveTyped();
+            }
           }
 
           var MAX_SHOWN = 5;
@@ -101,8 +117,7 @@
               // mousedown kept for the keyboard-driven dispatchEvent path.
               var select = function (e) {
                 e.preventDefault();
-                input.value = label;
-                hidden.value = c.name;
+                choose(c);
                 dropdown.style.display = "none";
               };
               div.addEventListener("pointerdown", select);
@@ -118,6 +133,34 @@
             }
           }
 
+          function choose(c) {
+            input.value = c.name + (c.code ? " (" + c.code + ")" : "");
+            hidden.value = c.name;
+            setProblem("");
+          }
+
+          function setProblem(msg) {
+            input.setCustomValidity(msg);
+            note.textContent = msg;
+            note.style.display = msg ? "" : "none";
+          }
+
+          // Only the hidden field is submitted, and people type a country out
+          // in full rather than pick a suggestion. An exact name, code or
+          // alternative name counts as picking it.
+          function resolveTyped() {
+            var t = input.value.trim().toLowerCase();
+            if (!t) { setProblem(""); return; }
+            var hit = countries.find(function (c) {
+              var label = (c.name + (c.code ? " (" + c.code + ")" : "")).toLowerCase();
+              return c.name.toLowerCase() === t || label === t
+                || (c.code && c.code.toLowerCase() === t)
+                || c.alt.some(function (a) { return a.toLowerCase() === t; });
+            });
+            if (hit) choose(hit);
+            else setProblem("Choose a country from the list.");
+          }
+
           function showDropdown() {
             buildDropdown(input.value);
             dropdown.style.display = "block";
@@ -128,10 +171,22 @@
           }
 
           input.addEventListener("focus", showDropdown);
-          input.addEventListener("input", showDropdown);
+          input.addEventListener("input", function () {
+            // Editing the text unpicks the country, so an old choice can't be
+            // submitted under a box that now says something else.
+            hidden.value = "";
+            setProblem("");
+            showDropdown();
+          });
 
           input.addEventListener("blur", function () {
-            setTimeout(hideDropdown, 150);
+            setTimeout(function () {
+              hideDropdown();
+              if (!hidden.value) resolveTyped();
+            }, 150);
+          });
+          input.addEventListener("change", function () {
+            if (!hidden.value) resolveTyped();
           });
 
           input.addEventListener("keydown", function (e) {
@@ -152,7 +207,20 @@
           wrapper.appendChild(input);
           wrapper.appendChild(dropdown);
           wrapper.appendChild(hidden);
+          wrapper.appendChild(note);
           orig.remove();
+
+          // Enter or a fast click can submit before blur has resolved the text.
+          var form = wrapper.closest("form");
+          if (form) {
+            form.addEventListener("submit", function (e) {
+              if (!hidden.value && input.value.trim()) resolveTyped();
+              if (input.value.trim() && !hidden.value) {
+                e.preventDefault();
+                input.reportValidity();
+              }
+            });
+          }
         });
       });
   });

@@ -217,11 +217,6 @@ def register_conf(slug):
 
         tier_name = (request.form.get("tier") or "").strip()
         tier = next((t for t in tiers if t.name == tier_name), None)
-        if not tier:
-            flash("Please choose a registration tier.", "error")
-            return render_template("member/register_conference.html",
-                                   c=c, tiers=tiers, existing=existing,
-                                   schema=schema, sub_events=sub_events)
 
         # Collect custom field data from schema
         custom_data: dict = {}
@@ -236,15 +231,27 @@ def register_conf(slug):
             request.form, sub_event_billing.asked(schema, sub_events),
             existing.sub_events if existing else None, existing)
 
+        def form_again():
+            # Rendered from what was posted, not the stored registration: a
+            # first-time registrant has none, and would have to start over.
+            return render_template("member/register_conference.html",
+                                   c=c, tiers=tiers, existing=existing,
+                                   schema=schema, sub_events=sub_events,
+                                   submitted={"tier_name": tier_name,
+                                              "custom_data": custom_data,
+                                              "sub_events": sub_event_data})
+
+        if not tier:
+            flash("Please choose a registration tier.", "error")
+            return form_again()
+
         # Validate custom fields against schema
         if schema:
             form_errors = validate_form(schema, request.form)
             if form_errors:
                 for err in form_errors:
                     flash(err, "error")
-                return render_template("member/register_conference.html",
-                                       c=c, tiers=tiers, existing=existing,
-                                       schema=schema, sub_events=sub_events)
+                return form_again()
 
         # The address is printed on any receipt already sent, so changing it
         # reissues that receipt — at most once a day, since each change emails

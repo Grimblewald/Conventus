@@ -32,7 +32,7 @@ from ...services.payments import (
     initiate_payment, payments_open_to_members, send_payment_email,
     send_registration_confirmation,
 )
-from ...services import sub_event_billing
+from ...services import capacity, sub_event_billing
 from ...services.authors import from_form as authors_from_form, to_legacy
 from ...services.uploads import UploadError, remove_upload, save_figure, save_image
 from ...services.form_renderer import (billing_address, billing_address_key,
@@ -199,6 +199,7 @@ def register_conf(slug):
     tiers = list(c.price_tiers)
     schema = c.registration_form_schema
     sub_events = list(c.sub_events)
+    seats = capacity.status(c.id, schema, sub_events, existing)
 
     if request.method == "POST":
         # First, before any of the form is looked at: a registration with a
@@ -218,13 +219,17 @@ def register_conf(slug):
         tier_name = (request.form.get("tier") or "").strip()
         tier = next((t for t in tiers if t.name == tier_name), None)
 
+        # A limited item that filled up while this form was open records its
+        # full value in place of the seat it can no longer have.
+        form, replaced = capacity.apply_full_values(seats, schema, request.form)
+
         # Collect custom field data from schema
         custom_data: dict = {}
         if schema:
             for section in schema.get("sections", []):
                 for field in section.get("fields", []):
                     key = field.get("key", "")
-                    val = request.form.getlist(key) if field.get("type") == "checkbox-group" else request.form.get(key, "")
+                    val = form.getlist(key) if field.get("type") == "checkbox-group" else form.get(key, "")
                     custom_data[key] = val
 
         sub_event_data = sub_event_billing.collect(
@@ -237,6 +242,7 @@ def register_conf(slug):
             return render_template("member/register_conference.html",
                                    c=c, tiers=tiers, existing=existing,
                                    schema=schema, sub_events=sub_events,
+                                   seats=seats,
                                    submitted={"tier_name": tier_name,
                                               "custom_data": custom_data,
                                               "sub_events": sub_event_data})
@@ -245,13 +251,33 @@ def register_conf(slug):
             flash("Please choose a registration tier.", "error")
             return form_again()
 
+        # Shown back rather than saved: the answer changed under them, and
+        # whatever the form asks of people who missed out (an expression of
+        # interest, say) has only now appeared. Ahead of validation, so that
+        # is the reason they see rather than a field they never saw.
+        if replaced:
+            flash(f"{', '.join(replaced)} filled up while you were registering. "
+                  "Please check the form again and resubmit.", "warning")
+            return form_again()
+
         # Validate custom fields against schema
         if schema:
-            form_errors = validate_form(schema, request.form)
+            form_errors = validate_form(capacity.validation_schema(schema, seats),
+                                        form)
             if form_errors:
                 for err in form_errors:
                     flash(err, "error")
                 return form_again()
+
+        # A limited item without a full value that filled up while this form
+        # was open. Someone who already holds a seat is never refused it, so
+        # editing a registration cannot cost anyone their place.
+        full = capacity.refusals(seats, schema, custom_data, sub_event_data,
+                                 sub_events)
+        if full:
+            for err in full:
+                flash(err, "error")
+            return form_again()
 
         # The address is printed on any receipt already sent, so changing it
         # reissues that receipt — at most once a day, since each change emails
@@ -390,7 +416,7 @@ def register_conf(slug):
     in_flight = payment_in_flight(existing)
     return render_template("member/register_conference.html",
                            c=c, tiers=tiers, existing=existing,
-                           schema=schema, sub_events=sub_events,
+                           schema=schema, sub_events=sub_events, seats=seats,
                            payment_locked=in_flight is not None,
                            payment_lock_until=(checkout_lock_expires_at(in_flight)
                                                if in_flight else None))

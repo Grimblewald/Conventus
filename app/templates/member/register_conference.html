@@ -35,6 +35,8 @@
           {% for field in section.fields %}
             {% set fkey = field.key %}
             {% set fval = data.get(fkey, '') %}
+            {% set s = seats.get(fkey) if seats else none %}
+            {% set seat_full = s is not none and s.full %}
             {% set cond_style = '' %}
             {% if field.condition %}
               {% set cond_style = 'display:none;' %}
@@ -46,7 +48,12 @@
                   {% if field.condition.contains %}data-cond-contains="{{ field.condition.contains }}"{% endif %}
                   {% endif %}
                   {% if field.required and field.condition %}data-cond-required="true"{% endif %}>
-              {% if field.type == 'textarea' %}
+              {% if seat_full and s.full_value %}
+                {# Nothing left to choose: the full value is recorded instead, and
+                   any field conditional on it (an expression of interest) shows. #}
+                <span class="label">{{ field.label }}</span>
+                <input type="hidden" name="{{ fkey }}" value="{{ s.full_value }}">
+              {% elif field.type == 'textarea' %}
                 <label for="{{ fkey }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
                 <textarea class="textarea" id="{{ fkey }}" name="{{ fkey }}"{% if field.required and not field.condition %} required{% endif %}>{{ fval }}</textarea>
               {% elif field.type == 'billing-address' %}
@@ -57,7 +64,7 @@
                 <label for="{{ fkey }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
                 <select class="select" id="{{ fkey }}" name="{{ fkey }}"{% if field.required and not field.condition %} required{% endif %}>
                   <option value="">—</option>
-                  {% for o in field.options %}<option value="{{ o }}"{% if fval == o %} selected{% endif %}>{{ o }}</option>{% endfor %}
+                  {% for o in field.options %}<option value="{{ o }}"{% if fval == o %} selected{% endif %}{% if seat_full and o == s.option %} disabled{% endif %}>{{ o }}{% if seat_full and o == s.option %} (full){% endif %}</option>{% endfor %}
                 </select>
               {% elif field.type == 'country' %}
                 <label for="{{ fkey }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
@@ -68,14 +75,17 @@
               {% elif field.type == 'radio' %}
                 <span class="label">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</span>
                 {% for o in field.options %}
-                  <label class="check-label"><input type="radio" name="{{ fkey }}" value="{{ o }}"{% if fval == o %} checked{% endif %}{% if field.required and not field.condition and loop.first and not fval %} required{% endif %}> {{ o }}</label>
+                  {# required on every radio rather than the first: a disabled radio is
+                     skipped by browser validation, so a full first option would
+                     otherwise drop the requirement for the whole group. #}
+                  <label class="check-label"><input type="radio" name="{{ fkey }}" value="{{ o }}"{% if fval == o %} checked{% endif %}{% if field.required and not field.condition and not fval %} required{% endif %}{% if seat_full and o == s.option %} disabled{% endif %}> {{ o }}{% if seat_full and o == s.option %} (full){% endif %}</label>
                 {% endfor %}
               {% elif field.type == 'checkbox' %}
-                <label class="check-label"><input type="checkbox" name="{{ fkey }}" value="1"{% if fval %} checked{% endif %}{% if field.required and not field.condition %} required{% endif %}> {{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
+                <label class="check-label"><input type="checkbox" name="{{ fkey }}" value="1"{% if fval %} checked{% endif %}{% if field.required and not field.condition %} required{% endif %}{% if seat_full %} disabled{% endif %}> {{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
               {% elif field.type == 'checkbox-group' %}
                 <span class="label">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</span>
                 {% for o in field.options %}
-                  <label class="check-label"><input type="checkbox" name="{{ fkey }}" value="{{ o }}"{% if o in (fval if fval is iterable and fval is not string else [fval]) %} checked{% endif %}> {{ o }}</label>
+                  <label class="check-label"><input type="checkbox" name="{{ fkey }}" value="{{ o }}"{% if o in (fval if fval is iterable and fval is not string else [fval]) %} checked{% endif %}{% if seat_full and o == s.option %} disabled{% endif %}> {{ o }}{% if seat_full and o == s.option %} (full){% endif %}</label>
                 {% endfor %}
               {% elif field.type == 'number' %}
                 <label for="{{ fkey }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
@@ -129,7 +139,7 @@
                     <label>Attendance</label>
                     <label class="check-label">
                       <input type="radio" name="_sub_event_{{ sekey }}_attending" value="yes"
-                             {% if se_data.attending %}checked{% endif %}{% if locked %} disabled{% endif %}> Yes, I would like to attend{% if se.price %} (+{{ price }}){% endif %}
+                             {% if se_data.attending %}checked{% endif %}{% if locked or seat_full %} disabled{% endif %}> Yes, I would like to attend{% if se.price %} (+{{ price }}){% endif %}{% if seat_full %} (full){% endif %}
                     </label>
                     <label class="check-label">
                       <input type="radio" name="_sub_event_{{ sekey }}_attending" value="no"
@@ -163,6 +173,13 @@
               {% else %}
                 <label for="{{ fkey }}">{{ field.label }}{% if field.required %} <span class="req">*</span>{% endif %}</label>
                 <input class="input" id="{{ fkey }}" name="{{ fkey }}" type="text" value="{{ fval }}"{% if field.required and not field.condition %} required{% endif %}>
+              {% endif %}
+              {% if s is not none and s.max is not none %}
+                <div class="help seats-left">
+                  {% if s.holds %}Your seat is reserved — {% endif %}
+                  {% if seat_full %}Fully booked{% if s.option and not s.full_value %}: “{{ s.option }}” is no longer available{% endif %}.
+                  {% else %}{{ s.left }} of {{ s.max }} seat{{ '' if s.max == 1 else 's' }} left.{% endif %}
+                </div>
               {% endif %}
             </div>
           {% endfor %}

@@ -32,6 +32,14 @@
             return false;
           }
         }
+        // A fixed answer the page carries rather than asks for — the value a
+        // full limited item records, which an expression-of-interest field
+        // can be conditional on.
+        if (target.type === "hidden") {
+          if (cond.value !== undefined) return target.value === String(cond.value);
+          if (cond.contains !== undefined) return target.value.indexOf(cond.contains) !== -1;
+          return target.value !== "";
+        }
         return true;
       }
 

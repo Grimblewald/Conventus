@@ -50,7 +50,15 @@
                 {% endfor %}
               </select>
             </div>
-            <div class="field"><label class="check-label"><input type="checkbox" name="field_required_{{ si }}[]" value="{{ fi }}" {% if field.required %}checked{% endif %}> Required</label></div>
+            {# .get(), not attribute access: a missing key is Undefined, and
+               Undefined "is not none" — every field would read as limited. #}
+            {% set limited = field.get('max_attendees') is not none or field.get('min_attendees') is not none %}
+            <div class="field">
+              <label class="check-label"><input type="checkbox" name="field_required_{{ si }}[]" value="{{ fi }}" {% if field.required %}checked{% endif %}> Required</label>
+              {% if form_type == 'registration' %}
+              <label class="check-label"><input type="checkbox" class="js-limited" name="field_limited_{{ si }}[]" value="{{ fi }}" {% if limited %}checked{% endif %}> Limited</label>
+              {% endif %}
+            </div>
             <div class="field">
               <label>Sub-event</label>
               <select class="select select-sm" name="field_sub_event_{{ si }}[]">
@@ -78,6 +86,26 @@
               </div>
             </div>
           </div>
+          {% if form_type == 'registration' %}
+          {# Always posted, so the per-field lists stay aligned; read only
+             for fields ticked Limited. #}
+          <div class="js-limits"{% if not limited %} hidden{% endif %}>
+            <div class="row-4" style="align-items:end; margin-top:8px;">
+              <div class="field"><label>Max attendees</label><input class="input input-sm" style="width:100%;" name="field_max_{{ si }}[]" type="number" min="0" step="1" value="{{ field.get('max_attendees') if field.get('max_attendees') is not none else '' }}" placeholder="no limit"></div>
+              <div class="field"><label>Min attendees</label><input class="input input-sm" style="width:100%;" name="field_min_{{ si }}[]" type="number" min="0" step="1" value="{{ field.get('min_attendees') if field.get('min_attendees') is not none else '' }}" placeholder="none"></div>
+              <div class="field"><label>Answer that takes a seat</label><input class="input input-sm" style="width:100%;" name="field_counts_option_{{ si }}[]" value="{{ field.counts_option or '' }}" placeholder="Yes, or the first option"></div>
+              <div class="field"><label>Value when full</label><input class="input input-sm" style="width:100%;" name="field_full_value_{{ si }}[]" value="{{ field.full_value or '' }}" placeholder="e.g. at-capacity"></div>
+            </div>
+            <div class="field" style="margin:0;"><div class="help">
+              Max is enforced; min is only shown here. Value when full (radio / select only)
+              is recorded instead once full — it must not be one of the options, and other
+              fields can use it as their condition value.
+              {% set s = seats.get(field.key) %}
+              {% if s %}<br><strong>{{ s.taken }} taken{% if s.max is not none %} of {{ s.max }} — {{ s.left }} left{% endif %}{% if s.short %} · needs {{ s.short }} more to reach its minimum of {{ s.min }}{% endif %}</strong>
+              (refunded, cancelled and deleted registrations not counted).{% endif %}
+            </div></div>
+          </div>
+          {% endif %}
         </div>
         {% endfor %}
       </div>
@@ -182,7 +210,12 @@
           {% endfor %}
         </select>
       </div>
-      <div class="field"><label class="check-label"><input type="checkbox" name="field_required_0[]"> Required</label></div>
+      <div class="field">
+        <label class="check-label"><input type="checkbox" name="field_required_0[]"> Required</label>
+        {% if form_type == 'registration' %}
+        <label class="check-label"><input type="checkbox" class="js-limited" name="field_limited_0[]"> Limited</label>
+        {% endif %}
+      </div>
       <div class="field">
         <label>Sub-event</label>
         <select class="select select-sm" name="field_sub_event_0[]">
@@ -201,6 +234,21 @@
         <div class="field"><label>Condition value</label><input class="input input-sm" name="field_cond_value_0[]" placeholder="value or contains"></div>
       </div>
     </div>
+    {% if form_type == 'registration' %}
+    <div class="js-limits" hidden>
+      <div class="row-4" style="align-items:end; margin-top:8px;">
+        <div class="field"><label>Max attendees</label><input class="input input-sm" style="width:100%;" name="field_max_0[]" type="number" min="0" step="1" placeholder="no limit"></div>
+        <div class="field"><label>Min attendees</label><input class="input input-sm" style="width:100%;" name="field_min_0[]" type="number" min="0" step="1" placeholder="none"></div>
+        <div class="field"><label>Answer that takes a seat</label><input class="input input-sm" style="width:100%;" name="field_counts_option_0[]" placeholder="Yes, or the first option"></div>
+        <div class="field"><label>Value when full</label><input class="input input-sm" style="width:100%;" name="field_full_value_0[]" placeholder="e.g. at-capacity"></div>
+      </div>
+      <div class="field" style="margin:0;"><div class="help">
+        Max is enforced; min is only shown here. Value when full (radio / select only)
+        is recorded instead once full — it must not be one of the options, and other
+        fields can use it as their condition value.
+      </div></div>
+    </div>
+    {% endif %}
   </div>
 </template>
 
@@ -228,13 +276,24 @@
         row.querySelectorAll("input, select, textarea").forEach(function(el) {
           el.name = el.name.replace(/_(\d+)\[\]/, "_" + si + "[]");
         });
-        var reqCb = row.querySelector("[type='checkbox']");
-        if (reqCb && reqCb.name.indexOf("field_required_") === 0) {
-          reqCb.value = fi;
-        }
+        // Checkbox values carry the field's position, since only ticked
+        // boxes are posted and the server has to know which field they mean.
+        row.querySelectorAll("[type='checkbox']").forEach(function(cb) {
+          if (cb.name.indexOf("field_required_") === 0 ||
+              cb.name.indexOf("field_limited_") === 0) {
+            cb.value = fi;
+          }
+        });
       });
     });
   }
+
+  // Limits stay out of the way until a field is ticked Limited.
+  container.addEventListener("change", function(e) {
+    if (!e.target.classList.contains("js-limited")) return;
+    var limits = e.target.closest(".schema-field-row").querySelector(".js-limits");
+    if (limits) limits.hidden = !e.target.checked;
+  });
 
   container.addEventListener("click", function(e) {
     if (e.target.classList.contains("js-remove-field")) {

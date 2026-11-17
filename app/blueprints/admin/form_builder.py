@@ -8,6 +8,7 @@ from . import admin_bp
 from ...extensions import db
 from ...models import Conference, FormTemplate
 from ...security import requires_permission, audit
+from ...services import capacity
 from ...services.form_renderer import FIELD_TYPES
 
 
@@ -99,10 +100,60 @@ def form_builder(cid, form_type):
             return redirect(url_for("admin.form_builder",
                                     cid=c.id, form_type=form_type))
 
+    seats = (capacity.status(c.id, schema, c.sub_events)
+             if form_type == "registration" else {})
     return render_template("admin/form_builder.html",
-                           c=c, form_type=form_type, schema=schema,
+                           c=c, form_type=form_type, schema=schema, seats=seats,
                            templates=templates, sub_events=c.sub_events,
                            field_types=FIELD_TYPES)
+
+
+def _apply_limits(fdef: dict, raw_max: str, raw_min: str, raw_counts: str,
+                  raw_full: str) -> None:
+    """Put the attendee limits of a field ticked "Limited" onto its definition.
+
+    Only called for ticked fields, so a field nobody limits is saved exactly
+    as before. Raises ValueError (shown to the admin, nothing saved) for a
+    limit that is not a whole number, neither limit set, a minimum above the
+    maximum, a type that cannot take a seat, a counted answer the field does
+    not offer, or a full value it does.
+    """
+    label = fdef["label"] or fdef["key"]
+    if fdef["type"] not in capacity.LIMITED_TYPES:
+        raise ValueError(f"{label}: only {', '.join(capacity.LIMITED_TYPES)} "
+                         f"fields can be limited.")
+    try:
+        mx, mn = capacity.parse_limit(raw_max), capacity.parse_limit(raw_min)
+    except ValueError as exc:
+        raise ValueError(f"{label}: attendee limits must be whole numbers "
+                         f"of 0 or more.") from exc
+    if mx is None and mn is None:
+        raise ValueError(f"{label}: a limited field needs a maximum, a "
+                         f"minimum, or both — or untick Limited.")
+    if mx is not None and mn is not None and mn > mx:
+        raise ValueError(f"{label}: the minimum ({mn}) is above the "
+                         f"maximum ({mx}).")
+    if mx is not None:
+        fdef["max_attendees"] = mx
+    if mn is not None:
+        fdef["min_attendees"] = mn
+    options = fdef.get("options", [])
+    if fdef["type"] in capacity.OPTION_TYPES:
+        counts = (raw_counts or "").strip() or capacity.default_option(options)
+        if counts not in options:
+            raise ValueError(f"{label}: the answer that takes a seat must be "
+                             f"one of its options.")
+        fdef["counts_option"] = counts
+    full = (raw_full or "").strip()
+    if full:
+        if fdef["type"] not in capacity.FULL_VALUE_TYPES:
+            raise ValueError(f"{label}: a value when full can only be set on "
+                             f"{' or '.join(capacity.FULL_VALUE_TYPES)} fields.")
+        if full in options:
+            raise ValueError(f"{label}: the value when full (“{full}”) must not "
+                             f"be one of its options, or it could be chosen "
+                             f"while seats remain.")
+        fdef["full_value"] = full
 
 
 def _save_schema_from_form(conference, form_type):
@@ -133,6 +184,13 @@ def _save_schema_from_form(conference, form_type):
         field_options = request.form.getlist(f"field_options_{i}[]")
         field_cond_field = request.form.getlist(f"field_cond_field_{i}[]")
         field_cond_value = request.form.getlist(f"field_cond_value_{i}[]")
+        field_max = request.form.getlist(f"field_max_{i}[]")
+        field_min = request.form.getlist(f"field_min_{i}[]")
+        field_counts = request.form.getlist(f"field_counts_option_{i}[]")
+        field_full = request.form.getlist(f"field_full_value_{i}[]")
+        # Limits are a registration-form thing: an abstract has no seats.
+        field_limited = (request.form.getlist(f"field_limited_{i}[]")
+                         if form_type == "registration" else [])
 
         for fj, fk in enumerate(field_keys):
             fk = fk.strip()
@@ -163,6 +221,12 @@ def _save_schema_from_form(conference, form_type):
                     else:
                         cond["contains"] = cv
                 fdef["condition"] = cond
+            if str(fj) in field_limited:
+                _apply_limits(fdef,
+                              field_max[fj] if fj < len(field_max) else "",
+                              field_min[fj] if fj < len(field_min) else "",
+                              field_counts[fj] if fj < len(field_counts) else "",
+                              field_full[fj] if fj < len(field_full) else "")
             sec["fields"].append(fdef)
 
         sections.append(sec)

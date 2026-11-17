@@ -18,6 +18,19 @@
   an admin starts billing one.
 
 ### Added
+- **Registration form items can be limited.** Ticking **Limited** on a
+  checkbox, radio, select, checkbox-group or sub-event field in the form
+  builder reveals a **Max attendees**, a **Min attendees**, the **answer that
+  takes a seat** (defaults to "Yes", else the first option) and, for radio and
+  select, a **value when full**. Registrants see how many seats are left. Once
+  full, a field with a value when full records that value instead (e.g.
+  `at-capacity`) and shows "Fully booked" — make another field conditional on
+  it to ask for an expression of interest. Without one, the seat-taking answer
+  is disabled and refused on save. Anyone already holding a seat keeps it. The
+  minimum is shown to admins only and never blocks a registrant. Refunded,
+  cancelled and deleted registrations give their seat back. Unticked fields
+  are saved exactly as before, and no migration is needed — the limits live in
+  the form schema.
 - **Sub-events can be tentative, and are billed when they go ahead.** A
   tentative sub-event records who is interested without charging, and the
   registration form says it is billed only if it goes ahead. **Start billing**

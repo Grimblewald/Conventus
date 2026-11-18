@@ -87,6 +87,9 @@ class Conference(db.Model):
     # {status: level}; a status missing here takes its default. See
     # SPEAKER_VISIBILITY_LEVELS.
     speaker_visibility = db.Column(db.JSON, default=None)
+    # The attendee CSV's saved choice: {"columns": [...], "include_inactive":
+    # bool}. See app/services/attendee_export.
+    attendee_export = db.Column(db.JSON, default=None)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow,

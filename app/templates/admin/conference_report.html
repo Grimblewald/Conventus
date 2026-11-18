@@ -50,6 +50,11 @@
   .pp-note { font-size: 12.5px; color: var(--c-muted-text); margin: 8px 0 0; }
   .pp-note a { font-weight: 600; }
   #pdf-btn[aria-busy="true"] { cursor: progress; opacity: .85; }
+  .export-group { border: 0; padding: 0; margin: 0 0 14px; }
+  .export-group legend { font-family: var(--f-ui); font-weight: 600; font-size: 13.5px; padding: 0; margin-bottom: 6px; }
+  .export-cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 4px 20px; }
+  .export-col { display: flex; gap: 8px; align-items: baseline; font-family: var(--f-ui); font-size: 13.5px; }
+  .export-col input { flex: none; }
 </style>
 
 <div class="section-head">
@@ -61,7 +66,8 @@
 </div>
 <p class="report-note">Counted live from {{ report.total }} registrations{% if report.deleted %} ({{ report.deleted }} deleted ones left out){% endif %}.
   No names or contact details — the only free text is what people typed after choosing “Other”,
-  listed without who wrote it — so the PDF can be shared with the committee.</p>
+  listed without who wrote it — so the PDF can be shared with the committee. The attendee list
+  below is different: it has names, so keep it to the people who need it.</p>
 
 {% set sym = site.currency_symbol or '$' %}
 <div class="grid cols-4 stats" style="margin-top:16px;">
@@ -74,6 +80,45 @@
   <div class="stat"><span class="n">{{ sym }}{{ '{:,.2f}'.format(report.received / 100) }}</span><span class="l">Received</span>
     <span class="d">{{ report.received_note(sym) }}; {{ sym }}{{ '{:,.2f}'.format(report.outstanding / 100) }} outstanding, {{ report.owing_note }}</span></div>
 </div>
+
+<details class="edit-section" id="attendee-list" style="margin-top:24px;">
+  <summary class="edit-section-summary">Attendee list (CSV) — names, for badges, check-in and the dinner</summary>
+  <div class="edit-section-body">
+    <form method="post" action="{{ url_for('admin.conference_attendees_csv', cid=c.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <p class="report-note" style="margin-top:0;">One row per registration, sorted by family name. Tick the
+        columns you want; the choice is saved for this conference, so the next download — by you or
+        anyone else on the committee — has the same columns. Columns come out in the order listed here.
+        Every download is recorded in the audit log.</p>
+      {% for group in export_columns|map(attribute='group')|unique %}
+      <fieldset class="export-group">
+        <legend>{{ group }}</legend>
+        {% if group == 'Contact and identity details' %}
+        <p class="report-note" style="margin:0 0 6px;">Personal details nobody needs on a badge — tick only
+          if the list is for something that does need them.</p>
+        {% endif %}
+        <div class="export-cols">
+          {% for col in export_columns if col.group == group %}
+          <label class="export-col">
+            <input type="checkbox" name="col" value="{{ col.key }}"{% if col.key in export_chosen %} checked{% endif %}>
+            <span>{{ col.label }}{% if col.hint %} <small class="muted">— {{ col.hint }}</small>{% endif %}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </fieldset>
+      {% endfor %}
+      <label class="export-col" style="margin:10px 0 14px;">
+        <input type="checkbox" name="include_inactive" value="1"{% if export_include_inactive %} checked{% endif %}>
+        <span>Include refunded and cancelled registrations <small class="muted">— they hold no place, so
+          they are left out unless ticked</small></span>
+      </label>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button class="btn btn-primary btn-sm" type="submit">Download attendees CSV</button>
+        <button class="btn btn-ghost btn-sm" type="submit" name="reset" value="1">Back to suggested columns</button>
+      </div>
+    </form>
+  </div>
+</details>
 
 <h3 style="margin-top:32px;">How registrations were paid</h3>
 <p class="report-note">From the payment ledger, not the status: Worldline payments arrive from the gateway,

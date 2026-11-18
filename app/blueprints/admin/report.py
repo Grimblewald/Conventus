@@ -2,6 +2,9 @@
 
 Counts only: see app/services/registration_report.py. Both views read the
 same report, so the PDF is exactly what the page shows.
+
+The page also offers the attendee list, which is not counts: a CSV with
+names, columns chosen by the admin (app/services/attendee_export.py).
 """
 from __future__ import annotations
 
@@ -14,6 +17,7 @@ from . import admin_bp
 from ...models import Conference
 from ...models.content import get_site_settings
 from ...security import requires_permission
+from ...services import attendee_export
 from ...services import registration_report as rr
 
 
@@ -32,11 +36,57 @@ def conference_report(cid):
     stages = rr.parse_stages(c, request.args.getlist("stage"))
     report = rr.build(c)
     sankey = rr.build_sankey(c, stages)
+    chosen, include_inactive = attendee_export.saved(c)
     return render_template(
         "admin/conference_report.html", c=c, report=report, sankey=sankey,
         sankey_svg=Markup(rr.svg(sankey)), stages=stages,
         stage_options=rr.stage_options(c), percent=rr.percent,
-        site=get_site_settings())
+        site=get_site_settings(),
+        export_columns=attendee_export.columns(c), export_chosen=chosen,
+        export_include_inactive=include_inactive)
+
+
+@admin_bp.route("/conferences/<int:cid>/attendees.csv", methods=["POST"])
+@requires_permission("registrations.view")
+def conference_attendees_csv(cid):
+    """Save the ticked columns on the conference, then download the list.
+
+    "Reset" puts the suggested columns back without downloading anything.
+    """
+    from ...security import audit
+
+    c = _conference(cid)
+    if request.form.get("reset"):
+        c.attendee_export = None
+        from ...extensions import db
+        db.session.commit()
+        flash("The attendee list's columns are back to the suggested ones.", "success")
+        return redirect(url_for("admin.conference_report", cid=c.id) + "#attendee-list")
+
+    offered = [col.key for col in attendee_export.columns(c)]
+    picked = set(request.form.getlist("col"))
+    keys = [k for k in offered if k in picked]
+    include_inactive = bool(request.form.get("include_inactive"))
+    if not keys:
+        flash("Tick at least one column for the attendee list.", "error")
+        return redirect(url_for("admin.conference_report", cid=c.id) + "#attendee-list")
+
+    choice = {"columns": keys, "include_inactive": include_inactive}
+    if c.attendee_export != choice:
+        from ...extensions import db
+        c.attendee_export = choice
+        db.session.commit()
+
+    data, n = attendee_export.build_csv(
+        c, keys, include_inactive=include_inactive,
+        currency_symbol=get_site_settings().currency_symbol or "$")
+    audit.record("registrations.exported", target_kind="conference", target_id=c.id,
+                 summary=f"Attendee list CSV: {n} registrations, {len(keys)} columns",
+                 metadata={"columns": keys, "include_inactive": include_inactive})
+    resp = send_file(BytesIO(data), mimetype="text/csv", as_attachment=True,
+                     download_name=attendee_export.filename(c))
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 @admin_bp.route("/conferences/<int:cid>/report.pdf")

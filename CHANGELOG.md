@@ -27,7 +27,11 @@
   payment ledger shows rather than their status: paid via Worldline, paid
   and recorded manually (a bank transfer marked paid by an admin), both, part
   paid, nothing paid yet, no fee, refunded — with the money received and
-  outstanding for each, and money received split into Worldline and manual. A Sankey chart shows how all registrations split across up
+  outstanding for each, and money received split into Worldline and manual.
+  Tick-all-that-apply questions (society membership, dietary needs) also get
+  a table counting each person once by exactly what they ticked — "DDA
+  Member only", "ASMI Member only", "DDA Member + ASMI Member", "(none
+  ticked)" — whose rows add up to the total, and can be a Sankey column. A Sankey chart shows how all registrations split across up
   to four chosen columns (payment status, tier, a sub-event or any
   one-answer question): each box gives its exact count and each band the
   percentage of the box it leaves, with every band also listed as a table.

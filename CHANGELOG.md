@@ -18,6 +18,19 @@
   an admin starts billing one.
 
 ### Added
+- **An attendee list to download as CSV**, from the conference's registration
+  report page (needs `registrations.view`). Tick the columns wanted — the
+  registration number, an honorific, a badge first name (preferred name, else
+  first name), tier, status, how it was paid, amount owing, date registered,
+  every question on the registration form and each sub-event — and the choice
+  is saved on the conference, so the next download, by anyone, has the same
+  columns; "Back to suggested columns" resets it. One row per registration,
+  sorted by family name, refunded and cancelled ones left out unless ticked.
+  The honorific is read from what the title field starts with (Dr, Prof,
+  A/Prof, Mr, Ms…) and left blank otherwise, never guessed. Contact and
+  identity details (email, phone, passport, billing address) are listed apart
+  and never suggested. Every download is recorded in the audit log. Adds a
+  column to `conferences`.
 - **A registration report for each conference** (Admin → Conferences →
   Report, or the link in the conference editor; needs `registrations.view`).
   It shows how many have registered, paid and are pending, money received and

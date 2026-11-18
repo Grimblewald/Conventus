@@ -35,7 +35,14 @@
   to four chosen columns (payment status, tier, a sub-event or any
   one-answer question): each box gives its exact count and each band the
   percentage of the box it leaves, with every band also listed as a table.
-  **Download PDF** produces the same report through tectonic. What people
+  **Download PDF** produces the same report through tectonic, in the
+  background: the button goes dead with a spinner the moment it is pressed,
+  a panel lists each step as it happens (counting, drawing the chart, waiting
+  for the typesetter when another PDF is ahead, typesetting, ready) with a
+  progress bar and the seconds elapsed, leaving the page asks first, and the
+  file downloads by itself. Pressing again — even from another tab — joins
+  the job already running instead of starting another. Without JavaScript the
+  button still downloads directly. What people
   typed after choosing "Other" (a dietary need, a career stage) is listed in
   an appendix, grouped and counted. A question shown only on a condition —
   a wait-list offered once the dinner is full — counts the people never shown

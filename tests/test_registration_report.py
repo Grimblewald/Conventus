@@ -394,6 +394,166 @@ def test_a_failed_compile_goes_back_to_the_page(seeded, admin_client, app,
     assert f"/admin/conferences/{seeded_regs['id']}/report" in r.headers["Location"]
 
 
+# --- the PDF as a background job, with progress -----------------------------
+
+@pytest.fixture
+def no_tectonic_needed(monkeypatch):
+    monkeypatch.setattr("app.services.documents._resolve_tectonic", lambda: "tectonic")
+
+
+def _start(client, conf, *stages):
+    r = client.post(f"/admin/conferences/{conf['id']}/report/jobs",
+                    data={"stage": list(stages)})
+    assert r.status_code == 202, r.data
+    return r.get_json()
+
+
+def test_a_job_reports_its_steps_and_serves_the_pdf(seeded, admin_client, app, seeded_regs,
+                                                    no_tectonic_needed):
+    j = _start(admin_client, seeded_regs, "status", "tier")
+    assert j["started"] is True
+    s = admin_client.get(j["status_url"])
+    assert s.headers["Cache-Control"] == "no-store"
+    s = s.get_json()
+    assert s["state"] == "done" and s["error"] is None
+    assert [(st["key"], st["state"]) for st in s["steps"]] == [
+        ("count", "done"), ("chart", "done"), ("typeset", "done"), ("ready", "done")]
+    assert all(set(st) == {"key", "label", "state"} for st in s["steps"])
+    assert "user_id" not in s and "conference_id" not in s
+    pdf = admin_client.get(j["download_url"])
+    assert pdf.status_code == 200 and pdf.data.startswith(b"%PDF")
+    assert f"registrations-{seeded_regs['slug']}-" in pdf.headers["Content-Disposition"]
+
+
+def test_a_job_is_only_its_owners(seeded, admin_client, app, seeded_regs,
+                                  login_user_session, no_tectonic_needed):
+    from flask import g
+
+    j = _start(admin_client, seeded_regs, "status")
+    # Another admin, with the same permission, cannot see or fetch it.
+    login_user_session(email="admin2@test.example.org", role_name="admin")
+    # pytest-flask keeps one app context open for the whole test, and
+    # Flask-Login caches the signed-in user on its `g`; without this, every
+    # request would still be answered as the first admin.
+    g.pop("_login_user", None)
+    assert admin_client.get(j["status_url"]).status_code == 404
+    assert admin_client.get(j["download_url"]).status_code == 404
+    # Nor can anything that is not a job id we minted.
+    base = f"/admin/conferences/{seeded_regs['id']}/report/jobs"
+    assert admin_client.get(f"{base}/..%2F..%2Fapp.db").status_code == 404
+    assert admin_client.get(f"{base}/nope").status_code == 404
+
+
+def test_members_cannot_start_a_job(seeded, member_client, seeded_regs):
+    r = member_client.post(f"/admin/conferences/{seeded_regs['id']}/report/jobs")
+    assert r.status_code in (302, 403)
+
+
+def test_pressing_again_while_running_returns_the_same_job(app, seeded_regs, monkeypatch):
+    """A second press — another tab, a double click — finds the running job."""
+    from app.models import Conference
+    from app.services import report_jobs
+
+    ran = []
+    monkeypatch.setattr(report_jobs, "_run", lambda *a: ran.append(a))
+    with app.test_request_context():
+        c = db.session.get(Conference, seeded_regs["id"])
+        first, started = report_jobs.start(c, ["status"], user_id=42)
+        again, started_again = report_jobs.start(c, ["status"], user_id=42)
+        other_cols, _ = report_jobs.start(c, ["tier"], user_id=42)
+        other_user, _ = report_jobs.start(c, ["status"], user_id=43)
+    assert started and not started_again and again == first
+    assert len({first, other_cols, other_user}) == 3
+    assert len(ran) == 3                                # the repeat started nothing
+
+
+def test_a_failed_compile_is_reported_not_downloaded(seeded, admin_client, app, seeded_regs,
+                                                     monkeypatch):
+    from app.services.documents import RenderError
+
+    def fail(*a, **k):
+        raise RenderError("tectonic not found")
+    monkeypatch.setattr("app.services.registration_report.render_pdf", fail)
+    j = _start(admin_client, seeded_regs, "status")
+    s = admin_client.get(j["status_url"]).get_json()
+    assert s["state"] == "error" and s["error"] == "tectonic not found"
+    assert admin_client.get(j["download_url"]).status_code == 404
+
+
+def test_a_lost_job_says_so_and_old_ones_are_swept(app, seeded_regs, monkeypatch):
+    import json
+    import os
+    import time
+
+    from app.models import Conference
+    from app.services import report_jobs
+
+    monkeypatch.setattr(report_jobs, "_run", lambda *a: None)
+    with app.test_request_context():
+        c = db.session.get(Conference, seeded_regs["id"])
+        lost, _ = report_jobs.start(c, ["status"], user_id=7)
+        d = report_jobs._root() / lost
+        status = json.loads((d / "status.json").read_text())
+        status["updated"] = time.time() - 3600         # the worker died mid-job
+        (d / "status.json").write_text(json.dumps(status))
+        s = report_jobs.read(lost)
+        assert s["state"] == "error" and "restarted" in s["error"]
+        # A lost job is not "running", so pressing again starts afresh.
+        fresh, started = report_jobs.start(c, ["status"], user_id=7)
+        assert started and fresh != lost
+        old = time.time() - 7200
+        os.utime(d, (old, old))
+        report_jobs.start(c, ["tier"], user_id=7)       # any start sweeps
+        assert not d.exists()
+
+
+def test_the_wait_for_the_typesetter_is_shown_only_when_there_was_one():
+    import time
+
+    from app.services.report_jobs import public
+    now = time.time()
+    base = {"state": "running", "started": now - 5, "done": ["count", "chart"]}
+    shown = lambda s: [(st["key"], st["state"]) for st in public(s)["steps"]]  # noqa: E731
+
+    # Just handed over: typesetting reads as under way, no "waiting" line.
+    assert shown({**base, "step": "queued", "queued_at": now - 0.2}) == [
+        ("count", "done"), ("chart", "done"), ("typeset", "current"), ("ready", "todo")]
+    # Stuck behind another compile: the wait is the step under way.
+    assert shown({**base, "step": "queued", "queued_at": now - 4}) == [
+        ("count", "done"), ("chart", "done"), ("queued", "current"),
+        ("typeset", "todo"), ("ready", "todo")]
+    # Once typesetting, a real wait stays listed as done; a blink does not.
+    typesetting = {**base, "step": "typeset", "done": ["count", "chart", "queued"]}
+    assert ("queued", "done") in shown({**typesetting, "waited": 4})
+    assert "queued" not in dict(shown({**typesetting, "waited": 0.1}))
+
+
+def test_a_compile_says_when_it_really_starts():
+    """documents calls on_start once the box-wide lock is held, before
+    tectonic runs, and only once; the abort check still works."""
+    from pathlib import Path
+
+    from app.services.documents import _CompileJob
+
+    calls = []
+    job = _CompileJob("tectonic", Path("."), Path("x.tex"), 0,
+                      on_start=lambda: calls.append("start"))
+    assert job._starting() is False and job._starting() is False
+    assert calls == ["start"]
+    job.abandoned = True
+    assert job._starting() is True
+    # A failing callback never stops the compile.
+    bad = _CompileJob("tectonic", Path("."), Path("x.tex"), 0, on_start=lambda: 1 / 0)
+    assert bad._starting() is False
+
+
+def test_the_page_offers_progress(seeded, admin_client, seeded_regs):
+    page = admin_client.get(f"/admin/conferences/{seeded_regs['id']}/report").data.decode()
+    assert 'id="pdf-progress"' in page and "data-start-url=" in page
+    # The plain download stays as the fallback without script.
+    assert f"/admin/conferences/{seeded_regs['id']}/report.pdf" in page
+
+
 def _tectonic_available() -> bool:
     return bool(shutil.which("tectonic") or (Path.home() / ".local/bin/tectonic").exists())
 

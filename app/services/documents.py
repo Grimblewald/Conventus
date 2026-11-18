@@ -583,10 +583,11 @@ class _CompileJob:
     not-yet-started job to skip the (now pointless) compile."""
 
     __slots__ = ("tectonic", "job_dir", "tex_path", "epoch", "memory_mb",
-                 "timeout", "done", "pdf", "error", "abandoned")
+                 "timeout", "done", "pdf", "error", "abandoned", "on_start")
 
     def __init__(self, tectonic: str, job_dir: Path, tex_path: Path,
-                 epoch: int, memory_mb: int = 0, timeout: int = 0) -> None:
+                 epoch: int, memory_mb: int = 0, timeout: int = 0,
+                 on_start=None) -> None:
         self.tectonic = tectonic
         self.job_dir = job_dir
         self.tex_path = tex_path
@@ -597,12 +598,26 @@ class _CompileJob:
         self.pdf: bytes | None = None
         self.error: RenderError | None = None
         self.abandoned = False
+        self.on_start = on_start
+
+    def _starting(self) -> bool:
+        """`_compile` asks this once it holds the box-wide lock, just before
+        tectonic runs — the moment the compile really begins, after any wait
+        in this process's queue or behind another process's compile. Tells
+        the caller so (if it asked), then whether to abort."""
+        if self.on_start is not None:
+            try:
+                self.on_start()
+            except Exception:
+                log.exception("compile on_start callback failed")
+            self.on_start = None
+        return self.abandoned
 
     def execute(self) -> None:
         try:
             self.pdf = _compile(self.tectonic, self.job_dir, self.tex_path,
                                 self.epoch, self.memory_mb,
-                                should_abort=lambda: self.abandoned,
+                                should_abort=self._starting,
                                 timeout=self.timeout)
         except RenderError as e:
             self.error = e
@@ -697,7 +712,8 @@ def _submit_and_wait(job: _CompileJob, wait_timeout: int | None = None) -> bytes
 def compile_prepared_dir(job_dir: Path, tex_path: Path, *,
                          source_date_epoch: int = SOURCE_DATE_EPOCH,
                          compile_timeout: int = 0,
-                         wait_timeout: int | None = None) -> bytes:
+                         wait_timeout: int | None = None,
+                         on_start=None) -> bytes:
     """Compile an ALREADY-PREPARED job directory and return the PDF bytes.
 
     The public entry point for callers that build their own .tex tree rather
@@ -709,11 +725,16 @@ def compile_prepared_dir(job_dir: Path, tex_path: Path, *,
 
     Must be called with an app context (config drives the memory cap); the
     compile itself then runs on a worker thread without one.
+
+    `on_start`, if given, is called (on the worker thread, no app context)
+    when the compile actually begins — after any wait for the queue or the
+    box-wide lock — so a caller showing progress can tell waiting from
+    typesetting.
     """
     tectonic = _resolve_tectonic()
     return _submit_and_wait(
         _CompileJob(tectonic, job_dir, tex_path, source_date_epoch,
-                    _compile_memory_mb(), compile_timeout),
+                    _compile_memory_mb(), compile_timeout, on_start=on_start),
         wait_timeout=wait_timeout)
 
 

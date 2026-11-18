@@ -28,6 +28,28 @@
   .report-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 560px), 1fr));
                  gap: 8px 28px; }
   .report-grid h4 { margin: 18px 0 6px; font-size: 15px; }
+  .pdf-progress { margin: 0 0 16px; padding: 14px 16px; max-width: 640px; background: var(--c-card-bg);
+                  border: 1px solid var(--c-card-border); border-radius: var(--rad); font-family: var(--f-ui); }
+  .pdf-progress.error { border-color: #d03b3b; }
+  .pp-head { display:flex; justify-content:space-between; align-items:baseline; gap:12px; }
+  .pp-elapsed { font-size: 12.5px; color: var(--c-muted-text); font-variant-numeric: tabular-nums; }
+  .pp-bar { height: 8px; border-radius: 4px; background: var(--c-card-border); overflow: hidden; margin: 10px 0 8px; }
+  .pp-fill { height: 100%; width: 0; border-radius: 4px; background: var(--c-accent); transition: width .3s ease; }
+  .pdf-progress.working .pp-fill {
+    background-image: linear-gradient(45deg, rgba(255,255,255,.28) 25%, transparent 25%, transparent 50%,
+                                      rgba(255,255,255,.28) 50%, rgba(255,255,255,.28) 75%, transparent 75%);
+    background-size: 16px 16px; animation: pp-stripes .8s linear infinite; }
+  @keyframes pp-stripes { from { background-position: 0 0; } to { background-position: 16px 0; } }
+  @media (prefers-reduced-motion: reduce) { .pdf-progress.working .pp-fill { animation: none; } }
+  .pp-steps { list-style: none; padding: 0; margin: 0; font-size: 13.5px; }
+  .pp-steps li { display:flex; align-items:center; gap:8px; padding: 3px 0; color: var(--c-muted-text); }
+  .pp-steps li.done, .pp-steps li.current { color: var(--c-page-text); }
+  .pp-steps li.current { font-weight: 600; }
+  .pp-steps .ic { width: 16px; text-align: center; flex: none; }
+  .pp-steps .ic .spinner { width: 12px; height: 12px; margin: 0; }
+  .pp-note { font-size: 12.5px; color: var(--c-muted-text); margin: 8px 0 0; }
+  .pp-note a { font-weight: 600; }
+  #pdf-btn[aria-busy="true"] { cursor: progress; opacity: .85; }
 </style>
 
 <div class="section-head">
@@ -82,9 +104,23 @@
   </div>
   {% endfor %}
   <button class="btn btn-ghost btn-sm" type="submit">Update chart</button>
-  <button class="btn btn-primary btn-sm" type="submit"
-          formaction="{{ url_for('admin.conference_report_pdf', cid=c.id) }}">Download PDF</button>
+  {# Without script this is a plain download; the page script turns it into
+     a background job with progress (report_jobs). #}
+  <button class="btn btn-primary btn-sm" type="submit" id="pdf-btn"
+          formaction="{{ url_for('admin.conference_report_pdf', cid=c.id) }}"
+          data-start-url="{{ url_for('admin.conference_report_job_start', cid=c.id) }}">Download PDF</button>
 </form>
+
+<div class="pdf-progress" id="pdf-progress" hidden role="status" aria-live="polite">
+  <div class="pp-head">
+    <strong id="pp-title">Making your PDF…</strong>
+    <span class="pp-elapsed" id="pp-elapsed"></span>
+  </div>
+  <div class="pp-bar" aria-hidden="true"><div class="pp-fill" id="pp-fill"></div></div>
+  <ol class="pp-steps" id="pp-steps"></ol>
+  <p class="pp-note" id="pp-note">Please stay on this page. The download starts by itself when it is
+    ready — there is no need to press the button again.</p>
+</div>
 <p class="report-note">Every column accounts for each registration once. Boxes give the exact count; each band's
   percentage is the share of the box it leaves. Hover any band or box for its numbers.</p>
 
@@ -219,6 +255,126 @@
     if (svg) svg.classList.toggle("hovering", t.classList.contains("sk-band"));
   });
   wrap.addEventListener("mouseleave", hide);
+})();
+</script>
+<script>
+(function () {
+  // Download PDF as a background job: the button goes dead with a spinner the
+  // moment it is pressed, the steps show as the server reports them, leaving
+  // the page asks first, and the file downloads by itself when it is ready.
+  var btn = document.getElementById("pdf-btn");
+  var panel = document.getElementById("pdf-progress");
+  if (!btn || !panel || !window.fetch || !window.FormData) return;
+  var form = btn.form;
+  var title = document.getElementById("pp-title");
+  var elapsed = document.getElementById("pp-elapsed");
+  var fill = document.getElementById("pp-fill");
+  var list = document.getElementById("pp-steps");
+  var note = document.getElementById("pp-note");
+  var label = btn.innerHTML;
+  var busy = false, failures = 0;
+
+  function guard(e) { e.preventDefault(); e.returnValue = ""; return ""; }
+
+  function setBusy(on) {
+    busy = on;
+    btn.disabled = on;
+    btn.setAttribute("aria-busy", on ? "true" : "false");
+    btn.innerHTML = on ? '<span class="spinner"></span>Making PDF…' : label;
+    form.querySelectorAll("select, button").forEach(function (el) {
+      if (el !== btn) el.disabled = on;
+    });
+    if (on) window.addEventListener("beforeunload", guard);
+    else window.removeEventListener("beforeunload", guard);
+  }
+
+  function icon(state) {
+    if (state === "done") return "✓";
+    if (state === "current") return '<span class="spinner"></span>';
+    return "○";
+  }
+
+  function render(s) {
+    list.innerHTML = "";
+    var done = 0;
+    s.steps.forEach(function (st) {
+      var li = document.createElement("li");
+      li.className = st.state;
+      li.innerHTML = '<span class="ic">' + icon(st.state) + "</span>";
+      li.appendChild(document.createTextNode(st.label));
+      list.appendChild(li);
+      if (st.state === "done") done++;
+    });
+    // A step under way counts for half, so the bar moves when a step starts.
+    var current = s.steps.some(function (st) { return st.state === "current"; }) ? 0.5 : 0;
+    fill.style.width = Math.round((done + current) / s.steps.length * 100) + "%";
+    elapsed.textContent = s.elapsed.toFixed(0) + " s";
+  }
+
+  function finish(s, downloadUrl) {
+    setBusy(false);
+    panel.classList.remove("working");
+    fill.style.width = "100%";
+    title.textContent = "Your PDF is ready";
+    note.innerHTML = "The download has started. If it didn't, ";
+    var a = document.createElement("a");
+    a.href = downloadUrl;
+    a.textContent = "download it here";
+    note.appendChild(a);
+    note.appendChild(document.createTextNode("."));
+    a.click();   // after setBusy(false): the guard must not catch our own download
+  }
+
+  function fail(message) {
+    setBusy(false);
+    panel.classList.remove("working");
+    panel.classList.add("error");
+    title.textContent = "The PDF could not be made";
+    note.textContent = (message || "Something went wrong.") +
+      " Nothing was downloaded; you can press Download PDF to try again.";
+  }
+
+  function poll(statusUrl, downloadUrl) {
+    fetch(statusUrl, { credentials: "same-origin", headers: { "Accept": "application/json" } })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (s) {
+        failures = 0;
+        render(s);
+        if (s.state === "done") return finish(s, downloadUrl);
+        if (s.state === "error") return fail(s.error);
+        setTimeout(function () { poll(statusUrl, downloadUrl); }, 700);
+      })
+      .catch(function () {
+        // A blip (a restart, a dropped connection) is retried for a while
+        // before giving up, since the job itself carries on regardless.
+        if (++failures > 10) return fail("Lost touch with the site while waiting.");
+        setTimeout(function () { poll(statusUrl, downloadUrl); }, 1500);
+      });
+  }
+
+  btn.addEventListener("click", function (e) {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    panel.hidden = false;
+    panel.classList.remove("error");
+    panel.classList.add("working");
+    title.textContent = "Making your PDF…";
+    note.textContent = "Please stay on this page. The download starts by itself when it is " +
+      "ready — there is no need to press the button again.";
+    list.innerHTML = "";
+    fill.style.width = "4%";
+    elapsed.textContent = "";
+    var data = new FormData();
+    form.querySelectorAll('select[name="stage"]').forEach(function (s) {
+      if (s.value) data.append("stage", s.value);
+    });
+    fetch(btn.getAttribute("data-start-url"),
+          { method: "POST", body: data, credentials: "same-origin" })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (j) { poll(j.status_url, j.download_url); })
+      .catch(function () { fail("The PDF could not be started."); });
+  });
 })();
 </script>
 {% endblock %}

@@ -974,9 +974,11 @@ exact count; each band's percentage is the share of the box it leaves.\par}}
     return "\n".join(parts)
 
 
-def render_pdf(report: Report, sk: Sankey, *, currency_symbol: str = "$") -> bytes:
+def render_pdf(report: Report, sk: Sankey, *, currency_symbol: str = "$",
+               on_start=None) -> bytes:
     """Compile the report through the shared tectonic queue. Raises
-    documents.RenderError if the compile fails."""
+    documents.RenderError if the compile fails. `on_start` is called when the
+    compile actually begins (see documents.compile_prepared_dir)."""
     import shutil
     import tempfile
     from pathlib import Path
@@ -988,7 +990,7 @@ def render_pdf(report: Report, sk: Sankey, *, currency_symbol: str = "$") -> byt
         tex_path = job / "report.tex"
         tex_path.write_text(latex(report, sk, currency_symbol=currency_symbol),
                             encoding="utf-8")
-        return compile_prepared_dir(job, tex_path)
+        return compile_prepared_dir(job, tex_path, on_start=on_start)
     finally:
         shutil.rmtree(job, ignore_errors=True)
 

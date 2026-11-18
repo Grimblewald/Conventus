@@ -58,3 +58,66 @@ def conference_report_pdf(cid):
                                 stage=stages))
     return send_file(BytesIO(pdf), mimetype="application/pdf", as_attachment=True,
                      download_name=rr.pdf_filename(c, report))
+
+
+# ---------------------------------------------------------------------------
+# The same PDF as a background job, so the page can show progress. The plain
+# report.pdf route above stays as the fallback when script is off.
+# ---------------------------------------------------------------------------
+
+def _job_for(c: Conference, job_id: str) -> dict:
+    """The job, if it is this person's and this conference's; else 404, so
+    a job id seen in someone else's browser opens nothing."""
+    from flask import abort
+    from flask_login import current_user
+
+    from ...services import report_jobs
+    status = report_jobs.read(job_id)
+    if (status is None or status.get("conference_id") != c.id
+            or status.get("user_id") != current_user.id):
+        abort(404)
+    return status
+
+
+@admin_bp.route("/conferences/<int:cid>/report/jobs", methods=["POST"])
+@requires_permission("registrations.view")
+def conference_report_job_start(cid):
+    from flask import jsonify
+    from flask_login import current_user
+
+    from ...services import report_jobs
+    c = _conference(cid)
+    stages = rr.parse_stages(c, request.form.getlist("stage"))
+    job_id, started = report_jobs.start(c, stages, current_user.id)
+    return jsonify(
+        job=job_id, started=started,
+        status_url=url_for("admin.conference_report_job", cid=c.id, job_id=job_id),
+        download_url=url_for("admin.conference_report_job_download",
+                             cid=c.id, job_id=job_id)), 202
+
+
+@admin_bp.route("/conferences/<int:cid>/report/jobs/<job_id>")
+@requires_permission("registrations.view")
+def conference_report_job(cid, job_id):
+    from flask import jsonify
+
+    from ...services import report_jobs
+    c = _conference(cid)
+    resp = jsonify(report_jobs.public(_job_for(c, job_id)))
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@admin_bp.route("/conferences/<int:cid>/report/jobs/<job_id>/download")
+@requires_permission("registrations.view")
+def conference_report_job_download(cid, job_id):
+    from flask import abort
+
+    from ...services import report_jobs
+    c = _conference(cid)
+    status = _job_for(c, job_id)
+    path = report_jobs.pdf_path(job_id)
+    if status.get("state") != "done" or path is None or not path.exists():
+        abort(404)
+    return send_file(path, mimetype="application/pdf", as_attachment=True,
+                     download_name=status.get("filename") or "registration-report.pdf")

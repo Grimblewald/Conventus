@@ -27,9 +27,12 @@
   to four chosen columns (payment status, tier, a sub-event or any
   one-answer question): each box gives its exact count and each band the
   percentage of the box it leaves, with every band also listed as a table.
-  **Download PDF** produces the same report through tectonic. Counts only:
-  no names, emails or free-text answers appear, so it can be shared with a
-  committee. No migration.
+  **Download PDF** produces the same report through tectonic. What people
+  typed after choosing "Other" (a dietary need, a career stage) is listed in
+  an appendix, grouped and counted. A question shown only on a condition —
+  a wait-list offered once the dinner is full — counts the people never shown
+  it as "(not asked)", not as "No". No names, emails or other free text
+  appear, so it can be shared with a committee. No migration.
 - **Registration form items can be limited.** Ticking **Limited** on a
   checkbox, radio, select, checkbox-group or sub-event field in the form
   builder reveals a **Max attendees**, a **Min attendees**, the **answer that

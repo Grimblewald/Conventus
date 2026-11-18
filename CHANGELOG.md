@@ -18,6 +18,18 @@
   an admin starts billing one.
 
 ### Added
+- **A registration report for each conference** (Admin → Conferences →
+  Report, or the link in the conference editor; needs `registrations.view`).
+  It shows how many have registered, paid and are pending, money received and
+  outstanding — including paid registrations with a balance from a later
+  charge — and a breakdown of every tier, sub-event and choice question by
+  payment status. A Sankey chart shows how all registrations split across up
+  to four chosen columns (payment status, tier, a sub-event or any
+  one-answer question): each box gives its exact count and each band the
+  percentage of the box it leaves, with every band also listed as a table.
+  **Download PDF** produces the same report through tectonic. Counts only:
+  no names, emails or free-text answers appear, so it can be shared with a
+  committee. No migration.
 - **Registration form items can be limited.** Ticking **Limited** on a
   checkbox, radio, select, checkbox-group or sub-event field in the form
   builder reveals a **Max attendees**, a **Min attendees**, the **answer that

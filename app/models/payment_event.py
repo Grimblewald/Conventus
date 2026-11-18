@@ -151,6 +151,24 @@ def amount_received(registration_id: int) -> int:
                 if t not in CHARGE_EVENTS)
 
 
+def money_movements(registration_id: int) -> list[tuple[str, int]]:
+    """Every movement of money on a registration, as (event_type, amount):
+    positive for money received, negative for money handed back. Charge lines
+    and weightless events are left out, and each gateway operation counts
+    once (see `deduplicated`), so these sum to `amount_received`.
+
+    The event type says where the money moved: `payment.`, `reconcile.` and
+    `refund.` came from the gateway; `manual.` was recorded by an admin."""
+    out = []
+    for t, a in _money_rows(registration_id):
+        if t in CHARGE_EVENTS:
+            continue
+        moved = -event_delta(t, a)
+        if moved:
+            out.append((t, moved))
+    return out
+
+
 def event_counts(registration_ids, event_type: str) -> dict[int, int]:
     """How many *event_type* events each of these registrations has.
 

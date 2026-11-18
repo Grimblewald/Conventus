@@ -50,6 +50,60 @@ STATUS_COLOURS = {"paid": "#0ca30c", "pending": "#fab219", "failed": "#d03b3b",
                   "refunded": "#ec835a", "cancelled": "#898781"}
 NEUTRAL = "#898781"
 
+# How a registration was settled, read from the ledger rather than its status:
+# a status says what someone set, the ledger says what money moved and where
+# it came from. In this order everywhere, each with its own fixed colour.
+SETTLEMENTS = (
+    ("worldline", "Paid via Worldline"),
+    ("manual", "Paid, recorded manually"),
+    ("mixed", "Paid, Worldline and manual"),
+    ("part", "Part paid"),
+    ("unpaid", "Nothing paid yet"),
+    ("free", "No fee"),
+    ("unrecorded", "Nothing owed, no money recorded"),
+    ("refunded", "Refunded"),
+    ("cancelled", "Cancelled"),
+)
+_SETTLEMENT_LABEL = dict(SETTLEMENTS)
+_SETTLEMENT_COLOURS = {
+    "worldline": SERIES[0], "manual": SERIES[2], "mixed": SERIES[6],
+    "part": STATUS_COLOURS["pending"], "unpaid": STATUS_COLOURS["failed"],
+    "free": SERIES[4], "unrecorded": NEUTRAL,
+    "refunded": STATUS_COLOURS["refunded"], "cancelled": NEUTRAL,
+}
+# Ledger namespaces written by the gateway (webhooks, polling, refunds);
+# `manual.` is an admin marking a registration paid or refunded by hand.
+_GATEWAY = ("payment", "reconcile", "refund")
+
+
+def _source(event_type: str) -> str:
+    ns = event_type.partition(".")[0]
+    return "worldline" if ns in _GATEWAY else "manual" if ns == "manual" else ns
+
+
+def settlement(reg, moves: list[tuple[str, int]]) -> str:
+    """Which of SETTLEMENTS a registration is in, given its money movements.
+
+    Owing anything at all makes it part paid or unpaid, whatever its status
+    says — which is how a registration marked paid that was later billed for
+    a workshop shows up as part paid rather than hiding among the settled.
+    """
+    if reg.status in ("refunded", "cancelled"):
+        return reg.status
+    received = sum(m for _, m in moves)
+    if reg.amount_due > 0:
+        return "part" if received > 0 else "unpaid"
+    if reg.total_price <= 0:
+        return "free"
+    if received <= 0:
+        return "unrecorded"
+    sources = {_source(t) for t, m in moves if m > 0}
+    if sources == {"worldline"}:
+        return "worldline"
+    if sources == {"manual"}:
+        return "manual"
+    return "mixed"
+
 
 # ---------------------------------------------------------------------------
 # Counts and breakdowns
@@ -98,6 +152,17 @@ class Report:
     fields: list[Breakdown]
     seats: dict                        # field key -> capacity.Seats
     other_answers: list[OtherAnswers] = field(default_factory=list)
+    received_by_source: Counter = field(default_factory=Counter)   # worldline / manual
+    # (key, label, registrations, received, outstanding), in SETTLEMENTS order
+    settlements: list[tuple[str, str, int, int, int]] = field(default_factory=list)
+
+    def received_note(self, symbol: str = "$") -> str:
+        """Where the money received came from: the gateway, or an admin
+        recording a payment made some other way (a bank transfer, say)."""
+        w = self.received_by_source.get("worldline", 0)
+        m = self.received_by_source.get("manual", 0)
+        return (f"net of refunds: {_money(w, symbol)} via Worldline, "
+                f"{_money(m, symbol)} recorded manually")
 
     @property
     def active(self) -> int:
@@ -256,9 +321,12 @@ def _sub_event_answer(se):
     return value_of
 
 
-def build(conference) -> Report:
-    from ..models.payment_event import amount_received
+def _movements(regs) -> dict[int, list[tuple[str, int]]]:
+    from ..models.payment_event import money_movements
+    return {r.id: money_movements(r.id) for r in regs}
 
+
+def build(conference) -> Report:
     regs = _registrations(conference)
     deleted = (Registration.query
                .filter(Registration.conference_id == conference.id,
@@ -268,8 +336,24 @@ def build(conference) -> Report:
     by_status = Counter(r.status for r in regs)
 
     paid = [r for r in regs if r.status == "paid"]
-    received = {r.id: amount_received(r.id) for r in regs}
+    moves = _movements(regs)
+    received = {r.id: sum(m for _, m in moves[r.id]) for r in regs}
+    by_source = Counter()
+    for mv in moves.values():
+        for t, m in mv:
+            by_source[_source(t)] += m
     owing = [r for r in regs if r.status not in _INACTIVE and r.amount_due > 0]
+
+    # Outstanding per group counts only what an active registration owes, as
+    # the headline does: a refund puts the fee back on the books, but nobody
+    # is going to be asked for it.
+    groups: dict[str, list] = {}
+    for r in regs:
+        groups.setdefault(settlement(r, moves[r.id]), []).append(r)
+    settlements = [
+        (key, label, len(groups[key]), sum(received[r.id] for r in groups[key]),
+         sum(r.amount_due for r in groups[key] if r.status not in _INACTIVE))
+        for key, label in SETTLEMENTS if key in groups]
 
     tiers = _breakdown("tier", "Registration tier", regs, lambda r: r.tier_name,
                        preferred=[t.name for t in conference.price_tiers])
@@ -299,6 +383,8 @@ def build(conference) -> Report:
         tiers=tiers, sub_events=sub_events, fields=fields,
         seats=capacity.status(conference.id, schema, conference.sub_events),
         other_answers=_other_answers(regs, schema),
+        received_by_source=by_source,
+        settlements=settlements,
     )
 
 
@@ -309,7 +395,8 @@ def build(conference) -> Report:
 def stage_options(conference) -> list[tuple[str, str]]:
     """(key, label) for everything a Sankey column can split on: one answer
     per registration, so each column accounts for everyone exactly once."""
-    out = [("status", "Payment status"), ("tier", "Registration tier")]
+    out = [("settlement", "How paid"), ("status", "Payment status"),
+           ("tier", "Registration tier")]
     out += [(f"se:{se.id}", se.name) for se in conference.sub_events]
     out += [(f"f:{f['key']}", f.get("label") or f["key"])
             for f in choice_fields(conference.registration_form_schema)
@@ -318,9 +405,11 @@ def stage_options(conference) -> list[tuple[str, str]]:
 
 
 def default_stages(conference) -> list[str]:
-    """Status and tier, then the first limited field, else the first
-    sub-event — the cohorts an organiser most often has to count."""
-    stages = ["status", "tier"]
+    """How paid and tier, then the first limited field, else the first
+    sub-event — the cohorts an organiser most often has to count. How paid
+    rather than status: it splits the same registrations by what money
+    actually moved, which is what a status cannot show."""
+    stages = ["settlement", "tier"]
     schema = conference.registration_form_schema
     limited = [f for s in (schema or {}).get("sections", [])
                for f in s.get("fields", [])
@@ -374,6 +463,13 @@ class Sankey:
 
 def _stage_value(conference, key: str):
     """(value_of(reg), preferred order, colour for a value) for a stage."""
+    if key == "settlement":
+        def value_of(r):
+            from ..models.payment_event import money_movements
+            return _SETTLEMENT_LABEL[settlement(r, money_movements(r.id))]
+        by_label = {label: key for key, label in SETTLEMENTS}
+        return (value_of, [label for _, label in SETTLEMENTS],
+                lambda v, i: _SETTLEMENT_COLOURS.get(by_label.get(v), NEUTRAL))
     if key == "status":
         return (lambda r: r.status.title(),
                 [s.title() for s in STATUS_ORDER],
@@ -709,11 +805,23 @@ def latex(report: Report, sk: Sankey, *, currency_symbol: str = "$") -> str:
         ("Pending", f"{r.by_status['pending']}", "registered, not yet paid in full"),
         ("Refunded / cancelled",
          f"{r.by_status['refunded'] + r.by_status['cancelled']}", "hold no place"),
-        ("Received", _money(r.received, currency_symbol), "net of refunds"),
+        ("Received", _money(r.received, currency_symbol), r.received_note(currency_symbol)),
         ("Outstanding", _money(r.outstanding, currency_symbol), r.owing_note),
     ]
     rows = "\n".join(rf"{esc(k)} & \textbf{{{esc(v)}}} & {{\color{{inkmuted}}{esc(note)}}} \\"
                      for k, v, note in summary)
+    paid_rows = "\n".join(
+        rf"{esc(label)} & {n} & {esc(_money(rec, currency_symbol))} & "
+        rf"{esc(_money(out, currency_symbol)) if out else '–'} \\"
+        for _, label, n, rec, out in r.settlements)
+    paid_tex = (r"\vspace{10pt}{\bfseries How registrations were paid\par}"
+                r"{\color{inkmuted}\footnotesize From the payment ledger, not the status: "
+                r"Worldline payments arrive from the gateway, manual ones were recorded by "
+                r"an admin (a bank transfer, say). Anyone owing anything is part paid or "
+                r"unpaid, whatever their status.\par}\vspace{2pt}"
+                r"\begin{tabular}{@{}l r r r}\toprule \textbf{How paid} & \textbf{Registrations} & "
+                r"\textbf{Received} & \textbf{Outstanding} \\ \midrule" + "\n" + paid_rows
+                + "\n" + r"\bottomrule\end{tabular}")
     stamp = r.generated_at.strftime("%-d %B %Y, %H:%M UTC")
 
     parts = [rf"""\documentclass[10pt,a4paper]{{article}}
@@ -742,6 +850,8 @@ def latex(report: Report, sk: Sankey, *, currency_symbol: str = "$") -> str:
 {rows}
 \end{{tabular}}
 
+@@PAID@@
+
 \vspace{{10pt}}
 {{\bfseries How registrations split\par}}
 {{\color{{inkmuted}}\footnotesize Each column accounts for every registration once. Boxes give the
@@ -749,7 +859,7 @@ exact count; each band's percentage is the share of the box it leaves.\par}}
 \vspace{{6pt}}
 \noindent\resizebox{{\linewidth}}{{!}}{{%
 @@SANKEY@@}}
-""".replace("@@SANKEY@@", tikz(sk))]
+""".replace("@@SANKEY@@", tikz(sk)).replace("@@PAID@@", paid_tex)]
 
     if r.seats:
         parts.append(r"\vspace{8pt}{\bfseries Limited items\par}")

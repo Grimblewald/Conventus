@@ -189,6 +189,71 @@ def test_no_appendix_without_other_answers(app, seeded_regs):
         assert "Appendix" not in rr.latex(r, rr.build_sankey(c, ["status"]))
 
 
+def _pay(app, reg_id, event_type, amount, txn=""):
+    from app.models import record_payment_event
+    with app.app_context():
+        record_payment_event(registration_id=reg_id, transaction_id=txn,
+                             merchant_reference=f"reg_{reg_id}",
+                             event_type=event_type, amount=amount)
+
+
+def test_how_registrations_were_paid(app, conf):
+    """Each registration's settlement comes from the ledger, not its status."""
+    from app.services import registration_report as rr
+    gw = _reg(app, conf, paid=40000)                       # Worldline capture
+    _pay(app, gw, "payment.captured", 40000, txn=f"T{gw}")  # webhook redelivered
+    man = _reg(app, conf)                                   # bank transfer, marked by hand
+    _pay(app, man, "manual.paid", 40000)
+    mix = _reg(app, conf, paid=10000)
+    _pay(app, mix, "manual.paid", 30000)
+    rec = _reg(app, conf)                                   # found by reconciliation
+    _pay(app, rec, "reconcile.captured", 40000, txn="R1")
+    # Paid in full, then billed for a workshop: still marked paid, owes $50.
+    later = _reg(app, conf, paid=40000)
+    with app.app_context():
+        reg = db.session.get(Registration, later)
+        reg.charge_to(45000, reason="Workshop billed")
+    _reg(app, conf, status="pending", paid=10000)          # part paid
+    _reg(app, conf, status="pending")                      # nothing yet
+    _reg(app, conf, tier="Sponsor")                        # no fee
+    _reg(app, conf)                                        # marked paid, nothing anywhere
+    refunded = _reg(app, conf, status="refunded", paid=40000)
+    _pay(app, refunded, "payment.refunded", 40000, txn=f"T{refunded}")
+
+    with app.app_context():
+        r = rr.build(_conference(app, conf))
+    rows = {key: (n, received, out) for key, _, n, received, out in r.settlements}
+    assert rows == {
+        "worldline": (2, 80000, 0),          # card + reconciliation; redelivery counted once
+        "manual": (1, 40000, 0),
+        "mixed": (1, 40000, 0),
+        "part": (2, 50000, 35000),           # 400 + 100 received; 50 + 300 owed
+        # Pending with nothing, and marked paid with nothing received: the
+        # status says paid, the ledger says the fee is still owed.
+        "unpaid": (2, 0, 80000),
+        "free": (1, 0, 0),
+        "refunded": (1, 0, 0),               # captured then refunded: nets to nothing
+    }
+    assert [k for k, *_ in r.settlements] == [
+        "worldline", "manual", "mixed", "part", "unpaid", "free", "refunded"]
+    assert sum(n for n, _, _ in rows.values()) == r.total
+    assert sum(rec for _, rec, _ in rows.values()) == r.received
+    assert sum(out for _, _, out in rows.values()) == r.outstanding
+    assert r.received_by_source == {"worldline": 140000, "manual": 70000}
+    assert r.received_note() == ("net of refunds: $1,400.00 via Worldline, "
+                                 "$700.00 recorded manually")
+    with app.app_context():
+        c = _conference(app, conf)
+        sk = rr.build_sankey(c, ["settlement", "status"])
+        tex = rr.latex(r, sk)
+    labels = {n.label: n.count for n in sk.columns[1]}
+    assert labels["Paid via Worldline"] == 2 and labels["Part paid"] == 2
+    part_to_paid = next(lk for lk in sk.links
+                        if lk.source.label == "Part paid" and lk.target.label == "Paid")
+    assert part_to_paid.count == 1                          # the workshop one
+    assert r"\textbf{How paid}" in tex and "Paid, recorded manually & 1 & \\$400.00" in tex
+
+
 def test_long_breakdowns_fold_into_other(app):
     from collections import Counter
 
@@ -229,7 +294,7 @@ def test_stage_choices(app, seeded_regs):
         c = _conference(app, seeded_regs)
         keys = [k for k, _ in rr.stage_options(c)]
         assert "f:diet" not in keys and "f:note" not in keys   # not one answer each
-        assert rr.default_stages(c) == ["status", "tier", "f:dinner"]   # the limited one
+        assert rr.default_stages(c) == ["settlement", "tier", "f:dinner"]   # the limited one
         assert rr.parse_stages(c, ["tier", "bogus", "tier", "status"]) == ["tier", "status"]
         assert rr.parse_stages(c, ["bogus"]) == rr.default_stages(c)
 

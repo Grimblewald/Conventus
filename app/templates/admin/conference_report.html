@@ -50,8 +50,23 @@
   <div class="stat"><span class="n">{{ report.by_status['pending'] }}</span><span class="l">Pending</span>
     <span class="d">{{ report.by_status['refunded'] + report.by_status['cancelled'] }} refunded or cancelled</span></div>
   <div class="stat"><span class="n">{{ sym }}{{ '{:,.2f}'.format(report.received / 100) }}</span><span class="l">Received</span>
-    <span class="d">{{ sym }}{{ '{:,.2f}'.format(report.outstanding / 100) }} outstanding, {{ report.owing_note }}</span></div>
+    <span class="d">{{ report.received_note(sym) }}; {{ sym }}{{ '{:,.2f}'.format(report.outstanding / 100) }} outstanding, {{ report.owing_note }}</span></div>
 </div>
+
+<h3 style="margin-top:32px;">How registrations were paid</h3>
+<p class="report-note">From the payment ledger, not the status: Worldline payments arrive from the gateway,
+  manual ones were recorded by an admin (a bank transfer, say). Anyone owing anything is part paid or unpaid,
+  whatever their status says.</p>
+<table class="table report-table" style="max-width:720px;">
+  <thead><tr><th>How paid</th><th class="num">Registrations</th><th class="num">Received</th><th class="num">Outstanding</th></tr></thead>
+  <tbody>
+  {% for key, label, n, received, outstanding in report.settlements %}
+    <tr><td>{{ label }}</td><td class="num"><strong>{{ n }}</strong></td>
+        <td class="num">{{ sym }}{{ '{:,.2f}'.format(received / 100) }}</td>
+        <td class="num">{% if outstanding %}{{ sym }}{{ '{:,.2f}'.format(outstanding / 100) }}{% else %}–{% endif %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
 
 <h3 style="margin-top:32px;">How registrations split</h3>
 <form method="get" class="report-actions" action="{{ url_for('admin.conference_report', cid=c.id) }}">

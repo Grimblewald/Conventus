@@ -23,7 +23,11 @@
   It shows how many have registered, paid and are pending, money received and
   outstanding — including paid registrations with a balance from a later
   charge — and a breakdown of every tier, sub-event and choice question by
-  payment status. A Sankey chart shows how all registrations split across up
+  payment status. **How registrations were paid** splits them by what the
+  payment ledger shows rather than their status: paid via Worldline, paid
+  and recorded manually (a bank transfer marked paid by an admin), both, part
+  paid, nothing paid yet, no fee, refunded — with the money received and
+  outstanding for each, and money received split into Worldline and manual. A Sankey chart shows how all registrations split across up
   to four chosen columns (payment status, tier, a sub-event or any
   one-answer question): each box gives its exact count and each band the
   percentage of the box it leaves, with every band also listed as a table.

@@ -1,0 +1,161 @@
+{% extends "admin/_base.html" %}
+{% block title %}Registration report · {{ c.title }}{% endblock %}
+{% block admin %}
+<style>
+  .report-actions { display:flex; flex-wrap:wrap; gap:10px; align-items:end; margin: 8px 0 20px; }
+  .report-actions .field { margin:0; flex: 1 1 170px; max-width: 240px; }
+  .report-actions .select { width: 100%; }
+  .report-note { font-family: var(--f-ui); font-size: 12.5px; color: var(--c-muted-text); margin: 4px 0 0; }
+  .stats .stat .d { font-family: var(--f-ui); font-size: 12.5px; color: var(--c-muted-text); }
+  .sankey-wrap { position: relative; background: var(--c-card-bg); border: 1px solid var(--c-card-border);
+                 border-radius: var(--rad); padding: 12px; overflow-x: auto; }
+  .sankey { width: 100%; min-width: 720px; height: auto; display: block; font-family: var(--f-ui); }
+  .sankey .sk-band { fill-opacity: .38; transition: fill-opacity .12s; }
+  .sankey .sk-band:hover, .sankey .sk-band.on { fill-opacity: .7; }
+  .sankey.hovering .sk-band:not(.on):not(:hover) { fill-opacity: .14; }
+  .sankey .sk-stage { font-size: 11px; font-weight: 600; fill: var(--c-muted-text); letter-spacing: .02em; }
+  .sankey .sk-label { font-size: 12px; fill: var(--c-page-text);
+                      paint-order: stroke; stroke: var(--c-card-bg); stroke-width: 3px; stroke-linejoin: round; }
+  .sankey .sk-count { font-weight: 700; }
+  .sankey .sk-share { font-size: 11px; fill: var(--c-page-text); pointer-events: none;
+                      paint-order: stroke; stroke: var(--c-card-bg); stroke-width: 2.5px; stroke-linejoin: round; }
+  .sk-tip { position: absolute; pointer-events: none; background: var(--c-page-text); color: var(--c-card-bg);
+            font-family: var(--f-ui); font-size: 12.5px; padding: 6px 9px; border-radius: 6px;
+            white-space: nowrap; opacity: 0; transition: opacity .08s; z-index: 2; }
+  .report-table td.num, .report-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .report-table td, .report-table th { padding: 6px 10px; }
+  /* Two tables side by side only where both fit whole; otherwise one. */
+  .report-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 560px), 1fr));
+                 gap: 8px 28px; }
+  .report-grid h4 { margin: 18px 0 6px; font-size: 15px; }
+</style>
+
+<div class="section-head">
+  <div>
+    <div class="eyebrow">Registration report</div>
+    <h2>{{ c.title }}</h2>
+  </div>
+  <a class="link" href="{{ url_for('admin.conference_edit', cid=c.id) }}">← back to conference</a>
+</div>
+<p class="report-note">Counted live from {{ report.total }} registrations{% if report.deleted %} ({{ report.deleted }} deleted ones left out){% endif %}.
+  Counts only — no names or free-text answers — so the PDF can be shared with the committee.</p>
+
+{% set sym = site.currency_symbol or '$' %}
+<div class="grid cols-4 stats" style="margin-top:16px;">
+  <div class="stat"><span class="n">{{ report.total }}</span><span class="l">Registered</span>
+    <span class="d">{{ report.active }} holding a place</span></div>
+  <div class="stat"><span class="n">{{ report.by_status['paid'] }}</span><span class="l">Paid</span>
+    <span class="d">{{ report.paid_note }}</span></div>
+  <div class="stat"><span class="n">{{ report.by_status['pending'] }}</span><span class="l">Pending</span>
+    <span class="d">{{ report.by_status['refunded'] + report.by_status['cancelled'] }} refunded or cancelled</span></div>
+  <div class="stat"><span class="n">{{ sym }}{{ '{:,.2f}'.format(report.received / 100) }}</span><span class="l">Received</span>
+    <span class="d">{{ sym }}{{ '{:,.2f}'.format(report.outstanding / 100) }} outstanding, {{ report.owing_note }}</span></div>
+</div>
+
+<h3 style="margin-top:32px;">How registrations split</h3>
+<form method="get" class="report-actions" action="{{ url_for('admin.conference_report', cid=c.id) }}">
+  {% for i in range(4) %}
+  <div class="field">
+    <label for="stage-{{ i }}">Column {{ i + 2 }}</label>
+    <select class="select select-sm" id="stage-{{ i }}" name="stage">
+      <option value="">—</option>
+      {% for key, label in stage_options %}
+        <option value="{{ key }}"{% if stages[i] is defined and stages[i] == key %} selected{% endif %}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% endfor %}
+  <button class="btn btn-ghost btn-sm" type="submit">Update chart</button>
+  <button class="btn btn-primary btn-sm" type="submit"
+          formaction="{{ url_for('admin.conference_report_pdf', cid=c.id) }}">Download PDF</button>
+</form>
+<p class="report-note">Every column accounts for each registration once. Boxes give the exact count; each band's
+  percentage is the share of the box it leaves. Hover any band or box for its numbers.</p>
+
+<div class="sankey-wrap" id="sankey-wrap" style="margin-top:10px;">
+  {{ sankey_svg }}
+  <div class="sk-tip" id="sk-tip" role="status"></div>
+</div>
+
+<details class="edit-section" style="margin-top:12px;">
+  <summary class="edit-section-summary">Every band as a table</summary>
+  <div class="edit-section-body" style="overflow-x:auto;">
+    <table class="table report-table">
+      <thead><tr><th>From</th><th>To</th><th class="num">Count</th><th class="num">Share of “from”</th></tr></thead>
+      <tbody>
+      {% for src_stage, dst_stage, src, dst, n, share in sankey.flows %}
+        <tr><td>{{ src }} <small class="muted">{{ src_stage }}</small></td>
+            <td>{{ dst }} <small class="muted">{{ dst_stage }}</small></td>
+            <td class="num">{{ n }}</td><td class="num">{{ percent(share) }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+
+{% if report.seats %}
+<h3 style="margin-top:32px;">Limited items</h3>
+<table class="table report-table" style="max-width:640px;">
+  <thead><tr><th>Item</th><th class="num">Taken</th><th class="num">Max</th><th class="num">Left</th><th class="num">Min</th></tr></thead>
+  <tbody>
+  {% for s in report.seats.values() %}
+    <tr><td>{{ s.label }}</td><td class="num">{{ s.taken }}</td>
+        <td class="num">{{ s.max if s.max is not none else '–' }}</td>
+        <td class="num">{{ s.left if s.left is not none else '–' }}</td>
+        <td class="num">{{ s.min if s.min is not none else '–' }}{% if s.short %} <small class="muted">(needs {{ s.short }})</small>{% endif %}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<h3 style="margin-top:32px;">Breakdowns</h3>
+<p class="report-note">Percentages are of all {{ report.total }} registrations. Where more than one answer
+  could be chosen, rows can add up to more than the total.</p>
+<div class="report-grid">
+  {% for b in [report.tiers] + report.sub_events + report.fields %}
+  <div style="overflow-x:auto;">
+    <h4>{{ b.label }}{% if b.multi %} <small class="muted">(more than one answer allowed)</small>{% endif %}</h4>
+    <table class="table report-table">
+      <thead><tr><th>Answer</th>
+        {% for s in report.statuses %}<th class="num">{{ s|title }}</th>{% endfor %}
+        <th class="num">Total</th><th class="num">%</th></tr></thead>
+      <tbody>
+      {% for answer, counts in b.rows %}
+        {% set n = counts.values()|sum %}
+        <tr><td>{{ answer }}</td>
+          {% for s in report.statuses %}<td class="num">{{ counts.get(s, 0) or '' }}</td>{% endfor %}
+          <td class="num"><strong>{{ n }}</strong></td>
+          <td class="num">{{ percent(n / report.total) if report.total else '–' }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  var wrap = document.getElementById("sankey-wrap");
+  var tip = document.getElementById("sk-tip");
+  if (!wrap || !tip) return;
+  var svg = wrap.querySelector("svg.sankey");
+  function hide() { tip.style.opacity = 0; if (svg) svg.classList.remove("hovering"); }
+  wrap.addEventListener("mousemove", function (e) {
+    var t = e.target.closest("[data-tip]");
+    if (!t) { hide(); return; }
+    tip.textContent = t.getAttribute("data-tip");
+    var box = wrap.getBoundingClientRect();
+    var x = e.clientX - box.left + wrap.scrollLeft + 14;
+    var y = e.clientY - box.top + 14;
+    if (x + tip.offsetWidth > wrap.scrollLeft + wrap.clientWidth) x -= tip.offsetWidth + 28;
+    tip.style.left = x + "px";
+    tip.style.top = y + "px";
+    tip.style.opacity = 1;
+    if (svg) svg.classList.toggle("hovering", t.classList.contains("sk-band"));
+  });
+  wrap.addEventListener("mouseleave", hide);
+})();
+</script>
+{% endblock %}

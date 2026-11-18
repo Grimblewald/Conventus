@@ -498,6 +498,11 @@
     <a class="edit-section-summary" href="{{ url_for('admin.form_builder', cid=c.id, form_type='abstract') }}" style="display:block; text-decoration:none; border-top:none;">
       Abstract Form Builder →
     </a>
+    {% if can('registrations.view') %}
+    <a class="edit-section-summary" href="{{ url_for('admin.conference_report', cid=c.id) }}" style="display:block; text-decoration:none; border-top:none;">
+      Registration Report (PDF download) →
+    </a>
+    {% endif %}
   </div>
 
   <!-- ============================================================ -->

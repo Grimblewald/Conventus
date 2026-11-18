@@ -141,6 +141,12 @@ def test_breakdowns(app, seeded_regs):
     assert diet.multi
     assert dict((a, sum(c.values())) for a, c in diet.rows) == {
         "Vegan": 2, "Halal": 1, rr.NO_ANSWER: 4}
+    # The same people counted once each, by exactly what they ticked: both
+    # and neither show, and the rows add up to everyone.
+    assert [(a, sum(c.values())) for a, c in diet.combos] == [
+        ("Vegan only", 1), ("Vegan + Halal", 1), (rr.NONE_TICKED, 4)]
+    assert sum(sum(c.values()) for _, c in diet.combos) == r.total
+    assert fields["f:dinner"].combos is None            # single-answer: no second table
     tiers = dict((a, dict(c)) for a, c in r.tiers.rows)
     assert tiers["Student"] == {"paid": 3, "pending": 1, "refunded": 1}
     ws = dict((a, sum(c.values())) for a, c in r.sub_events[0].rows)
@@ -254,6 +260,29 @@ def test_how_registrations_were_paid(app, conf):
     assert r"\textbf{How paid}" in tex and "Paid, recorded manually & 1 & \\$400.00" in tex
 
 
+def test_combinations_follow_the_options_not_the_order_ticked(app):
+    from app.services import registration_report as rr
+    f = {"key": "m", "type": "checkbox-group", "options": ["DDA Member", "ASMI Member"]}
+    assert rr._combination(f, {"m": ["ASMI Member", "DDA Member"]}) == "DDA Member + ASMI Member"
+    assert rr._combination(f, {"m": ["ASMI Member"]}) == "ASMI Member only"
+    assert rr._combination(f, {"m": []}) == rr.NONE_TICKED
+    assert rr._combination(f, {}) == rr.NONE_TICKED
+    assert rr._all_combinations(f) == ["DDA Member only", "ASMI Member only",
+                                       "DDA Member + ASMI Member"]
+
+
+def test_the_combination_table_on_the_page_and_in_the_pdf(seeded, admin_client, app,
+                                                          seeded_regs):
+    from app.services import registration_report as rr
+    with app.app_context():
+        c = _conference(app, seeded_regs)
+        tex = rr.latex(rr.build(c), rr.build_sankey(c, ["status"]))
+    assert r"\textbf{Ticked}" in tex and "Vegan + Halal & 1" in tex
+    assert r"\textit{Total}" in tex
+    page = admin_client.get(f"/admin/conferences/{seeded_regs['id']}/report").data.decode()
+    assert 'class="table report-table combos"' in page and "Vegan + Halal" in page
+
+
 def test_long_breakdowns_fold_into_other(app):
     from collections import Counter
 
@@ -293,7 +322,11 @@ def test_stage_choices(app, seeded_regs):
     with app.app_context():
         c = _conference(app, seeded_regs)
         keys = [k for k, _ in rr.stage_options(c)]
-        assert "f:diet" not in keys and "f:note" not in keys   # not one answer each
+        assert "f:note" not in keys                             # free text never
+        assert "f:diet" in keys                                 # by combination
+        sk = rr.build_sankey(c, ["f:diet"])
+        assert {n.label: n.count for n in sk.columns[1]} == {
+            "Vegan only": 1, "Vegan + Halal": 1, rr.NONE_TICKED: 4}
         assert rr.default_stages(c) == ["settlement", "tier", "f:dinner"]   # the limited one
         assert rr.parse_stages(c, ["tier", "bogus", "tier", "status"]) == ["tier", "status"]
         assert rr.parse_stages(c, ["bogus"]) == rr.default_stages(c)

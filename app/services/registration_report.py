@@ -33,6 +33,7 @@ _INACTIVE = ("refunded", "cancelled")
 _CHOICE_TYPES = ("radio", "select", "checkbox", "checkbox-group", "country")
 NO_ANSWER = "(no answer)"
 NOT_ASKED = "(not asked)"
+NONE_TICKED = "(none ticked)"
 _UNANSWERED = (NO_ANSWER, NOT_ASKED)
 _OTHER = "Other"
 # A breakdown with more answers than this folds the smallest into "Other"
@@ -115,6 +116,9 @@ class Breakdown:
     label: str
     multi: bool                        # people could pick more than one
     rows: list[tuple[str, Counter]]    # (answer, count by status)
+    # For a multi-answer question: each exact combination ticked, every
+    # person counted once — so "both" and "neither" show, and rows add up.
+    combos: list[tuple[str, Counter]] | None = None
 
     def total(self, counts: Counter) -> int:
         return sum(counts.values())
@@ -229,10 +233,11 @@ def _answer(field: dict, data: dict):
 def _ordered(counts: dict, preferred: list[str]) -> list[str]:
     """Answers in the field's own option order, then any others by count,
     with no answer and not asked last."""
+    last = (NONE_TICKED, *_UNANSWERED)
     known = [o for o in preferred if o in counts]
-    rest = sorted((a for a in counts if a not in preferred and a not in _UNANSWERED),
+    rest = sorted((a for a in counts if a not in preferred and a not in last),
                   key=lambda a: (-sum(counts[a].values()), a))
-    tail = [a for a in _UNANSWERED if a in counts]
+    tail = [a for a in last if a in counts]
     return known + rest + tail
 
 
@@ -247,6 +252,60 @@ def _fold(rows: list[tuple[str, Counter]], limit: int) -> list[tuple[str, Counte
         if answer not in keep:
             other.update(counts)
     return [r for r in rows if r[0] in keep] + [(_OTHER, other)]
+
+
+def _combo_key(field: dict):
+    """Sort key for a combination label of *field*: singles in the field's
+    option order, then pairs, and so on, with none ticked and not asked last."""
+    options = list(field.get("options") or [])
+
+    def key(label: str):
+        if label in (NONE_TICKED, *_UNANSWERED, _OTHER):
+            return (len(options) + 2, ())
+        parts = label.removesuffix(" only").split(" + ")
+        return (len(parts), tuple(options.index(p) if p in options else len(options)
+                                  for p in parts))
+    return key
+
+
+def _combination(field: dict, data: dict) -> str:
+    """Exactly what was ticked on a multi-answer question, as one label:
+    "DDA Member only", "DDA Member + ASMI Member", "(none ticked)"."""
+    picked = _answer(field, data)
+    if picked == NOT_ASKED:
+        return NOT_ASKED
+    # Never stored at all reads as the single string "(no answer)".
+    picked = [p for p in (picked if isinstance(picked, list) else [picked])
+              if p != NO_ANSWER]
+    if not picked:
+        return NONE_TICKED
+    options = list(field.get("options") or [])
+    picked = sorted(set(picked), key=lambda p: (options.index(p) if p in options
+                                                else len(options), p))
+    return f"{picked[0]} only" if len(picked) == 1 else " + ".join(picked)
+
+
+def _all_combinations(field: dict) -> list[str]:
+    """Every combination label the field could produce, in display order —
+    so a combination keeps its colour and place whichever ones occur. Past
+    eight options that is too many to list; order then falls back to count."""
+    from itertools import combinations
+
+    options = list(field.get("options") or [])
+    if len(options) > 8:
+        return []
+    labels = [f"{o} only" for o in options]
+    for size in range(2, len(options) + 1):
+        labels += [" + ".join(c) for c in combinations(options, size)]
+    return labels
+
+
+def _combinations(field: dict, regs) -> list[tuple[str, Counter]]:
+    counts: dict[str, Counter] = {}
+    for reg in regs:
+        counts.setdefault(_combination(field, reg.custom_data), Counter())[reg.status] += 1
+    rows = [(a, counts[a]) for a in sorted(counts, key=_combo_key(field))]
+    return _fold(rows, _MAX_ROWS)
 
 
 def _breakdown(key, label, regs, value_of, preferred=(), multi=False) -> Breakdown:
@@ -368,6 +427,11 @@ def build(conference) -> Report:
                               else list(f.get("options") or [])),
                    multi=f.get("type") == "checkbox-group")
         for f in choice_fields(schema)]
+    multi = {f"f:{f['key']}": f for f in choice_fields(schema)
+             if f.get("type") == "checkbox-group"}
+    for b in fields:
+        if b.key in multi:
+            b.combos = _combinations(multi[b.key], regs)
 
     return Report(
         conference=conference,
@@ -398,9 +462,10 @@ def stage_options(conference) -> list[tuple[str, str]]:
     out = [("settlement", "How paid"), ("status", "Payment status"),
            ("tier", "Registration tier")]
     out += [(f"se:{se.id}", se.name) for se in conference.sub_events]
+    # A multi-answer question splits by combination ticked, so each person
+    # still lands in exactly one box.
     out += [(f"f:{f['key']}", f.get("label") or f["key"])
-            for f in choice_fields(conference.registration_form_schema)
-            if f.get("type") != "checkbox-group"]
+            for f in choice_fields(conference.registration_form_schema)]
     return out
 
 
@@ -483,16 +548,18 @@ def _stage_value(conference, key: str):
         return _sub_event_answer(se), ["Attending", "Not attending"], None
     if key.startswith("f:"):
         f = next((f for f in choice_fields(conference.registration_form_schema)
-                  if f["key"] == key[2:] and f.get("type") != "checkbox-group"), None)
+                  if f["key"] == key[2:]), None)
         if f is None:
             raise KeyError(key)
+        if f.get("type") == "checkbox-group":
+            return (lambda r: _combination(f, r.custom_data), _all_combinations(f), None)
         preferred = ["Yes", "No"] if f.get("type") == "checkbox" else list(f.get("options") or [])
         return (lambda r: _answer(f, r.custom_data), preferred, None)
     raise KeyError(key)
 
 
 def _colour(value: str, preferred: list[str], index: int, fixed) -> str:
-    if value in (*_UNANSWERED, _OTHER):
+    if value in (NONE_TICKED, *_UNANSWERED, _OTHER):
         return NEUTRAL
     if fixed is not None:
         return fixed(value, index)
@@ -750,18 +817,30 @@ def _pct(n: int, of: int) -> str:
     return percent(n / of) if of else "–"
 
 
-def _table_tex(b: Breakdown, statuses: list[str], total: int) -> str:
+def _table_tex(rows: list[tuple[str, Counter]], statuses: list[str], total: int, *,
+               first: str = "Answer", total_row: bool = False) -> str:
+    """A breakdown as a tabular. *total_row* adds a Total line, for tables
+    whose rows count each person once and so add up."""
     from .documents import latex_escape as esc
 
     cols = "l" + "r" * (len(statuses) + 2)
-    head = " & ".join([r"\textbf{Answer}"] + [rf"\textbf{{{esc(s.title())}}}" for s in statuses]
+    head = " & ".join([rf"\textbf{{{esc(first)}}}"]
+                      + [rf"\textbf{{{esc(s.title())}}}" for s in statuses]
                       + [r"\textbf{Total}", r"\textbf{\%}"])
     lines = [rf"\begin{{tabular}}{{{cols}}}", r"\toprule", head + r" \\", r"\midrule"]
-    for answer, counts in b.rows:
+    for answer, counts in rows:
         n = sum(counts.values())
         cells = [esc(answer)] + [str(counts.get(s, 0) or "") for s in statuses] + [
             rf"\textbf{{{n}}}", esc(_pct(n, total))]
         lines.append(" & ".join(cells) + r" \\")
+    if total_row:
+        sums = Counter()
+        for _, counts in rows:
+            sums.update(counts)
+        lines.append(r"\midrule " + " & ".join(
+            [r"\textit{Total}"] + [str(sums.get(s, 0) or "") for s in statuses]
+            + [rf"\textbf{{{sum(sums.values())}}}", esc(_pct(sum(sums.values()), total))])
+            + r" \\")
     lines += [r"\bottomrule", r"\end{tabular}"]
     return "\n".join(lines)
 
@@ -873,14 +952,22 @@ exact count; each band's percentage is the share of the box it leaves.\par}}
     parts.append(r"\clearpage{\Large\bfseries Breakdowns\par}"
                  r"{\color{inkmuted}\footnotesize Percentages are of all "
                  + str(r.total) + r" registrations. Where several answers could be chosen, "
-                 r"rows can add up to more than the total.\par}")
+                 r"those rows count each answer and can add up to more than the total; the "
+                 r"table beneath counts each person once, by exactly what they ticked.\par}")
     for b in [r.tiers, *r.sub_events, *r.fields]:
         note = r" {\color{inkmuted}\footnotesize (more than one answer allowed)}" if b.multi else ""
         # A minipage per table keeps a heading with its rows across pages;
         # the \par ends each one's paragraph so the space above takes effect.
         parts.append(r"\par\vspace{10pt}\noindent\begin{minipage}{\linewidth}"
                      rf"{{\bfseries {esc(b.label)}}}{note}\par\vspace{{2pt}}"
-                     + _table_tex(b, r.statuses, r.total) + r"\end{minipage}\par")
+                     + _table_tex(b.rows, r.statuses, r.total) + r"\end{minipage}\par")
+        if b.combos:
+            parts.append(r"\par\vspace{6pt}\noindent\begin{minipage}{\linewidth}"
+                         r"{\color{inkmuted}\footnotesize Each person counted once, by exactly "
+                         r"what they ticked:}\par\vspace{2pt}"
+                         + _table_tex(b.combos, r.statuses, r.total, first="Ticked",
+                                      total_row=True)
+                         + r"\end{minipage}\par")
     if r.other_answers:
         parts.append(_other_answers_tex(r.other_answers))
     parts.append(r"\end{document}")

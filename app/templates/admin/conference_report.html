@@ -126,7 +126,8 @@
 
 <h3 style="margin-top:32px;">Breakdowns</h3>
 <p class="report-note">Percentages are of all {{ report.total }} registrations. Where more than one answer
-  could be chosen, rows can add up to more than the total.</p>
+  could be chosen, those rows count each answer, so they can add up to more than the total; the table
+  beneath counts each person once, by exactly what they ticked, including both and neither.</p>
 <div class="report-grid">
   {% for b in [report.tiers] + report.sub_events + report.fields %}
   <div style="overflow-x:auto;">
@@ -145,6 +146,28 @@
       {% endfor %}
       </tbody>
     </table>
+    {% if b.combos %}
+    <p class="report-note" style="margin-top:10px;">Each person counted once, by exactly what they ticked:</p>
+    <table class="table report-table combos">
+      <thead><tr><th>Ticked</th>
+        {% for s in report.statuses %}<th class="num">{{ s|title }}</th>{% endfor %}
+        <th class="num">Total</th><th class="num">%</th></tr></thead>
+      <tbody>
+      {% set ns = namespace(total=0) %}
+      {% for answer, counts in b.combos %}
+        {% set n = counts.values()|sum %}{% set ns.total = ns.total + n %}
+        <tr><td>{{ answer }}</td>
+          {% for s in report.statuses %}<td class="num">{{ counts.get(s, 0) or '' }}</td>{% endfor %}
+          <td class="num"><strong>{{ n }}</strong></td>
+          <td class="num">{{ percent(n / report.total) if report.total else '–' }}</td></tr>
+      {% endfor %}
+        <tr><td><em>Total</em></td>
+          {% for s in report.statuses %}<td class="num">{{ b.combos|map(attribute=1)|map(attribute=s)|sum or '' }}</td>{% endfor %}
+          <td class="num"><strong>{{ ns.total }}</strong></td>
+          <td class="num">{{ percent(ns.total / report.total) if report.total else '–' }}</td></tr>
+      </tbody>
+    </table>
+    {% endif %}
   </div>
   {% endfor %}
 </div>

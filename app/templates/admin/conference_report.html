@@ -38,7 +38,8 @@
   <a class="link" href="{{ url_for('admin.conference_edit', cid=c.id) }}">← back to conference</a>
 </div>
 <p class="report-note">Counted live from {{ report.total }} registrations{% if report.deleted %} ({{ report.deleted }} deleted ones left out){% endif %}.
-  Counts only — no names or free-text answers — so the PDF can be shared with the committee.</p>
+  No names or contact details — the only free text is what people typed after choosing “Other”,
+  listed without who wrote it — so the PDF can be shared with the committee.</p>
 
 {% set sym = site.currency_symbol or '$' %}
 <div class="grid cols-4 stats" style="margin-top:16px;">
@@ -132,6 +133,30 @@
   </div>
   {% endfor %}
 </div>
+
+{% if report.other_answers %}
+<h3 style="margin-top:32px;">“Other” answers</h3>
+<p class="report-note">What registrants typed when they chose “Other”, grouped regardless of
+  capitalisation and counted. Who gave each answer is not shown. Also the PDF's appendix.</p>
+<div class="report-grid">
+  {% for g in report.other_answers %}
+  <div style="overflow-x:auto;">
+    <h4>{{ g.question }} <small class="muted">· {{ g.detail }} · {{ g.total }} chose Other</small></h4>
+    <table class="table report-table">
+      <thead><tr><th>Answer</th><th class="num">Count</th></tr></thead>
+      <tbody>
+      {% for text, n in g.answers %}
+        <tr><td>{{ text }}</td><td class="num">{{ n }}</td></tr>
+      {% endfor %}
+      {% if g.blank %}
+        <tr><td><em class="muted">(left blank)</em></td><td class="num">{{ g.blank }}</td></tr>
+      {% endif %}
+      </tbody>
+    </table>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}

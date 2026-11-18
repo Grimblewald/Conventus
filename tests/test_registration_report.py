@@ -44,7 +44,11 @@ def conf(app):
              "options": ["Yes", "No"], "max_attendees": 10, "counts_option": "Yes",
              "full_value": "at-capacity"},
             {"key": "diet", "type": "checkbox-group", "label": "Diet",
-             "options": ["Vegan", "Halal"]},
+             "options": ["Vegan", "Halal", "Other"]},
+            {"key": "diet-other", "type": "text", "label": "Other diet (please specify)",
+             "condition": {"field": "diet", "contains": "Other"}},
+            {"key": "waitlist", "type": "checkbox", "label": "Join the wait-list?",
+             "condition": {"field": "dinner", "contains": "at-capacity"}},
             {"key": "note", "type": "text", "label": "Secret note"},
             {"key": "ws", "type": "sub-event", "label": "Workshop", "sub_event_id": se.id}]}]}
         db.session.commit()
@@ -52,7 +56,7 @@ def conf(app):
 
 
 def _reg(app, conf, *, status="paid", tier="Student", dinner="Yes", diet=(),
-         workshop=None, paid=0, deleted=False, name="Person"):
+         diet_other="", waitlist="", workshop=None, paid=0, deleted=False, name="Person"):
     from app.models import User, record_payment_event
     with app.app_context():
         u = User(email=f"{secrets.token_hex(4)}@private.example.org",
@@ -63,6 +67,7 @@ def _reg(app, conf, *, status="paid", tier="Student", dinner="Yes", diet=(),
         reg = Registration(
             user_id=u.id, conference_id=conf["id"], tier_name=tier, amount=amount,
             status=status, custom_data={"dinner": dinner, "diet": list(diet),
+                                        "diet-other": diet_other, "waitlist": waitlist,
                                         "note": f"note from {name}"},
             sub_events=({"workshop": {"attending": workshop}}
                         if workshop is not None else None),
@@ -81,11 +86,24 @@ def _reg(app, conf, *, status="paid", tier="Student", dinner="Yes", diet=(),
 def seeded_regs(app, conf):
     _reg(app, conf, paid=40000, diet=["Vegan", "Halal"], workshop=True, name="Alice Secret")
     _reg(app, conf, paid=40000, dinner="No", diet=["Vegan"], workshop=False)
-    _reg(app, conf, status="pending", dinner="at-capacity")
+    _reg(app, conf, status="pending", dinner="at-capacity", waitlist="1")
     _reg(app, conf, status="paid", tier="Sponsor", dinner="")
     _reg(app, conf, status="refunded", paid=0)
     _reg(app, conf, status="paid", paid=0)                 # marked paid, nothing received
-    _reg(app, conf, deleted=True)
+    _reg(app, conf, deleted=True, diet=["Other"], diet_other="Deleted person's diet")
+    return conf
+
+
+@pytest.fixture
+def other_diets(app, conf):
+    """Other dietary answers as people type them, plus the cases that must
+    not be listed."""
+    _reg(app, conf, diet=["Other"], diet_other="Nut allergy", name="Nutty Name")
+    _reg(app, conf, diet=["Vegan", "Other"], diet_other="  nut   ALLERGY ")
+    _reg(app, conf, status="pending", diet=["Other"], diet_other="Coeliac")
+    _reg(app, conf, diet=["Other"], diet_other="")                  # chose Other, typed nothing
+    _reg(app, conf, diet=["Vegan"], diet_other="Left over from unticking Other")
+    _reg(app, conf, deleted=True, diet=["Other"], diet_other="Deleted")
     return conf
 
 
@@ -128,6 +146,47 @@ def test_breakdowns(app, seeded_regs):
     ws = dict((a, sum(c.values())) for a, c in r.sub_events[0].rows)
     assert ws == {"Attending": 1, "Not attending": 1, "(not asked)": 4}
     assert r.seats["dinner"].taken == 2                 # refunded gave theirs back
+    # Shown only once the dinner is full: everyone else was never asked,
+    # which is not the same as answering No.
+    waitlist = dict((a, sum(c.values())) for a, c in fields["f:waitlist"].rows)
+    assert waitlist == {"Yes": 1, rr.NOT_ASKED: 5}
+
+
+def test_other_answers_are_listed_grouped_and_counted(app, other_diets):
+    from app.services import registration_report as rr
+    with app.app_context():
+        r = rr.build(_conference(app, other_diets))
+    assert len(r.other_answers) == 1                  # only the "Other" follow-up
+    g = r.other_answers[0]
+    assert (g.question, g.detail) == ("Diet", "Other diet (please specify)")
+    # Grouped regardless of case and spacing, first spelling kept, most first.
+    assert g.answers == [("Nut allergy", 2), ("Coeliac", 1)]
+    assert g.blank == 1 and g.total == 4
+    # Matches the breakdown's Other row: everyone who chose it, nobody else.
+    diet = next(b for b in r.fields if b.key == "f:diet")
+    assert sum(dict(diet.rows)["Other"].values()) == g.total
+
+
+def test_the_appendix_in_the_pdf_and_on_the_page(seeded, admin_client, app, other_diets):
+    from app.services import registration_report as rr
+    with app.app_context():
+        c = _conference(app, other_diets)
+        tex = rr.latex(rr.build(c), rr.build_sankey(c, ["status"]))
+    assert r"Appendix: ``Other'' answers" in tex
+    assert "Nut allergy & 2" in tex and "Coeliac & 1" in tex and "(left blank)} & 1" in tex
+    for absent in ("Left over from unticking", "Deleted", "Nutty", "note from"):
+        assert absent not in tex
+    page = admin_client.get(f"/admin/conferences/{other_diets['id']}/report").data.decode()
+    assert "“Other” answers" in page and "Nut allergy" in page and "Nutty" not in page
+
+
+def test_no_appendix_without_other_answers(app, seeded_regs):
+    from app.services import registration_report as rr
+    with app.app_context():
+        c = _conference(app, seeded_regs)
+        r = rr.build(c)
+        assert r.other_answers == []
+        assert "Appendix" not in rr.latex(r, rr.build_sankey(c, ["status"]))
 
 
 def test_long_breakdowns_fold_into_other(app):

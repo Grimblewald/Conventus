@@ -4,9 +4,12 @@ One computation behind both the admin report page and its PDF, so the two can
 never disagree. Every figure is counted from the registrations themselves at
 the moment the report is asked for; nothing here writes.
 
-Only aggregate counts leave this module. Free-text answers and anything that
-identifies a registrant stay out, so a report can be passed around a
-committee without becoming a list of people.
+Nothing that identifies a registrant leaves this module, so a report can be
+passed around a committee without becoming a list of people. Free text stays
+out too, with one exception: what people typed where a question's "Other"
+asked them to specify (a dietary need, say), which the organisers have to act
+on. Those are listed in an appendix, grouped and counted, never beside who
+wrote them.
 
 The Sankey is laid out once, in abstract units, and drawn twice: as SVG for
 the page and as TikZ for the PDF.
@@ -29,6 +32,8 @@ _INACTIVE = ("refunded", "cancelled")
 # Field types whose answers are a choice, and so can be counted.
 _CHOICE_TYPES = ("radio", "select", "checkbox", "checkbox-group", "country")
 NO_ANSWER = "(no answer)"
+NOT_ASKED = "(not asked)"
+_UNANSWERED = (NO_ANSWER, NOT_ASKED)
 _OTHER = "Other"
 # A breakdown with more answers than this folds the smallest into "Other"
 # (countries, mostly); a Sankey column folds past the eight categorical hues.
@@ -62,6 +67,19 @@ class Breakdown:
 
 
 @dataclass
+class OtherAnswers:
+    """What was typed into the follow-up of a question's "Other" answer."""
+    question: str                      # the choice question
+    detail: str                        # the follow-up field's own label
+    answers: list[tuple[str, int]]     # (answer, how many gave it)
+    blank: int                         # chose Other, left the follow-up empty
+
+    @property
+    def total(self) -> int:
+        return sum(n for _, n in self.answers) + self.blank
+
+
+@dataclass
 class Report:
     conference: object
     generated_at: datetime
@@ -79,6 +97,7 @@ class Report:
     sub_events: list[Breakdown]
     fields: list[Breakdown]
     seats: dict                        # field key -> capacity.Seats
+    other_answers: list[OtherAnswers] = field(default_factory=list)
 
     @property
     def active(self) -> int:
@@ -124,7 +143,16 @@ def choice_fields(schema) -> list[dict]:
 
 
 def _answer(field: dict, data: dict):
-    """A registration's answer to *field*, as one label or a list of them."""
+    """A registration's answer to *field*, as one label or a list of them.
+
+    A question shown only on a condition (a wait-list offered once the dinner
+    is full) reads "(not asked)" for everyone who never saw it, rather than a
+    "No" they never gave.
+    """
+    from .form_renderer import _condition_met
+
+    if field.get("condition") and not _condition_met(field["condition"], data or {}):
+        return NOT_ASKED
     value = (data or {}).get(field.get("key", ""))
     if field.get("type") == "checkbox":
         return "Yes" if value else "No"
@@ -135,11 +163,11 @@ def _answer(field: dict, data: dict):
 
 def _ordered(counts: dict, preferred: list[str]) -> list[str]:
     """Answers in the field's own option order, then any others by count,
-    with no answer last."""
+    with no answer and not asked last."""
     known = [o for o in preferred if o in counts]
-    rest = sorted((a for a in counts if a not in preferred and a != NO_ANSWER),
+    rest = sorted((a for a in counts if a not in preferred and a not in _UNANSWERED),
                   key=lambda a: (-sum(counts[a].values()), a))
-    tail = [NO_ANSWER] if NO_ANSWER in counts else []
+    tail = [a for a in _UNANSWERED if a in counts]
     return known + rest + tail
 
 
@@ -166,11 +194,64 @@ def _breakdown(key, label, regs, value_of, preferred=(), multi=False) -> Breakdo
     return Breakdown(key, label, multi, _fold(rows, _MAX_ROWS))
 
 
+def _other_followups(schema) -> list[tuple[dict, dict]]:
+    """(choice field, text field) pairs where the text field only appears
+    when the choice's answer includes "Other" — the "please specify" box.
+
+    Matched on the condition, not on key names, so it works however the
+    form builder named them. Other free-text fields (an abstract title, a
+    note) are deliberately not matched, and never reach the report.
+    """
+    choices = {f["key"]: f for f in choice_fields(schema)}
+    pairs = []
+    for section in (schema or {}).get("sections", []):
+        for f in section.get("fields", []):
+            cond = f.get("condition") or {}
+            if (f.get("type") in ("text", "textarea")
+                    and cond.get("field") in choices
+                    and str(cond.get("contains", "")).strip().lower() == "other"):
+                pairs.append((choices[cond["field"]], f))
+    return pairs
+
+
+def _shown(detail: dict, data: dict) -> bool:
+    """Whether the follow-up was on screen for these answers — the same test
+    the registration form applies (form_renderer._condition_met)."""
+    from .form_renderer import _condition_met
+    return _condition_met(detail["condition"], data)
+
+
+def _other_answers(regs, schema) -> list[OtherAnswers]:
+    out = []
+    for choice, detail in _other_followups(schema):
+        seen: dict[str, str] = {}           # case-folded -> first spelling
+        counts: Counter = Counter()
+        blank = 0
+        for reg in regs:
+            data = reg.custom_data or {}
+            if not _shown(detail, data):
+                continue                     # the follow-up was never shown
+            text = " ".join(str(data.get(detail["key"]) or "").split())
+            if not text:
+                blank += 1
+                continue
+            key = text.casefold()
+            seen.setdefault(key, text)
+            counts[key] += 1
+        answers = sorted(((seen[k], n) for k, n in counts.items()),
+                         key=lambda a: (-a[1], a[0].casefold()))
+        if answers or blank:
+            out.append(OtherAnswers(choice.get("label") or choice["key"],
+                                    detail.get("label") or detail["key"],
+                                    answers, blank))
+    return out
+
+
 def _sub_event_answer(se):
     def value_of(reg):
         entry = (reg.sub_events or {}).get(se.key)
         if not isinstance(entry, dict):
-            return "(not asked)"
+            return NOT_ASKED
         return "Attending" if entry.get("attending") else "Not attending"
     return value_of
 
@@ -217,6 +298,7 @@ def build(conference) -> Report:
         owing=Counter(r.status for r in owing),
         tiers=tiers, sub_events=sub_events, fields=fields,
         seats=capacity.status(conference.id, schema, conference.sub_events),
+        other_answers=_other_answers(regs, schema),
     )
 
 
@@ -314,7 +396,7 @@ def _stage_value(conference, key: str):
 
 
 def _colour(value: str, preferred: list[str], index: int, fixed) -> str:
-    if value in (NO_ANSWER, "(not asked)", _OTHER):
+    if value in (*_UNANSWERED, _OTHER):
         return NEUTRAL
     if fixed is not None:
         return fixed(value, index)
@@ -434,7 +516,9 @@ def _stage_title(sk: Sankey, ci: int) -> tuple[str, float, str]:
         title = title[:_MAX_TITLE - 1].rstrip(" ,(—-") + "…"
     x = sk.columns[ci][0].x
     if ci == 0:
-        return title, x, "start"
+        # The first column is one box: its count goes up here, because a
+        # label beside it would sit on the percentages of the bands leaving.
+        return f"{title} · {sk.total}", x, "start"
     if ci == len(sk.stages) - 1:
         return title, x + sk.node_width, "end"
     return title, x + sk.node_width / 2, "middle"
@@ -469,7 +553,7 @@ def svg(sk: Sankey, *, label_room: float = 150) -> str:
         title, tx, anchor = _stage_title(sk, ci)
         # The full wording on hover, only where it had to be shortened.
         full = sk.stages[ci][1]
-        hint = f"<title>{escape(full)}</title>" if title != full else ""
+        hint = f"<title>{escape(full)}</title>" if title.endswith("…") else ""
         out.append(f'<text class="sk-stage" x="{tx:.1f}" y="-14" text-anchor="{anchor}">'
                    f'{hint}{escape(title)}</text>')
     for lk in sk.links:
@@ -494,9 +578,11 @@ def svg(sk: Sankey, *, label_room: float = 150) -> str:
             out.append(f'<rect class="sk-node" x="{n.x:.1f}" y="{n.y:.1f}" '
                        f'width="{sk.node_width}" height="{max(n.h, 1):.1f}" rx="2" '
                        f'fill="{n.colour}" data-tip="{escape(tip)}"></rect>')
-            # Right of the first and last columns; left of the ones between,
-            # so a label reads against the bands arriving rather than leaving.
-            right = n.stage in (0, last)
+            if n.stage == 0:
+                continue                    # its count is in the column title
+            # Right of the last column, left of the ones between, so a label
+            # reads against the bands arriving rather than those leaving.
+            right = n.stage == last
             lx = n.x + sk.node_width + 6 if right else n.x - 6
             anchor = "start" if right else "end"
             out.append(f'<text class="sk-label" x="{lx:.1f}" y="{n.y + n.h / 2 + 4:.1f}" '
@@ -544,7 +630,9 @@ def tikz(sk: Sankey) -> str:
             c = colours[n.colour]
             out.append(rf"\fill[{c},rounded corners=1pt] ({n.x:.1f},{y(n.y):.1f}) "
                        rf"rectangle ({n.x + sk.node_width:.1f},{y(n.y + max(n.h, 1)):.1f});")
-            right = n.stage in (0, last)
+            if n.stage == 0:
+                continue                    # its count is in the column title
+            right = n.stage == last
             lx = n.x + sk.node_width + 3 if right else n.x - 3
             anchor = "west" if right else "east"
             out.append(rf"\node[anchor={anchor},inner sep=1.5pt,fill=white,fill opacity=0.8,"
@@ -582,6 +670,33 @@ def _table_tex(b: Breakdown, statuses: list[str], total: int) -> str:
     return "\n".join(lines)
 
 
+def _other_answers_tex(groups: list[OtherAnswers]) -> str:
+    """The appendix: each question's "Other" follow-ups, grouped and counted.
+
+    A longtable per question, so a long list breaks across pages with its
+    header repeated, and answers wrap rather than run off the page."""
+    from .documents import latex_escape as esc
+
+    out = [r"\clearpage{\Large\bfseries Appendix: ``Other'' answers\par}",
+           r"{\color{inkmuted}\footnotesize What registrants typed when they chose "
+           r"``Other'', grouped regardless of capitalisation and counted. Who gave each "
+           r"answer is not shown.\par}"]
+    for g in groups:
+        head = (r"\textbf{Answer} & \textbf{Count} \\ \midrule")
+        out.append(r"\par\vspace{10pt}"
+                   rf"{{\bfseries {esc(g.question)}}}\par"
+                   rf"{{\color{{inkmuted}}\footnotesize {esc(g.detail)} · {g.total} chose "
+                   rf"Other\par}}\vspace{{-4pt}}")
+        out.append(r"\begin{longtable}{@{}p{0.82\linewidth} r@{}}\toprule " + head
+                   + r"\endfirsthead\toprule " + head + r"\endhead")
+        for text, n in g.answers:
+            out.append(rf"{esc(text)} & {n} \\")
+        if g.blank:
+            out.append(rf"{{\color{{inkmuted}}\itshape (left blank)}} & {g.blank} \\")
+        out.append(r"\bottomrule\end{longtable}")
+    return "\n".join(out)
+
+
 def latex(report: Report, sk: Sankey, *, currency_symbol: str = "$") -> str:
     from .documents import latex_escape as esc
 
@@ -609,6 +724,9 @@ def latex(report: Report, sk: Sankey, *, currency_symbol: str = "$") -> str:
 \usepackage{{tikz}}
 \usepackage{{booktabs}}
 \usepackage{{array}}
+\usepackage{{longtable}}
+\setlength{{\LTleft}}{{0pt}}
+\setlength{{\LTright}}{{0pt}}
 \definecolor{{ink}}{{HTML}}{{0B0B0B}}
 \definecolor{{inkmuted}}{{HTML}}{{52514E}}
 \renewcommand{{\familydefault}}{{\sfdefault}}
@@ -618,7 +736,7 @@ def latex(report: Report, sk: Sankey, *, currency_symbol: str = "$") -> str:
 \begin{{document}}
 {{\Large\bfseries Registration report\par}}
 {{\large {esc(c.title)}\par}}
-{{\color{{inkmuted}} {esc(c.date_range)} · generated {esc(stamp)} · counts only, no personal details\par}}
+{{\color{{inkmuted}} {esc(c.date_range)} · generated {esc(stamp)} · no names or contact details\par}}
 \vspace{{8pt}}
 \begin{{tabular}}{{@{{}}l r l}}
 {rows}
@@ -653,6 +771,8 @@ exact count; each band's percentage is the share of the box it leaves.\par}}
         parts.append(r"\par\vspace{10pt}\noindent\begin{minipage}{\linewidth}"
                      rf"{{\bfseries {esc(b.label)}}}{note}\par\vspace{{2pt}}"
                      + _table_tex(b, r.statuses, r.total) + r"\end{minipage}\par")
+    if r.other_answers:
+        parts.append(_other_answers_tex(r.other_answers))
     parts.append(r"\end{document}")
     return "\n".join(parts)
 
